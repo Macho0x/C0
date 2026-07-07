@@ -2,6 +2,8 @@
 /c0
 /c0.exe
 /main
+src/c0
+tests/c0-out
 *.o
 *.test
 *.out
@@ -31,7 +33,6 @@ editors/zed/Cargo.lock
 # Build artifacts
 /tmp/
 tests/*.go
-!tests/binance_helpers.go
 tests/*.map.json
 .cortexkit/
 

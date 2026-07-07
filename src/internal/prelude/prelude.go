@@ -221,6 +221,30 @@ func Default() *Prelude {
 		Lowering{Custom: "owned_chan_close"},
 	)
 
+	// http_get_string : string -> string
+	p.add("http_get_string",
+		types.Mono(&types.TFun{From: types.String, To: types.String}),
+		Lowering{Custom: "http_get_string"},
+	)
+
+	// json_extract_floats : string -> int -> float list
+	p.add("json_extract_floats",
+		types.Mono(&types.TFun{
+			From: types.String,
+			To:   &types.TFun{From: types.Int, To: types.ListType(types.Float)},
+		}),
+		Lowering{Custom: "json_extract_floats"},
+	)
+
+	// json_extract_strings : string -> int -> string list
+	p.add("json_extract_strings",
+		types.Mono(&types.TFun{
+			From: types.String,
+			To:   &types.TFun{From: types.Int, To: types.ListType(types.String)},
+		}),
+		Lowering{Custom: "json_extract_strings"},
+	)
+
 	_ = a
 	_ = b
 	return p

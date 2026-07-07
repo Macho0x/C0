@@ -84,6 +84,7 @@ type Generator struct {
 	varCounter  int    // for generating unique tmp variable names
 	needFmt     bool   // whether to import "fmt"
 	usedChan    bool   // whether any channel operations are used in this module
+	usedHTTP    bool   // whether HTTP/JSON helpers are needed
 
 	// refinement contract tracking
 	provenSites       refine.ProvenSites      // call sites proven safe by refinement solver
@@ -274,6 +275,9 @@ func (g *Generator) Generate(mod *ast.Module) (string, error) {
 
 	// Emit C0Chan wrapper if channels are used
 	g.emitChanHelpers()
+
+	// Emit HTTP/JSON helpers if needed
+	g.emitHTTPHelpers()
 
 	bodyStr := g.buf.String()
 	g.buf = origBuf
@@ -742,6 +746,14 @@ func (g *Generator) emitImports() {
 		if path != "fmt" && path != "" {
 			imports[path] = pkg
 		}
+	}
+	// Add HTTP/JSON imports if needed
+	if g.usedHTTP {
+		imports["net/http"] = "http"
+		imports["encoding/json"] = "json"
+		imports["io"] = "io"
+		imports["strconv"] = "strconv"
+		imports["time"] = "time"
 	}
 	if len(imports) == 0 {
 		return
@@ -1999,6 +2011,37 @@ func (g *Generator) emitPreludeCall(b *prelude.Binding, args []ast.Expr, callExp
 		}
 		g.buf.WriteString(")")
 		return
+
+	case "http_get_string":
+		g.usedHTTP = true
+		g.buf.WriteString("httpGetString(")
+		if len(args) >= 1 {
+			g.emitExpr(args[0], false)
+		}
+		g.buf.WriteString(")")
+		return
+
+	case "json_extract_floats":
+		g.usedHTTP = true
+		g.buf.WriteString("jsonExtractFloats(")
+		if len(args) >= 2 {
+			g.emitExpr(args[0], false)
+			g.buf.WriteString(", ")
+			g.emitExpr(args[1], false)
+		}
+		g.buf.WriteString(")")
+		return
+
+	case "json_extract_strings":
+		g.usedHTTP = true
+		g.buf.WriteString("jsonExtractStrings(")
+		if len(args) >= 2 {
+			g.emitExpr(args[0], false)
+			g.buf.WriteString(", ")
+			g.emitExpr(args[1], false)
+		}
+		g.buf.WriteString(")")
+		return
 	}
 
 	// Operator lowering: e.g., string_concat → a + b
@@ -3101,6 +3144,68 @@ func (g *Generator) emitChanHelpers() {
 	g.emitf("if c.closed { panic(\"Chan.close: channel already closed\") }\n")
 	g.emitf("c.closed = true\n")
 	g.emitf("close(c.ch)\n")
+	g.indent--
+	g.emitf("}\n\n")
+}
+
+// ---------------------------------------------------------------------------
+// HTTP/JSON helpers
+// ---------------------------------------------------------------------------
+
+// emitHTTPHelpers emits Go helper functions for HTTP and JSON operations
+// if any HTTP/JSON prelude functions are used in the module.
+func (g *Generator) emitHTTPHelpers() {
+	if !g.usedHTTP {
+		return
+	}
+	g.emitf("// HTTP/JSON helpers for C0 prelude\n")
+	g.emitf("func httpGetString(url string) string {\n")
+	g.indent++
+	g.emitf("client := &http.Client{Timeout: 15 * time.Second}\n")
+	g.emitf("resp, err := client.Get(url)\n")
+	g.emitf("if err != nil { panic(\"HTTP error: \" + err.Error()) }\n")
+	g.emitf("defer resp.Body.Close()\n")
+	g.emitf("body, err := io.ReadAll(resp.Body)\n")
+	g.emitf("if err != nil { panic(\"HTTP read error: \" + err.Error()) }\n")
+	g.emitf("return string(body)\n")
+	g.indent--
+	g.emitf("}\n\n")
+
+	g.emitf("func jsonExtractFloats(jsonStr string, index int) []float64 {\n")
+	g.indent++
+	g.emitf("var raw []any\n")
+	g.emitf("if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil { panic(\"JSON error: \" + err.Error()) }\n")
+	g.emitf("result := make([]float64, 0, len(raw))\n")
+	g.emitf("for _, item := range raw {\n")
+	g.indent++
+	g.emitf("arr, ok := item.([]any)\n")
+	g.emitf("if !ok || len(arr) <= index { continue }\n")
+	g.emitf("s, ok := arr[index].(string)\n")
+	g.emitf("if !ok { continue }\n")
+	g.emitf("f, err := strconv.ParseFloat(s, 64)\n")
+	g.emitf("if err != nil { continue }\n")
+	g.emitf("result = append(result, f)\n")
+	g.indent--
+	g.emitf("}\n")
+	g.emitf("return result\n")
+	g.indent--
+	g.emitf("}\n\n")
+
+	g.emitf("func jsonExtractStrings(jsonStr string, index int) []string {\n")
+	g.indent++
+	g.emitf("var raw []any\n")
+	g.emitf("if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil { panic(\"JSON error: \" + err.Error()) }\n")
+	g.emitf("result := make([]string, 0, len(raw))\n")
+	g.emitf("for _, item := range raw {\n")
+	g.indent++
+	g.emitf("arr, ok := item.([]any)\n")
+	g.emitf("if !ok || len(arr) <= index { continue }\n")
+	g.emitf("s, ok := arr[index].(string)\n")
+	g.emitf("if !ok { continue }\n")
+	g.emitf("result = append(result, s)\n")
+	g.indent--
+	g.emitf("}\n")
+	g.emitf("return result\n")
 	g.indent--
 	g.emitf("}\n\n")
 }

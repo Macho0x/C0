@@ -4,12 +4,6 @@ extern "go" "math" {
   val Sqrt : float -> float
 }
 
-extern "go" "" {
-  val fetch_binance_klines : unit -> float list
-  val fetch_binance_volumes : unit -> float list
-  val verbose_binance_kline : unit -> string
-}
-
 (* ------ Statistics ------ *)
 
 let rec sum (xs: float list) : float =
@@ -117,8 +111,6 @@ let decision (current: float) (mu: float) (momentum: float) (rising: float) : st
 
 (* ------ Report Builder ------ *)
 
-(* build_analysis returns the analysis body string.
-   Using a separate function avoids let-binding an if-expression. *)
 let build_analysis (ns: string) (prices: float list) (volumes: float list) (n: float) : string =
   if n <= 0.0 then
     "ERROR: No data received from Binance"
@@ -149,18 +141,46 @@ let build_analysis (ns: string) (prices: float list) (volumes: float list) (n: f
     "Avg volume:   " ^ float_to_string vm ^ " BTC\n" ^
     "\nDecision:     " ^ d ^ "\n"
 
+(* Format a unix-millis timestamp as MM-DD HH:MM *)
+let format_ts (ts_str: string) : string =
+  (* Binance timestamps are large ints as strings; just truncate for display *)
+  ts_str
+
+(* Build a concise one-line kline header from raw JSON arrays *)
+let rec last_of (xs: string list) : string =
+  match xs with
+  | [] -> ""
+  | x :: rest ->
+    match rest with
+    | [] -> x
+    | _ :: _ -> last_of rest
+
+let header_from_json (json: string) : string =
+  let opens = json_extract_strings json 1 in
+  let highs = json_extract_strings json 2 in
+  let lows = json_extract_strings json 3 in
+  let closes = json_extract_strings json 4 in
+  let vols = json_extract_strings json 5 in
+  let open_s = last_of opens in
+  let high_s = last_of highs in
+  let low_s = last_of lows in
+  let close_s = last_of closes in
+  let vol_s = last_of vols in
+  "O:" ^ open_s ^ " H:" ^ high_s ^ " L:" ^ low_s ^ " C:" ^ close_s ^ " V:" ^ vol_s
+
 (* ------ Main ------ *)
 
 let main () =
-  let header = verbose_binance_kline () in
-  let prices = fetch_binance_klines () in
-  let volumes = fetch_binance_volumes () in
+  let json = http_get_string "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=500" in
+  let prices = json_extract_floats json 4 in
+  let volumes = json_extract_floats json 5 in
   let n = length_float prices in
   let ns = float_to_string n in
+  let hdr = header_from_json json in
   let body = build_analysis ns prices volumes n in
   let report =
     "=== BTC/USD 5m Analysis ===\n" ^
-    "Candle: " ^ header ^ "\n" ^
+    hdr ^ "\n" ^
     "Count:  " ^ ns ^ body
   in
   print_line report
