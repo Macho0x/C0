@@ -161,6 +161,10 @@ comp_return  := 'return' expr
 ## Extern declarations
 
 ```
-extern_decl  := 'extern' string string '{' extern_binding* '}'
+extern_decl  := 'extern' string string '{' (extern_binding | go_block)* '}'
 extern_binding := 'val' ident ':' type
+go_block     := 'go' '{' raw_go_code '}'
+```
+
+`raw_go_code` is the raw source text between `{` and its matching `}`, including nested braces, string literals, and comments. The compiler emits this text verbatim into the generated Go file. Use separate `extern "go" "pkg" {}` declarations (empty val/go blocks) to add Go imports.
 ```

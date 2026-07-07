@@ -422,7 +422,7 @@ Yes. C0 supports mixed `.c0` + `.go` projects in the same directory. Existing `g
 
 ### Do I need to learn a new standard library?
 
-No. C0 compiles to Go. Go's standard library IS your standard library. `extern "go" "fmt" { val Println : string -> unit }` gives you `fmt.Println`.
+No. C0 compiles to Go. Go's standard library IS your standard library. `extern "go" "fmt" { val Println : string -> unit }` gives you `fmt.Println`. Need multi-step Go logic (HTTP + JSON, custom crypto, database queries)? Embed inline Go code with `extern "go" "" { go { func myHelper(...) ... { ... } } }` — no compiler changes needed.
 
 ---
 

@@ -337,6 +337,62 @@ func Process(h Handle) {
 
 Each `let!` acquires a linear resource and registers a `defer Close()` at region exit. The linear discharge checker auto-discharges region-bound variables. This replaces the legacy `using` block with compile-time-guaranteed cleanup.
 
+## Inline Go extern
+
+C0 allows embedding raw Go functions directly inside `extern` declarations using a `go { ... }` block. The Go code is emitted verbatim into the generated file, enabling multi-step Go logic without editing the compiler.
+
+```c0
+extern "go" "net/http" {}
+extern "go" "encoding/json" {}
+extern "go" "io" {}
+extern "go" "strconv" {}
+
+extern "go" "" {
+  go {
+    func httpGetString(url string) string {
+      resp, err := http.Get(url)
+      if err != nil { return "" }
+      defer resp.Body.Close()
+      body, _ := io.ReadAll(resp.Body)
+      return string(body)
+    }
+  }
+  val httpGetString : string -> string
+}
+```
+
+→
+
+```go
+import (
+    "net/http"
+    "encoding/json"
+    "io"
+    "strconv"
+)
+
+func httpGetString(url string) string {
+    resp, err := http.Get(url)
+    if err != nil { return "" }
+    defer resp.Body.Close()
+    body, _ := io.ReadAll(resp.Body)
+    return string(body)
+}
+
+func main() {
+    data := httpGetString("https://...")
+    // ...
+}
+```
+
+Key rules:
+
+1. **Imports**: Declare required Go packages with separate `extern "go" "path" {}` blocks (empty val/go lists). The compiler adds these to the Go import block.
+2. **Same-package helpers**: Use `extern "go" "" { go { ... } }` for helpers that need no extra import. The Go code is emitted directly into the package.
+3. **Names must match**: The Go function name in the `go { ... }` block must match the C0 name declared in `val name : type`. The C0-to-Go name translation is identity for inline extern (no mangling).
+4. **Unit arguments are elided**: C0 `()` calls become zero-argument Go calls (`nowString()` not `nowString(struct{}{})`).
+5. **Any valid Go code works**: Functions, types, constants, variables — the entire `go { ... }` block is emitted verbatim.
+
 ## Source maps
 
 C0 emits Go source maps so that stack traces, debugger breakpoints, and error messages refer to `.c0` source locations rather than generated `.go` lines.
