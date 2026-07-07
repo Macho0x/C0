@@ -1681,8 +1681,21 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 	// Regular function application: f(x, y, ...)
 	// For curried calls, collect all arguments
 	args := g.collectArgs(e)
+
 	funcExpr := args[0].(ast.Expr)
 	args = args[1:]
+
+	// Flatten ConstructorExpr with embedded Arg for extern functions.
+	// The parser may represent "Mod a b" as
+	// AppExpr(Func=ConstructorExpr(Mod, Arg=a), Arg=b), which means
+	// collectArgs only sees [ConstructorExpr(Mod, a), b] instead of
+	// [Mod, a, b]. Un-embed the first arg so all args are in one flat list.
+	if cons, ok := funcExpr.(*ast.ConstructorExpr); ok && cons.Arg != nil {
+		if _, isExtern := g.externNames[cons.Name]; isExtern {
+			funcExpr = &ast.IdentExpr{Name: cons.Name}
+			args = append([]ast.Expr{cons.Arg}, args...)
+		}
+	}
 
 	// Check for prelude lowering before partial application/user function
 	funcName := g.getExprName(funcExpr)
@@ -1772,7 +1785,6 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 	// skip emitting arguments — don't emit `struct{}{}`.
 	if funcName != "" {
 		if paramCnt, ok := g.funcParamCount[funcName]; ok && paramCnt == 0 {
-			// Skip all args — they are unit values for the dropped `()` param
 			goto afterArgs
 		}
 	}

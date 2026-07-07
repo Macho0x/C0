@@ -1,0 +1,9 @@
+module Main
+
+let main () =
+  let msg = 
+    "apple\n" ^
+    "banana\n" ^
+    "cherry\n"
+  in
+  print_line msg

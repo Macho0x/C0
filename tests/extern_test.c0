@@ -1,0 +1,13 @@
+module Main
+
+extern "go" "math" {
+  val Sqrt : float -> float
+  val Log : float -> float
+}
+
+let main () =
+  let x = Sqrt 4.0 in
+  let y = Log 1.0 in
+  let a = assert (x > 1.99 && x < 2.01) in
+  let b = assert (y < 0.01) in
+  print_line "extern math OK"
