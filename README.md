@@ -7,19 +7,26 @@
 
 <h1 align="center">C0</h1>
 
-C0 is a statically typed systems language with ML-family syntax that compiles to readable, idiomatic Go.
+<p align="center">
+  <strong>ML elegance. Go power.</strong><br>
+  A statically typed systems language that compiles to readable, idiomatic Go.
+</p>
 
-It combines the type safety and expressiveness of OCaml/F# with Go's runtime, ecosystem, and deployment story. The goal is not to wrap Go in a thin syntax layer, but to give programmers a genuinely safer and more expressive source language whose output is still the kind of Go a senior engineer would write by hand.
+<p align="center">
+  <a href="#quick-example">Example</a> •
+  <a href="#why-c0">Why C0?</a> •
+  <a href="#getting-started">Getting Started</a> •
+  <a href="#editor-support">Editor Support</a> •
+  <a href="#documentation">Docs</a>
+</p>
 
-> **Core design constraint:** The Go emitted by the C0 compiler must be readable, idiomatic, and debuggable by Go programmers who have never seen C0.
+---
 
-## Status
+C0 is a programming language for people who want OCaml/F#-level type safety and expressiveness, but need to ship Go. The compiler emits clean, human-readable Go — the kind a senior engineer would write by hand — so you get the best of both worlds without the impedance mismatch.
 
-C0 is in early design and bootstrap implementation. The compiler is being written in Go and will self-host once the language is mature enough.
+> **Core design constraint:** The Go emitted by the C0 compiler must be readable, idiomatic, and debuggable by any Go programmer — even one who has never seen C0.
 
-Error reporting uses Lisette-style graphical diagnostics with source context, precise spans, and actionable help (see `internal/report`).
-
-`c0 build` supports true mixed `.c0` + `.go` projects in the same directory (including existing `go.mod` and hand-written Go files).
+---
 
 ## Quick example
 
@@ -42,7 +49,48 @@ let main () =
   Console.print_line (Float.to_string (area s))
 ```
 
-Compiles to a plain Go package with interface-based sum types and type switches.
+This compiles to a plain Go package with interface-based sum types and type switches — readable Go that looks hand-written:
+
+```go
+func (c Circle) area() float64 {
+    return 3.14159 * c.radius * c.radius
+}
+```
+
+---
+
+## Why C0?
+
+**You know Go's runtime, tooling, and ecosystem are excellent.** You want to deploy to that world. But the language itself — the type system, the error handling, the ceremony — sometimes gets in your way.
+
+C0 gives you:
+
+- **Algebraic data types** — sum types (enums with payloads), records, pattern matching with exhaustiveness checking
+- **Type-safe error handling** — no forgotten `if err != nil`, no panics leaking to production
+- **Zero-overhead abstractions** — generics, higher-order functions, parametric polymorphism that compile down to concrete Go code
+- **Seamless Go interop** — use any Go library directly, call C0 from Go and vice versa, mixed `.c0` + `.go` projects work out of the box
+- **Readable output** — the emitted Go is meant for humans, not just compilers. Open your `c0 build` output in a debugger and step through familiar code
+
+**C0 is not a transpiler.** It's a proper compiler with type inference, exhaustive pattern matching, and safety guarantees Go doesn't have — whose output just happens to be Go.
+
+---
+
+## Getting started
+
+```bash
+# Build the compiler
+cd src && go build ./cmd/c0
+
+# Build a C0 project (mixed .c0 + .go files welcome)
+c0 build
+
+# Start the LSP server
+c0 lsp
+```
+
+Requires Go 1.21+.
+
+---
 
 ## Project structure
 
@@ -50,24 +98,51 @@ Compiles to a plain Go package with interface-based sum types and type switches.
 C0/
 ├── docs/
 │   ├── design/         # Design rationale and decisions
-│   ├── spec/           # Formal grammar, semantics, and lowering rules
+│   ├── spec/           # Formal grammar, semantics, lowering rules
 │   └── examples/       # Example C0 programs
-├── src/                # Bootstrap compiler
+├── src/
 │   ├── cmd/c0/         # CLI entry point (includes LSP)
-│   └── internal/       # Compiler packages
-│       ├── color/      # CLI color output
-│       └── ...         # lexer, parser, typecheck, codegen, etc.
-├── syntaxes/           # TextMate grammar (JSON)
-├── editors/            # Editor extensions
+│   └── internal/       # Compiler: lexer, parser, typecheck, codegen
+├── syntaxes/           # TextMate grammar (VSCode, Zed, etc.)
+├── editors/
 │   ├── vscode/         # VSCode/Cursor extension
-│   └── zed/            # Zed extension
+│   └── zed/            # Zed extension (with LSP adapter)
 ├── tests/              # Compiler and end-to-end tests
-├── README.md
-└── TODO.md
+├── TODO.md
+└── VERSION
 ```
 
-## Design documents
+## Editor support
 
+### Zed
+The Zed extension in `editors/zed/` provides:
+- 🎨 Full syntax highlighting via TextMate grammar
+- 🗺️ `.c0` file icons in the file tree
+- ⚡ LSP integration with real-time diagnostics
+- Install as a dev extension: `Zed → Extensions → Install Dev Extension → select editors/zed/`
+
+### VSCode / Cursor
+Install the extension from `editors/vscode/`:
+- Syntax highlighting
+- LSP client integration
+- Language configuration (brackets, auto-closing pairs, comments)
+
+### CLI
+```bash
+c0 lsp     # Language server (stdio)
+c0 lex --color  # Terminal colorization
+```
+
+The LSP provides:
+- Real-time syntax error diagnostics
+- Graphical error reporting with source context, precise spans, and actionable help
+- Future: hover information, completion, go-to-definition
+
+---
+
+## Documentation
+
+### Design
 - [Language overview](docs/design/01-overview.md)
 - [Type system](docs/design/02-type-system.md)
 - [Syntax](docs/design/03-syntax.md)
@@ -76,43 +151,19 @@ C0/
 - [Effects and safety](docs/design/06-effects-and-safety.md)
 - [Roadmap](docs/design/07-roadmap.md)
 
-## Specification
-
+### Specification
 - [Grammar](docs/spec/grammar.md)
 - [Semantics](docs/spec/semantics.md)
 - [Lowering to Go](docs/spec/lowering.md)
 
-## Building the bootstrap compiler
+---
 
-```bash
-cd src
-go build ./cmd/c0
-```
+## Status
 
-## Editor Support
+C0 is in early design and bootstrap implementation. The compiler is being written in Go and will self-host once the language is mature enough. Error reporting uses Lisette-style graphical diagnostics with source context, precise spans, and actionable help. `c0 build` supports true mixed `.c0` + `.go` projects in the same directory (including existing `go.mod` and hand-written Go files).
 
-### Syntax Highlighting
-
-C0 uses OCaml/F# style syntax. Syntax highlighting is available for:
-
-- **VSCode/Cursor**: See `editors/vscode/` for the extension (TextMate grammar)
-- **Zed**: See `editors/zed/` for the extension configuration
-- **CLI**: Use `c0 lex --color` for terminal colorization
-
-### LSP Server
-
-The LSP server is built into the `c0` binary. Run `c0 lsp` to start the language server:
-```bash
-c0 lsp
-```
-
-Provides:
-- Real-time syntax error diagnostics
-- Graphical error reporting with source context
-- Future: hover, completion, go-to-definition
-
-Configure your editor to use the LSP binary for `.c0` files.
+---
 
 ## License
 
-MIT / Apache-2.0 dual license (to be finalized).
+MIT / Apache-2.0 dual license.

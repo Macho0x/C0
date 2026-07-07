@@ -24,6 +24,10 @@ vendor/
 .DS_Store
 Thumbs.db
 
+# Rust build artifacts (Zed extension)
+editors/zed/target/
+editors/zed/Cargo.lock
+
 # Build artifacts
 /tmp/
 
