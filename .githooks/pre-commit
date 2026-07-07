@@ -1,0 +1,25 @@
+#!/bin/sh
+# Auto-increment VERSION file on every commit.
+# Format: MAJOR.MINOR.PATCH-dev (e.g. 0.1.0-dev)
+# Patch number is incremented each commit.
+
+VERSION_FILE="VERSION"
+
+if [ ! -f "$VERSION_FILE" ]; then
+    echo "0.0.1-dev" > "$VERSION_FILE"
+    git add "$VERSION_FILE"
+    exit 0
+fi
+
+version=$(cat "$VERSION_FILE" | sed 's/-dev//')
+
+major=$(echo "$version" | cut -d. -f1)
+minor=$(echo "$version" | cut -d. -f2)
+patch=$(echo "$version" | cut -d. -f3)
+
+# Increment patch
+new_patch=$((patch + 1))
+new_version="${major}.${minor}.${new_patch}-dev"
+
+echo "$new_version" > "$VERSION_FILE"
+git add "$VERSION_FILE"
