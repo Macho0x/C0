@@ -1,0 +1,166 @@
+module Main
+
+extern "go" "math" {
+  val Sqrt : float -> float
+}
+
+extern "go" "" {
+  val fetch_binance_klines : unit -> float list
+  val fetch_binance_volumes : unit -> float list
+  val verbose_binance_kline : unit -> string
+}
+
+(* ------ Statistics ------ *)
+
+let rec sum (xs: float list) : float =
+  match xs with
+  | [] -> 0.0
+  | x :: rest -> x +. sum rest
+
+let rec length_float (xs: float list) : float =
+  match xs with
+  | [] -> 0.0
+  | _ :: rest -> 1.0 +. length_float rest
+
+let mean (xs: float list) (len: float) : float =
+  sum xs /. len
+
+let rec variance (xs: float list) (m: float) : float =
+  match xs with
+  | [] -> 0.0
+  | x :: rest ->
+    let diff = x -. m in
+    diff *. diff +. variance rest m
+
+(* ------ Technical Indicators ------ *)
+
+(* Get element at position n (0-indexed) *)
+let rec nth_price (xs: float list) (n: float) : float =
+  match xs with
+  | [] -> 0.0
+  | x :: rest ->
+    if n <= 0.0 then x
+    else nth_price rest (n -. 1.0)
+
+(* Current price from head of list *)
+let head_price (xs: float list) : float =
+  match xs with
+  | [] -> 0.0
+  | x :: _ -> x
+
+(* Rate of change over N periods *)
+let roc (xs: float list) (lookback: float) : float =
+  if lookback <= 0.0 then 0.0
+  else
+    let curr = head_price xs in
+    let prev = nth_price xs lookback in
+    if prev = 0.0 then 0.0
+    else
+      let diff = curr -. prev in
+      diff /. prev
+
+(* Compute periodic returns *)
+let rec rets_of (xs: float list) : float list =
+  match xs with
+  | [] -> []
+  | a :: rest ->
+    match rest with
+    | [] -> []
+    | b :: _ ->
+      let diff = a -. b in
+      diff /. b :: rets_of rest
+
+(* Count rising consecutive periods *)
+let rise_of (a: float) (b: float) : float =
+  if a > b then 1.0 else 0.0
+
+let rec count_rising (xs: float list) (n: float) : float =
+  if n <= 0.0 then 0.0
+  else
+    match xs with
+    | [] -> 0.0
+    | a :: rest ->
+      let b = head_price rest in
+      rise_of a b +. count_rising rest (n -. 1.0)
+
+(* Smoothed ROC: average of last N returns *)
+let rec avg_roc_window (xs: float list) (n: float) (i: float) : float =
+  if i >= n then 0.0
+  else
+    match xs with
+    | [] -> 0.0
+    | a :: rest ->
+      match rest with
+      | [] -> 0.0
+      | b :: _ ->
+        let diff = a -. b in
+        diff /. b +. avg_roc_window rest n (i +. 1.0)
+
+let smoothed_roc (xs: float list) (n: float) : float =
+  let total = avg_roc_window xs n 0.0 in
+  total /. n
+
+(* ------ Decision ------ *)
+
+let decision (current: float) (mu: float) (momentum: float) (rising: float) : string =
+  let above_mean = current > mu in
+  if above_mean && momentum < 0.0 && rising < 5.0 then
+    "SELL: price above mean, momentum fading, <5/10 rising"
+  else if above_mean && momentum > 0.05 then
+    "BUY: price above mean with strong momentum"
+  else if not above_mean && momentum > 0.0 && rising >= 5.0 then
+    "BUY: price below mean with positive momentum, >5/10 rising"
+  else if not above_mean && momentum < (0.0 - 0.05) then
+    "SELL: price below mean with strong downward momentum"
+  else
+    "HOLD: no clear signal"
+
+(* ------ Report Builder ------ *)
+
+(* build_analysis returns the analysis body string.
+   Using a separate function avoids let-binding an if-expression. *)
+let build_analysis (ns: string) (prices: float list) (volumes: float list) (n: float) : string =
+  if n <= 0.0 then
+    "ERROR: No data received from Binance"
+  else
+    let mu = mean prices n in
+    let pvar = variance prices mu in
+    let std = Sqrt (pvar /. n) in
+    let current = head_price prices in
+    let momentum = roc prices 20.0 in
+    let sm_roc = smoothed_roc prices 5.0 in
+    let rising = count_rising prices 10.0 in
+    let rlist = rets_of prices in
+    let rn = length_float rlist in
+    let rm = mean rlist rn in
+    let rv = variance rlist rm in
+    let ret_std = Sqrt (rv /. rn) in
+    let d = decision current mu momentum rising in
+    let vn = length_float volumes in
+    let vm = mean volumes vn in
+    "\nData points:  " ^ ns ^ "\n" ^
+    "Current:      $" ^ float_to_string current ^ "\n" ^
+    "Mean:         $" ^ float_to_string mu ^ "\n" ^
+    "Std dev:      $" ^ float_to_string std ^ "\n" ^
+    "20-Period ROC: " ^ float_to_string momentum ^ "\n" ^
+    "5-Period SROC: " ^ float_to_string sm_roc ^ "\n" ^
+    "Rising:       " ^ float_to_string rising ^ "/10\n" ^
+    "Ret vol:      " ^ float_to_string ret_std ^ "\n" ^
+    "Avg volume:   " ^ float_to_string vm ^ " BTC\n" ^
+    "\nDecision:     " ^ d ^ "\n"
+
+(* ------ Main ------ *)
+
+let main () =
+  let header = verbose_binance_kline () in
+  let prices = fetch_binance_klines () in
+  let volumes = fetch_binance_volumes () in
+  let n = length_float prices in
+  let ns = float_to_string n in
+  let body = build_analysis ns prices volumes n in
+  let report =
+    "=== BTC/USD 5m Analysis ===\n" ^
+    "Candle: " ^ header ^ "\n" ^
+    "Count:  " ^ ns ^ body
+  in
+  print_line report

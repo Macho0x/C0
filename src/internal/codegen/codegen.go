@@ -702,12 +702,18 @@ func (g *Generator) collectExterns(mod *ast.Module) {
 			continue
 		}
 		pkgName := packageNameFromPath2(ed.Path)
-		g.externImports[ed.Path] = pkgName
+		if ed.Path != "" {
+			g.externImports[ed.Path] = pkgName
+		}
 
 		for _, ev := range ed.Vals {
-			qualified := pkgName + "." + ev.Name
+			var qualified string
+			if ed.Path == "" {
+				qualified = ev.Name // same package, no prefix
+			} else {
+				qualified = pkgName + "." + ev.Name
+			}
 			g.externNames[ev.Name] = qualified
-			// Also store without case change since extern names are Go identifiers
 		}
 	}
 }
@@ -1786,6 +1792,18 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 	if funcName != "" {
 		if paramCnt, ok := g.funcParamCount[funcName]; ok && paramCnt == 0 {
 			goto afterArgs
+		}
+		// For extern functions, strip unit arguments — C0's `unit` type maps
+		// to zero Go parameters.
+		if _, isExtern := g.externNames[funcName]; isExtern {
+			var filtered []ast.Expr
+			for _, a := range args {
+				// Unit literals are LitExpr with Kind == token.UNIT
+				if lit, ok := a.(*ast.LitExpr); !ok || lit.Kind != token.UNIT {
+					filtered = append(filtered, a)
+				}
+			}
+			args = filtered
 		}
 	}
 	for i, arg := range args {

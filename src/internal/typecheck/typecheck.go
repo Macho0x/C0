@@ -1425,6 +1425,9 @@ func (c *Checker) unifyAt(loc token.SourceLoc, t1, t2 types.Type) {
 // fails or the conversion produces an unsatisfactory type, it returns nil
 // and the caller keeps the declared C0 type.
 func (c *Checker) refineExternType(importPath, funcName string, declared types.Type) types.Type {
+	if importPath == "" {
+		return nil // same-package externs have no Go package to load
+	}
 	sig, err := gosig.LookupFunc(importPath, funcName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "c0: gosig fallback for %s.%s: %v\n", importPath, funcName, err)
