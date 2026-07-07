@@ -1,16 +1,37 @@
 # C0 Support for Zed
 
-## Installation
-
-Copy this directory to `~/.local/share/zed/extensions/c0` or use Zed's extension management.
+Syntax highlighting, file icons, and LSP integration for the [C0 language](https://github.com/Macho0x/C0).
 
 ## Features
 
-- Syntax highlighting via TextMate grammar
-- File association for `.c0` files
-- Block comment support `(* *)`
+- **File icon** — `.c0` files show the C0 logo in the file tree
+- **Syntax highlighting** — full TextMate grammar for keywords, types, operators, literals, comments
+- **LSP integration** — diagnostics, completions, and hover via the `c0` compiler
+- **Block comments** — `(* ... *)` support
+- **Language config** — proper tab/comment settings for `.c0` files
+
+## Installation
+
+### From source
+
+```bash
+cd editors/zed
+make install
+```
+
+This builds the WASM extension and installs it to `~/.local/share/zed/extensions/installed/c0/`.
+
+### From marketplace
+
+Search for "C0" in the Zed extensions panel.
+
+After installing, restart Zed or run **zed: reload extensions** from the command palette.
 
 ## Development
 
-To work on the grammar, edit `grammars/c0.tmLanguage.json`. The grammar follows
-TextMate conventions compatible with VSCode and Zed.
+- **Grammar**: edit `grammars/c0.tmLanguage.json`
+- **Icons**: edit `icons/` SVG files and `icons/theme.json`
+- **LSP adapter**: edit `src/lib.rs`
+- **Language config**: edit `languages/c0/config.toml`
+
+Run `make install` to rebuild and deploy changes.
