@@ -1,0 +1,12 @@
+module StringTest
+
+(* Test string operations from the prelude. *)
+
+let main () =
+  let chk1 = assert (string_concat "hello" " world" = "hello world") in
+  let chk2 = assert (string_concat "" "test" = "test") in
+  let chk3 = assert (string_concat "test" "" = "test") in
+  let chk4 = assert (int_to_string 42 = "42") in
+  let chk5 = assert (int_to_string 0 = "0") in
+  let chk6 = assert (int_to_string (-1) = "-1") in
+  assert (string_concat (int_to_string 99) " problems" = "99 problems")

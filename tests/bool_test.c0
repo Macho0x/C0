@@ -1,0 +1,17 @@
+module BoolTest
+
+(* Test boolean operators. *)
+
+let main () =
+  let chk1 = assert (true && true) in
+  let chk2 = assert (not (true && false)) in
+  let chk3 = assert (not (false && true)) in
+  let chk4 = assert (not (false && false)) in
+  let chk5 = assert (true || false) in
+  let chk6 = assert (false || true) in
+  let chk7 = assert (false || false = false) in
+  let chk8 = assert (not true = false) in
+  let chk9 = assert (not false = true) in
+  let chk10 = assert (true && (false || true)) in
+  let chk11 = assert ((true && true) || (false && false)) in
+  assert (not (true && false) = true)

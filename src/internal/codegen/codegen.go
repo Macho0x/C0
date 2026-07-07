@@ -51,7 +51,7 @@ type Generator struct {
 	opaqueTypes map[string]*ast.TypeDecl // opaque (linear) type declarations
 	usedOption map[string]string      // Go type name → element Go type
 	usedResult map[string][]string    // Go type name → [okGoType, errGoType]
-	usedTuple  map[string]bool         // Go type name → true
+	usedTuple  map[string][]string     // Go type name → field Go type names
 	funcRetType map[string]string      // C0 func name → Go return type (for ?)
 	funcParamCount map[string]int       // C0 func name → number of parameters
 	funcParamTypes map[string][]string  // C0 func name → Go types of parameters
@@ -116,7 +116,7 @@ func NewGenerator(srcFile string, cfg *config.Config) *Generator {
 		opaqueTypes: make(map[string]*ast.TypeDecl),
 		usedOption:  make(map[string]string),
 		usedResult:  make(map[string][]string),
-		usedTuple:   make(map[string]bool),
+		usedTuple:   make(map[string][]string),
 		funcRetType: make(map[string]string),
 		funcParamCount: make(map[string]int),
 		funcParamTypes: make(map[string][]string),
@@ -414,7 +414,7 @@ func (g *Generator) scanUsedTypes(at ast.Type) {
 				parts[i] = g.typeToGo(e)
 			}
 			goType := "Tuple" + strings.Join(parts, "")
-			g.usedTuple[goType] = true
+			g.usedTuple[goType] = parts
 		}
 		for _, e := range t.Elems {
 			g.scanUsedTypes(e)
@@ -766,12 +766,15 @@ func packageNameFromPath2(path string) string {
 // ---------------------------------------------------------------------------
 
 func (g *Generator) emitTupleTypes() {
-	for name := range g.usedTuple {
-		// name is like "TupleIntString"
-		// We need the element types. Parse from the name (stored during scanning)
-		g.emitf("// Tuple type: %s (generated)\n", name)
-		// We don't have the field types stored; skip for now
-		// Full implementation would store field types in usedTuple map
+	for name, fieldTypes := range g.usedTuple {
+		// Generate struct for each unique tuple type
+		g.emitf("type %s struct {\n", name)
+		g.indent++
+		for i, ft := range fieldTypes {
+			g.emitf("F%d %s\n", i, ft)
+		}
+		g.indent--
+		g.emitf("}\n\n")
 	}
 }
 
@@ -1388,7 +1391,17 @@ func (g *Generator) emitConstructor(e *ast.ConstructorExpr) {
 		g.buf.WriteString("New" + varName)
 		g.buf.WriteString("(")
 		if e.Arg != nil {
-			g.emitExpr(e.Arg, false)
+			if rec, ok := e.Arg.(*ast.RecordExpr); ok && g.isVariantRecordPayload(e.Name) {
+				// Inline record fields — expand as individual constructor args
+				for i, f := range rec.Fields {
+					if i > 0 {
+						g.buf.WriteString(", ")
+					}
+					g.emitExpr(f.Value, false)
+				}
+			} else {
+				g.emitExpr(e.Arg, false)
+			}
 		}
 		g.buf.WriteString(")")
 		return
@@ -2018,7 +2031,28 @@ func (g *Generator) collectArgs(e ast.Expr) []ast.Expr {
 	return result
 }
 
+// isNotPattern checks if an IfExpr matches the desugaring of `not expr`:
+//   if condition then false else true
+func isNotPattern(e *ast.IfExpr) bool {
+	falseLit, thenOk := e.ThenBranch.(*ast.LitExpr)
+	trueLit, elseOk := e.ElseBranch.(*ast.LitExpr)
+	return thenOk && elseOk &&
+		falseLit.Kind == token.FALSE && falseLit.Value == false &&
+		trueLit.Kind == token.TRUE && trueLit.Value == true
+}
+
 func (g *Generator) emitIf(e *ast.IfExpr) {
+	// Detect the `not` desugar pattern: if condition then false else true → !condition
+	if isNotPattern(e) {
+		g.buf.WriteString("!(")
+		g.emitExpr(e.Cond, false)
+		g.buf.WriteString(")")
+		return
+	}
+
+	// General case: emit as a Go if/else statement.
+	// When used as an expression (in a function call), this is valid Go because
+	// each branch terminates with `return` emitting `return false / return true`.
 	g.emitf("if ")
 	g.emitExpr(e.Cond, false)
 	g.buf.WriteString(" {\n")
@@ -2128,10 +2162,12 @@ func (g *Generator) emitMatch(e *ast.MatchExpr) {
 				}
 			}
 		}
-		// Close all open if/else blocks
-		for i := 1; i < len(grp.arms); i++ {
+		// Close the if/else chain block
+		// Single unguarded arm: no block to close (just return)
+		// Single guarded arm: close `if guard {`
+		// Multiple arms: close the last `} else {` block
+		if len(grp.arms) > 1 || (len(grp.arms) == 1 && grp.arms[0].Guard != nil) {
 			g.emitf("}\n")
-			// De-indent once for the closing brace
 		}
 		g.indent--
 	}
@@ -2249,6 +2285,23 @@ func (g *Generator) findVariantStruct(ctorName string) string {
 	return ""
 }
 
+// isVariantRecordPayload checks if the named ADT variant constructor
+// has an inline record payload (e.g., "Circle of { radius: float }").
+// Used to determine whether constructor args should emit record fields
+// as individual arguments or pass the record expression as-is.
+func (g *Generator) isVariantRecordPayload(ctorName string) bool {
+	for _, td := range g.adts {
+		ak := td.Kind.(*ast.ADTTypeKind)
+		for _, c := range ak.Cases {
+			if c.Name == ctorName && c.Arg != nil {
+				_, ok := c.Arg.(*ast.TRecord)
+				return ok
+			}
+		}
+	}
+	return false
+}
+
 // adtVariantField returns the struct field name for a constructor's payload.
 func (g *Generator) adtVariantField(ctorName string) string {
 	for _, td := range g.adts {
@@ -2356,7 +2409,15 @@ func (g *Generator) emitLetIn(e *ast.LetInExpr) {
 	if hasRet {
 		g.emitReturnExpr(e.Body)
 	} else {
-		g.emitExpr(e.Body, true)
+		// No return type: emit as a statement.
+		// Skip unit literals — they become `struct{}{}` which Go forbids
+		// as a bare expression statement.
+		if lit, ok := e.Body.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+			// nothing — void return
+		} else {
+			g.emitExpr(e.Body, true)
+			g.buf.WriteString("\n")
+		}
 	}
 }
 

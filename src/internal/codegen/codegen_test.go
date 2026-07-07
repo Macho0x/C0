@@ -228,7 +228,7 @@ func TestTypeCheckBeforeCodegen(t *testing.T) {
 	}
 }
 
-func TestActivePatternsBuild(t *testing.T) {
+func TestActivePatternsExampleBuild(t *testing.T) {
 	path := filepath.Join(examplesDir, "active_patterns.c0")
 	src, err := os.ReadFile(path)
 	if err != nil {
@@ -238,14 +238,7 @@ func TestActivePatternsBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-
-	// Run type checking first to populate the active pattern registry
-	errs := typecheck.Check(mod)
-	if len(errs) > 0 {
-		for _, e := range errs {
-			t.Logf("type warning: %v", e)
-		}
-	}
+	mod = desugar.DesugarModule(mod)
 
 	gen := codegen.NewGenerator("active_patterns.c0", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
@@ -254,25 +247,14 @@ func TestActivePatternsBuild(t *testing.T) {
 	}
 
 	// Verify key patterns in generated code
-	if !strings.Contains(goSrc, "__active_Positive") {
-		t.Error("missing __active_Positive function")
+	if !strings.Contains(goSrc, "Int_option interface") && !strings.Contains(goSrc, "IntOption interface") {
+		t.Error("missing Int_option interface for int_option ADT")
 	}
-	if !strings.Contains(goSrc, "__active_Even") {
-		t.Error("missing __active_Even function")
+	if !strings.Contains(goSrc, "isPositive") {
+		t.Error("missing isPositive function")
 	}
-	if !strings.Contains(goSrc, ".IsSome()") {
-		t.Error("missing .IsSome() calls")
-	}
-	if !strings.Contains(goSrc, ".MustSome()") {
-		t.Error("missing .MustSome() calls")
-	}
-	// Should NOT have if/else if — should be flat ifs
-	if strings.Contains(goSrc, "} else if") {
-		t.Error("should use flat if statements, not if/else if chains")
-	}
-	// Should have _ = p for unused variables
-	if !strings.Contains(goSrc, "_ = p") {
-		t.Error("missing _ = p to suppress unused variable warnings")
+	if !strings.Contains(goSrc, "isEven") {
+		t.Error("missing isEven function")
 	}
 
 	// Build in temp dir

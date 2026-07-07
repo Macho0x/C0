@@ -2,6 +2,11 @@ module AdtTest
 
 type color = | Red | Green | Blue
 
+type shape =
+  | Circle of { radius: float }
+  | Rect of { width: float; height: float }
+  | Point
+
 let numFields (c: color) : int =
   match c with
   | Red -> 0
@@ -13,8 +18,20 @@ let isRed (c: color) : bool =
   | Red -> true
   | _ -> false
 
+let area (s: shape) : float =
+  match s with
+  | Circle { radius } -> 3.14159 *. radius *. radius
+  | Rect { width; height } -> width *. height
+  | Point -> 0.0
+
 let main () =
   let chk1 = assert (numFields Red = 0) in
   let chk2 = assert (numFields Green = 1) in
   let chk3 = assert (numFields Blue = 2) in
-  assert (isRed Red)
+  let chk4 = assert (isRed Red) in
+  let c = Circle { radius = 2.0 } in
+  let r = Rect { width = 3.0; height = 4.0 } in
+  let a1 = assert (area c > 12.0) in
+  let a2 = assert (area r = 12.0) in
+  let a3 = assert (area Point = 0.0) in
+  ()

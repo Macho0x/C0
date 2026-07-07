@@ -1,0 +1,25 @@
+module IfTest
+
+let abs (n: int) : int =
+  if n >= 0 then n else -n
+
+let sign (n: int) : string =
+  if n > 0 then "positive"
+  else if n < 0 then "negative"
+  else "zero"
+
+let classify (n: int) : string =
+  if n > 100 then "big"
+  else if n > 50 then "medium"
+  else "small"
+
+let main () =
+  let chk1 = assert (abs 5 = 5) in
+  let chk2 = assert (abs (-5) = 5) in
+  let chk3 = assert (abs 0 = 0) in
+  let chk4 = assert (sign 5 = "positive") in
+  let chk5 = assert (sign (-5) = "negative") in
+  let chk6 = assert (sign 0 = "zero") in
+  let chk7 = assert (classify 200 = "big") in
+  let chk8 = assert (classify 60 = "medium") in
+  assert (classify 0 = "small")
