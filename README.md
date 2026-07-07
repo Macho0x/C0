@@ -1,9 +1,11 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/logo.jpg">
-  <img alt="C0 logo" src="assets/logo.jpg" width="120" align="right">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo.png">
+    <img alt="C0 logo" src="assets/logo.png" width="160">
+  </picture>
+</p>
 
-# C0
+<h1 align="center">C0</h1>
 
 C0 is a statically typed systems language with ML-family syntax that compiles to readable, idiomatic Go.
 
