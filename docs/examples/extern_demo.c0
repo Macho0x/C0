@@ -2,7 +2,42 @@ module Main
 
 extern "go" "strings" {
   val ToUpper : string -> string
+  val ToLower : string -> string
+}
+
+extern "go" "" {
+  go {
+    func greet(name string) string {
+      return "Hello, " + name + "!"
+    }
+    func addPrefix(prefix string, msg string) string {
+      return "[" + prefix + "] " + msg
+    }
+  }
+  val greet : string -> string
+  val addPrefix : string -> string -> string
+}
+
+extern "go" "fmt" {}
+extern "go" "time" {}
+
+extern "go" "" {
+  go {
+    func nowString() string {
+      return time.Now().Format("15:04:05")
+    }
+  }
+  val nowString : unit -> string
 }
 
 let main () =
-  print_line (ToUpper "hello")
+  let a = ToUpper "hello from C0" in
+  let b = ToLower "GOODBYE" in
+  let c = greet "C0" in
+  let d = addPrefix "INFO" "inline Go extern works" in
+  let e = nowString () in
+  let report =
+    a ^ "\n" ^ b ^ "\n" ^ c ^ "\n" ^ d ^ "\n" ^
+    "The time is " ^ e
+  in
+  print_line report
