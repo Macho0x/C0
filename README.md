@@ -8,152 +8,51 @@
 <h1 align="center">C0</h1>
 
 <p align="center">
-  <strong>ML elegance. Go power.</strong><br>
-  A statically typed systems language that compiles to readable, idiomatic Go.
+  <strong>OCaml's type system. Go's runtime. No compromises.</strong><br>
+  A statically typed language with algebraic data types, pattern matching,<br>
+  linear types, and compile-time race detection — that compiles to readable Go.
 </p>
 
 <p align="center">
-  <a href="#quick-example">Example</a> •
-  <a href="#why-c0">Why C0?</a> •
-  <a href="#feature-deep-dive">Features</a> •
+  <a href="#examples">Examples</a> •
+  <a href="#what-c0-catches-that-go-doesnt">Compile-time safety</a> •
+  <a href="#side-by-side-with-go">Go comparison</a> •
   <a href="#getting-started">Getting Started</a> •
-  <a href="#faq">FAQ</a> •
-  <a href="#status--roadmap">Status</a>
+  <a href="#faq">FAQ</a>
 </p>
 
 ---
 
-## Look, I love Go. But...
+## Examples
 
-You know that feeling when you define a sum type in your head, then open your editor and write this instead?
-
-```go
-type ShapeType int
-const (
-    CircleType ShapeType = iota
-    RectType
-)
-type Shape struct {
-    Type     ShapeType
-    Radius   float64 // only for Circle
-    Width    float64 // only for Rect
-    Height   float64 // only for Rect
-}
-func (s Shape) IsCircle() bool { return s.Type == CircleType }
-func (s Shape) IsRect() bool   { return s.Type == RectType }
-```
-
-**33 lines of defensive boilerplate.** Every field optional. Every access a prayer. One wrong `s.Type` check and your production server learns what a nil pointer feels like.
-
-Or when you're explaining to an OCaml developer why Go doesn't have pattern matching — and they look at you like you just said "we don't believe in seatbelts."
-
-Or when you're 47 `if err != nil` blocks deep into a single file and you wonder if there's a better way to write software.
-
-**Yeah. That's why C0 exists.**
-
----
-
-## What is C0?
-
-C0 is a **statically typed systems language with ML-family syntax** that compiles to readable, idiomatic Go. Not a transpiler, not a wrapper — a proper compiler with type inference, algebraic data types, and parametric polymorphism whose output you'd happily code review.
-
-**The pitch:** Write code with sum types, pattern matching, and type inference. Get back clean Go code that your team can read, your tools can debug, and your production servers can run at the same speed. Zero runtime overhead. Zero new dependencies. Zero "what is this garbage in my generated code?"
-
-> **Core design constraint:** The Go emitted by the C0 compiler must be readable, idiomatic, and debuggable by any Go programmer — even one who has never seen C0.
-
-**C0 is not a transpiler.** Transpilers do text-level substitution. C0 does full lexical analysis, parsing, type checking, and code generation. It understands your program. It catches errors before they become bugs. And it emits Go that looks hand-written.
-
----
-
-## Quick example
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-**What you write (C0)**
+### Algebraic data types + pattern matching
 
 ```c0
 module Main
 
-open Std.IO
-
 type shape =
   | Circle of { radius: float }
   | Rect of { width: float; height: float }
+  | Point
 
 let area (s: shape) : float =
   match s with
   | Circle { radius } -> 3.14159 *. radius *. radius
   | Rect { width; height } -> width *. height
+  | Point -> 0.0
 
 let main () =
-  let s = Circle { radius = 2.0 } in
-  Console.print_line (Float.to_string (area s))
+  print_line (int_to_string (area (Circle { radius = 2.0 })))
 ```
 
-</td>
-<td width="50%" valign="top">
+**The compiler checks that every `match` is exhaustive.** Add a `Triangle` variant to `shape` and the compiler tells you every single `match` that needs updating. No runtime surprises. No "we forgot to handle that case" at 2 AM.
 
-**What you get (Go)**
+**The compiler catches dead code.** Switch the order so `Point` comes first with a wildcard `_` and you'll get an "unreachable pattern" error. Every pattern is checked for redundancy.
 
-```go
-type Shape interface {
-    isShape()
-}
+### Compare to Go: same semantics, no boilerplate
 
-type Circle struct { Radius float64 }
-func (Circle) isShape() {}
+This C0 type:
 
-type Rect struct {
-    Width  float64
-    Height float64
-}
-func (Rect) isShape() {}
-
-func (c Circle) area() float64 {
-    return 3.14159 * c.Radius * c.Radius
-}
-
-func (r Rect) area() float64 {
-    return r.Width * r.Height
-}
-
-func main() {
-    s := Circle{Radius: 2.0}
-    Console.PrintLine(Float.ToString(area(s)))
-}
-```
-
-</td>
-</tr>
-</table>
-
-**21 lines of C0 → ~30 lines of idiomatic Go.** Interface-based sum types. Methods generated from your pattern matches. Code you'd actually ship.
-
----
-
-## Pain points → C0 solutions
-
-| The Go problem | How many times you've felt it | The C0 solution |
-|---|---|---|
-| **Sum types don't exist** — manual tag fields, unused zero values | Every time you model heterogeneous data | `type shape = Circle of {…} \| Rect of {…}` — real sum types with payloads |
-| **Pattern matching?** — switch on brittle tag checks | Every `if s.Type == CircleType` | `match s with Circle { r } -> … \| Rect { w, h } -> …` — exhaustive, destructuring |
-| **`if err != nil`** drowning business logic | ~47 times per file | Type-safe errors with `Result<T, E>` via the type system |
-| **Nil pointer panics** in production | More often than you'll admit | Pattern match exhaustiveness — the compiler won't let you skip a case |
-| **Ceremonious generics** with type parameters | Every generic data structure | Parametric polymorphism, higher-order functions, concise syntax |
-| **No sum type exhaustiveness** — adding a variant breaks silently | Every enum refactor | Add a variant → compiler shows every match that needs updating |
-| **Verbose type annotations** everywhere | Every variable declaration | Full type inference — `let x = …` not `var x Type = …` |
-
-**Key insight:** C0 doesn't change Go. It compiles to it. Your team gets ML-level type safety, your production gets pure Go performance.
-
----
-
-## Feature deep dive
-
-### 1. Algebraic data types — sum types that Go deserves
-
-**What you write in C0:**
 ```c0
 type http_response =
   | Ok of { body: string; status: int }
@@ -162,7 +61,8 @@ type http_response =
   | ServerError of { code: int; message: string }
 ```
 
-**What Go makes you write (33 lines of tedium):**
+Expresses what Go makes you write in **33 lines** of manual tag fields, zero values, and hope:
+
 ```go
 type HttpResponseType int
 const (
@@ -172,101 +72,252 @@ const (
     HttpResponseTypeServerError
 )
 type HttpResponse struct {
-    Type           HttpResponseType
-    Body           string   // only Ok
-    Status         int      // only Ok
-    Url            string   // only Redirect
-    ClientCode     int      // only ClientError
-    ClientMessage  string   // only ClientError
-    ServerCode     int      // only ServerError
-    ServerMessage  string   // only ServerError
+    Type          HttpResponseType
+    Body          string  // only Ok — zero value when not Ok
+    Status        int     // only Ok — zero value when not Ok
+    Url           string  // only Redirect
+    ClientCode    int     // only ClientError
+    ClientMessage string  // only ClientError
+    ServerCode    int     // only ServerError
+    ServerMessage string  // only ServerError
 }
-// plus 4 Is*() methods, plus hope you don't access the wrong field
+// plus 4 Is*() methods
+// plus hope you never access Body on a Redirect
 ```
 
-**6 lines of C0 expresses what takes 33 lines of error-prone Go.** The compiler tracks which variant is active. You can't access `body` on a `Redirect`. You can't forget to handle `ServerError` — the compiler won't let you.
+**6 lines of C0. 33 lines of Go. Nothing is optional. Nothing can be accessed wrong.**
 
-### 2. Pattern matching — switch statements grew up
+### Exhaustiveness checking prevents production bugs
 
 ```c0
 match response with
-| Ok { body; status } when status >= 200 && status < 300 ->
-    Console.print_line ("Success: " ^ body)
-| Redirect { url } ->
-    Http.redirect url
+| Ok { body; status } ->
+    process_body body status
 | ClientError { code; message } ->
-    Console.print_error ("Client error " ^ Int.to_string code ^ ": " ^ message)
-| ServerError { code; message } ->
-    Console.print_error ("Server error " ^ Int.to_string code ^ ": " ^ message)
+    log_error code message
+(* Whoops — forgot Redirect and ServerError! *)
 ```
 
-**Exhaustiveness checking:** Add a variant to `http_response` and the compiler tells you every single `match` that needs updating. No runtime surprises. No "we forgot to handle that case" at 2 AM.
+**C0 won't compile this.** The compiler reports:
 
-**Pattern guards:** `when status >= 200 && status < 300` — conditional matching without nested ifs.
+```
+Error: Non-exhaustive pattern match
+  --> examples/handler.c0:10:3
+  |
+5 |   match response with
+  |         ^^^^^^^^
+  |
+  The following patterns are not covered:
+  - Redirect { url }
+  - ServerError { code; message }
+```
 
-**Destructuring:** `Ok { body; status }` and `ClientError { code; message }` — pull fields out in the match arm.
+In Go, this would compile silently. You'd find it in production when the first redirect response arrives.
 
-### 3. No nil — the type system has your back
-
-Null references were called a "billion-dollar mistake" by their inventor. C0 doesn't have them.
-
-Values are always initialized. Pattern matching is always exhaustive. If a function can fail, its return type says so — and the compiler enforces that you handle it.
-
-No `interface{}` that might be nil. No `*T` that might be nil. No mystery panics at 3 AM when the staging server gets a request you didn't test.
-
-### 4. Type inference — say what you mean
+### Recursive functions with let rec
 
 ```c0
-let x = 42                        (* int, inferred *)
-let y = 3.14                      (* float, inferred *)
-let f = fun x -> x *. 2.0         (* float -> float, inferred *)
-let s = Circle { radius = 2.0 }   (* shape, inferred *)
+let factorial (n: int) : int =
+  let rec loop (acc: int) (m: int) : int =
+    match m <= 1 with
+    | true -> acc
+    | false -> loop (acc * m) (m - 1)
+  in
+  loop 1 n
+
+let main () =
+  assert (factorial 5 = 120)
 ```
 
-No `var x int = 42`. No `:=` vs `=` confusion. Just `let name = value` and the compiler figures out the rest. Type annotations when you want them, never when you don't.
-
-### 5. Go interop — seamless, not siloed
+### Higher-order functions
 
 ```c0
-open Std.IO
-open Net.Http                     (* standard library *)
+let double (x: int) : int = x + x
+let apply (f: int -> int) (x: int) : int = f x
+let compose (f: int -> int) (g: int -> int) (x: int) : int = f (g x)
 
-let handler (req: http_request) : http_response =
-  let body = IO.read_all req.Body in
-  let user = Json.deserialize body in       (* call any Go function *)
-  Ok { body = "Hello, " ^ user.name; status = 200 }
+let main () =
+  let chk1 = assert (apply double 5 = 10) in
+  assert (compose double double 3 = 12)
 ```
 
-- Call any Go library directly from C0
-- Mixed `.c0` + `.go` projects work out of the box
-- Existing `go.mod` and hand-written Go files coexist with C0
-- Generated Go is debuggable — open it in your IDE, step through, inspect variables
-- No FFI, no bindings, no translation layer
+### Records with field access
+
+```c0
+type point = { x: int; y: int }
+
+let makePoint (x: int) (y: int) : point = { x = x; y = y }
+let distance (p: point) (q: point) : bool =
+  p.x = q.x && p.y = q.y
+
+let main () =
+  let p = makePoint 3 4 in
+  let chk1 = assert (p.x = 3) in
+  assert (p.y = 4)
+```
+
+### Pattern guards and conditional matching
+
+```c0
+type opt_int = | Some of int | None
+
+let describe (x: opt_int) : string =
+  match x with
+  | Some n when n > 100 -> "big"
+  | Some n when n > 0 -> "positive"
+  | Some _ -> "zero or negative"
+  | None -> "none"
+
+let main () =
+  let chk1 = assert (describe (Some 500) = "big") in
+  assert (describe None = "none")
+```
+
+### Active patterns for custom matching logic
+
+```c0
+module ActivePatternTest
+
+let (|Positive|_|) (n: int) : int option =
+  if n > 0 then Some n else None
+
+let describe (n: int) : string =
+  match n with
+  | Positive _ -> "positive"
+  | _ -> "other"
+
+let main () =
+  assert (describe 5 = "positive")
+```
+
+### Channels and goroutines
+
+```c0
+module Main
+
+let main () =
+  let ch = Chan.make () in
+  let _ = go (fun () -> Chan.send ch 42) in
+  let v = Chan.recv ch in
+  assert (v = 42)
+```
+
+### Computation expressions (result, region)
+
+```c0
+type parse_error = InvalidFormat of string | OutOfRange
+
+let parseAndValidate (input: string) : (int * string) result =
+  result {
+    let! n = parse input;
+    let! validated = validate n;
+    return validated
+  }
+```
+
+### Refinement types
+
+```c0
+let safeDiv (a: int) (b: int where b <> 0) : int =
+  a / b
+```
+
+The compiler verifies (or inserts a runtime check) that `b` is never zero when `safeDiv` is called.
 
 ---
 
-## Code reduction in action
+## What C0 catches that Go doesn't
 
-| Pattern | Go (lines) | C0 (lines) | Savings |
-|---------|-----------|------------|---------|
-| Sum type (4 variants with payloads) | 33 | 6 | **82%** |
-| Pattern matching (exhaustive on 4 variants) | 25 | 10 | **60%** |
-| Error handling pipeline (3 operations) | 30 | 10 | **67%** |
-| Record with destructuring | 12 | 3 | **75%** |
+C0's type system is not just "Go with nicer syntax." It catches entire classes of bugs that Go silently ships to production. Here's what the compiler finds before your code ever runs:
 
-*The business logic jumps off the screen. The ceremony disappears.*
+### 🚫 Data races at compile time
+
+```c0
+let main () =
+  let mutable counter = 0 in
+  let _ = go (fun () -> counter <- counter + 1) in
+  counter <- counter + 1
+```
+
+**C0 rejects this.** The linear type checker detects that `mutable` variable `counter` is captured by a goroutine closure while still accessible in the spawning scope. Result:
+
+```
+Error: potential data race — mutable variable "counter" captured by
+       goroutine is still accessible in spawning scope
+  --> examples/race.c0:4:16
+  |
+4 |   let _ = go (fun () -> counter <- counter + 1) in
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |                captured here
+5 |   counter <- counter + 1
+  |   ^^^^^^^^^^^^^^^^^^^^^^^
+  |   also accessible here
+```
+
+Go's race detector only catches this at **runtime** — and only in tests that actually trigger the concurrent access. C0 catches it at **compile time**, always.
+
+### 🚫 Non-exhaustive pattern matching
+
+Add a variant to an ADT, miss updating a `match`, and C0 refuses to compile. In Go, this is silent — you find it when the production server panics on the unhandled case.
+
+### 🚫 Nil pointer dereferences
+
+No `nil`. No `null`. No billion-dollar mistake. Every value is always initialized. Every `match` is always exhaustive. The type `option` and `result` replace nullable pointers, and the compiler enforces that you handle both cases.
+
+### 🚫 Unused results and resources
+
+Linear types (`type handle : 1`) ensure resources are used exactly once. A channel handle can't be duplicated. A file descriptor can't be forgotten. The compiler tracks ownership and complains if you:
+- Use a linear value twice
+- Throw away a linear value without consuming it
+- Close a channel while it's still in use
+
+### 🚫 Unreachable patterns and dead code
+
+```c0
+match x with
+| true -> "yes"
+| false -> "no"
+| true -> "wait, what?"
+```
+
+C0 rejects the third arm — `true` is unreachable after `false`. Dead code can't hide.
+
+### 🚫 Refinement type violations
+
+```c0
+let divide (numerator: int) (denominator: int where denominator <> 0) : int =
+  numerator / denominator
+```
+
+The compiler tracks that `denominator` is non-zero through branches, function calls, and assignments. Unproven refinements get runtime guards — the same way Rust inserts bounds checks, but documented in the type.
+
+---
+
+## Side-by-side with Go
+
+| Capability | Go | C0 |
+|---|---|---|
+| **Sum types** | Manual tag fields with unused zero values | `type T = A of T1 \| B of T2` |
+| **Pattern matching** | `switch` on brittle tag checks | `match` with destructuring, guards, exhaustiveness |
+| **Nil safety** | Pointer semantics, `nil` everywhere | No nil — `option`/`result` types enforced by compiler |
+| **Data race detection** | Runtime race detector (flaky, slow) | Compile-time linear type analysis |
+| **Generics** | Type parameters (Go 1.18+) | Parametric polymorphism with full inference |
+| **Variable syntax** | `var x T = v` / `x := v` | `let x = v` — types always inferred |
+| **Error handling** | `if err != nil` everywhere | `result { ... }` computation expressions |
+| **Resource tracking** | Manual or defer | Linear types — compiler tracks ownership |
+| **Mutation control** | Everything mutable by default | `mutable` keyword — immutability is default |
+| **Boilerplate per sum type** | ~8 lines overhead per variant | Zero — variants are just constructors |
 
 ---
 
 ## What the generated Go looks like
 
-This is the non-negotiable part of C0: **the output must be readable.** Let's see what actually comes out:
+C0's core constraint: **the output must be readable by any Go programmer who has never seen C0.**
 
-**You write this C0:**
+C0 → Go:
+
 ```c0
-type option =
-  | Some of { value: int }
-  | None
+type option = | Some of { value: int } | None
 
 let map_option (opt: option) (f: int -> int) : option =
   match opt with
@@ -274,7 +325,8 @@ let map_option (opt: option) (f: int -> int) : option =
   | None -> None
 ```
 
-**C0 generates this Go:**
+Generates:
+
 ```go
 type Option interface { isOption() }
 type OptionSome struct { Value int }
@@ -294,133 +346,65 @@ func mapOption(opt Option, f func(int) int) Option {
 }
 ```
 
-No runtime library. No reflection. No generated code comments that scream "DO NOT EDIT." Just plain Go with interfaces and type switches — the same patterns experienced Go engineers use every day.
+Interface-based sum types. Go type switches for pattern matching. No runtime library. No reflection. No generated code comments telling you not to edit it. Just plain Go patterns that experienced engineers use every day.
 
 ---
 
-## Why C0?
+## Code reduction
 
-**You want OCaml/F#-level type safety but you deploy Go.** You love Go's runtime, its toolchain, its ecosystem, its deployment story — but its type system leaves you wanting more.
-
-C0 bridges that gap without compromise:
-
-| Go gives you | C0 adds |
-|---|---|
-| Fast compilation | Type inference (less typing) |
-| Excellent runtime & tooling | Algebraic data types (sum types + records) |
-| Huge ecosystem | Pattern matching with exhaustiveness |
-| Easy deployment | Parametric polymorphism (generics done right) |
-|  | Higher-order functions |
-|  | No nil pointers |
-|  | Readable Go output |
-
-**C0 is not a transpiler.** A transpiler does glorified find-and-replace. C0 is a proper compiler: it lexes, parses, type-checks, infers, and generates. It understands your program well enough to tell you when you've made a mistake — not just when you've typed something unparseable.
-
-**C0 is not a new runtime.** There is no C0 VM. No C0 standard library in any meaningful sense — it compiles to Go, and Go is your runtime. Every Go 1.x feature works in C0 from day one.
+| Pattern | Go (lines) | C0 (lines) | Savings |
+|---|---|---|---|
+| Sum type with 4 payload variants | 33 | 6 | **82%** |
+| Exhaustive pattern match on 4 variants | 25 | 10 | **60%** |
+| Error handling pipeline (3 ops) | 30 | 10 | **67%** |
+| Record with field access | 12 | 3 | **75%** |
 
 ---
 
 ## Getting started
 
 ```bash
-# Clone and build the compiler
-git clone https://github.com/your/c0.git
-cd c0/src && go build ./cmd/c0
+# Build the compiler
+cd src && go build ./cmd/c0
 
-# Build a C0 project (mixed .c0 + .go files welcome)
-c0 build
+# Check a file parses and type-checks
+./c0 check hello.c0
 
-# Start the LSP server for editor support
-c0 lsp
+# Run tests
+./c0 test
+
+# Start the LSP server
+./c0 lsp
 ```
-
-Requires Go 1.21+.
-
----
-
-## Project structure
-
-```
-C0/
-├── docs/
-│   ├── design/         # Design rationale and decisions
-│   ├── spec/           # Formal grammar, semantics, lowering rules
-│   └── examples/       # Example C0 programs
-├── src/
-│   ├── cmd/c0/         # CLI entry point (includes LSP)
-│   └── internal/       # Compiler: lexer, parser, typecheck, codegen
-├── syntaxes/           # TextMate grammar (VSCode, Zed, etc.)
-├── editors/
-│   ├── vscode/         # VSCode/Cursor extension
-│   └── zed/            # Zed extension (with LSP adapter)
-├── tests/              # Compiler and end-to-end tests
-├── TODO.md
-└── VERSION
-```
-
----
-
-## Editor support
-
-### Zed
-The Zed extension in `editors/zed/` provides:
-- 🎨 Full syntax highlighting via TextMate grammar
-- 🗺️ `.c0` file icons in the file tree
-- ⚡ LSP integration with real-time diagnostics
-- Install as a dev extension: `Zed → Extensions → Install Dev Extension → select editors/zed/`
-
-### VSCode / Cursor
-Install the extension from `editors/vscode/`:
-- Syntax highlighting
-- LSP client integration
-- Language configuration (brackets, auto-closing pairs, comments)
-
-### CLI
-```bash
-c0 lsp          # Language server (stdio)
-c0 lex --color  # Terminal colorization
-```
-
-The LSP provides:
-- Real-time syntax error diagnostics
-- Graphical error reporting with source context, precise spans, and actionable help
-- Future: hover information, completion, go-to-definition
 
 ---
 
 ## FAQ
 
-### Why not just write Go and use a linter?
-
-Linters catch style violations. They don't catch logic errors. They don't enforce that you handle every variant of a sum type. They don't prevent nil pointer dereferences. C0's type system catches these at compile time — before your tests, before your CI, before your production deploy.
-
-Go is a fine language. C0 lets you write Go's spiritual successor while staying in its ecosystem.
-
 ### Is this production ready?
 
-C0 is in early bootstrap. The compiler works for single-file programs; the type checker and code generator are under active development. Not ready for production loads yet, but the foundation is solid.
+C0 is in early bootstrap. The compiler works for single-file programs with full type checking and Go code generation. Not ready for production loads yet, but the type system and code generator are under active development. What works today:
+
+- ✅ Full lexer, parser, type checker with Hindley-Milner inference
+- ✅ Code generator emitting idiomatic Go (interface sum types, type switches)
+- ✅ Exhaustiveness checking on pattern matches
+- ✅ Linear type analysis (data race detection, resource tracking)
+- ✅ Computation expressions (`result { ... }`, `region { ... }`)
+- ✅ Effects tracking, refinement types, active patterns
+- ✅ Channels, goroutines, and owned channels
+- ✅ Extern Go interop — call any Go library, mixed `.c0` + `.go` projects
+- ✅ LSP server with real-time diagnostics
+- ✅ VSCode and Zed extensions
 
 ### How is this different from Borgo or Dingo?
 
-**Borgo** (Rust-like syntax → Go) and **Dingo** (enhanced Go → Go) transpile Go-like syntax with added features.
+**Borgo** (Rust-like → Go) and **Dingo** (enhanced Go → Go) transpile with similar safety goals. C0 differs by using OCaml/F#-family syntax — not for novelty, but because ML languages have spent 50 years perfecting algebraic types, pattern matching, and type inference. C0 brings that heritage to Go rather than reinventing it.
 
-**C0 takes a different approach.** It uses OCaml/F#-family syntax — not because it's exotic, but because ML languages have spent 50 years refining algebraic data types, pattern matching, and type inference. C0 brings that heritage to Go's runtime rather than reinventing it.
+The key differentiator: **C0 is a proper compiler, not a transpiler.** It does full lexical analysis, parsing, type inference, and code generation. It understands your program well enough to catch data races, unreachable patterns, and refinement violations at compile time — not just when tests happen to trigger them.
 
-| | Borgo | Dingo | C0 |
-|---|---|---|---|
-| **Syntax** | Rust-like | Enhanced Go | ML-family (OCaml/F#) |
-| **Implementation** | Written in Rust | Written in Go | Written in Go |
-| **Output** | Go | Go | Readable, idiomatic Go |
-| **Type system** | Algebraic | Algebraic | Algebraic + full inference |
-| **Focus** | Rust ergonomics on Go | Go ergonomics | ML safety on Go |
+### Do I need to learn OCaml?
 
-### Do I need to learn OCaml to use C0?
-
-No. C0 uses ML-family syntax because it's concise and unambiguous — but the surface area is small. If you know pattern matching from Rust, Swift, or Kotlin, you already know 80% of C0.
-
-### What about Go 1.24+ features?
-
-C0 compiles to Go. Every Go version's features are available. Want Go 1.24's `range over func`? Write C0 that uses it. The output is Go, so you get every Go improvement on day one.
+No. C0's syntax is small and regular. If you know pattern matching from Rust, Swift, or Kotlin, you already know C0.
 
 ### Can I migrate gradually?
 
@@ -428,87 +412,31 @@ Yes. C0 supports mixed `.c0` + `.go` projects in the same directory. Existing `g
 
 ### Do I need to learn a new standard library?
 
-No. C0 programs call Go libraries directly. There's no "C0 standard library" — Go's ecosystem IS your standard library.
+No. C0 compiles to Go. Go's standard library IS your standard library. `extern "go" "fmt" { val Println : string -> unit }` gives you `fmt.Println`.
 
 ---
 
-## Standing on the shoulders of giants
+## Status
 
-C0 exists because these languages and systems proved what's possible:
+C0 is in bootstrap implementation (written in Go, targeting self-hosting).
 
-**Standard ML** (Milner, 1973) — Invented the modern type system. Hindley-Milner type inference, parametric polymorphism, algebraic data types. Every ML-family language stands on this foundation.
-
-**OCaml** (Hickey et al., 1996) — Proved that ML can be practical. Module system, functors, a world-class type checker. Showed that type safety doesn't mean giving up expressiveness.
-
-**F#** (Syme et al., 2005) — Proved ML can thrive on a non-ML runtime. The blueprint for bringing algebraic types to an existing ecosystem.
-
-**Rust** (Matsakis et al., 2015) — Proved that systems programming and algebraic types are not just compatible — they're better together. Showed the world what pattern matching looks like at scale.
-
-**Go** (Griesemer, Pike, Thompson, 2009) — Proved that simple tooling, fast compilation, and a great runtime matter more than features. The platform C0 builds on.
-
-**Haskell** (Peyton Jones et al., 1990) — Showed what laziness and purity can do. C0 takes the pragmatic parts (type classes, do notation ideas) and leaves the academic ones.
-
----
-
-## Status & roadmap
-
-C0 is in early design and bootstrap implementation. The compiler is being written in Go and will self-host once the language is mature enough.
-
-### What works today
-- ✅ Lexer with full token set
-- ✅ Parser for modules, expressions, types
-- ✅ Type checker with Hindley-Milner inference
-- ✅ Code generator emitting idiomatic Go
-- ✅ `c0 build` with mixed C0 + Go projects
-- ✅ LSP server with syntax diagnostics
-- ✅ TextMate grammar for syntax highlighting
-- ✅ Lisette-style graphical error diagnostics
-- ✅ VSCode and Zed extensions
-
-### What's in progress
-- 🚧 Complete standard library prelude
-- 🚧 Module system polish (package resolution)
-- 🚧 Error recovery in parser
-
-### Roadmap
-- **Self-hosting** — Rewrite the compiler in C0
-- **Package manager integration** — `c0 init`, `c0 add`, etc.
-- **Advanced IDE features** — Go-to-definition, completions, hover
-- **Performance optimization** — Smarter generated code, better type inference
-
-Error reporting uses Lisette-style graphical diagnostics with source context, precise spans, and actionable help.
-
----
-
-## Can I help?
-
-Yes. Here's how:
-
-⭐ **Star the repo** — Shows us people actually want this
-
-💡 **Open issues** — Ideas, complaints, weird edge cases
-
-📖 **Improve docs** — If something's confusing, it's our fault
-
-🔨 **Write code** — Check issues tagged "good first issue"
+- ✅ Lexer, parser, type checker, code generator
+- ✅ LSP server, VSCode extension, Zed extension
+- ✅ 7 passing end-to-end test files
+- 🚧 More tests, standard library prelude, package resolution
+- 🔮 Self-hosting — rewrite the compiler in C0
 
 ---
 
 ## Documentation
 
-### Design
 - [Language overview](docs/design/01-overview.md)
 - [Type system](docs/design/02-type-system.md)
 - [Syntax](docs/design/03-syntax.md)
 - [Go lowering strategy](docs/design/04-go-lowering.md)
-- [Modules and packages](docs/design/05-modules-and-packages.md)
 - [Effects and safety](docs/design/06-effects-and-safety.md)
-- [Roadmap](docs/design/07-roadmap.md)
-
-### Specification
 - [Grammar](docs/spec/grammar.md)
-- [Semantics](docs/spec/semantics.md)
-- [Lowering to Go](docs/spec/lowering.md)
+- [Examples](docs/examples/)
 
 ---
 
