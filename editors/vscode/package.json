@@ -1,0 +1,50 @@
+{
+  "name": "c0",
+  "displayName": "C0 Language Support",
+  "description": "Syntax highlighting and LSP support for C0, a statically typed language that compiles to Go",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.88.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:c0"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "c0",
+        "aliases": [
+          "C0",
+          "c0"
+        ],
+        "extensions": [
+          ".c0"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "c0",
+        "scope": "source.c0",
+        "path": "./syntaxes/c0.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.88.0",
+    "typescript": "^5.0.0",
+    "vscode-test": "^1.8.0"
+  }
+}

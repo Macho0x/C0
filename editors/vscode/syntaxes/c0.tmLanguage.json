@@ -1,0 +1,48 @@
+{
+  "scopeName": "source.c0",
+  "name": "C0",
+  "patterns": [
+    {
+      "name": "comment.block.c0",
+      "begin": "/\\(\\*",
+      "end": "\\*\\)/"
+    },
+    {
+      "name": "keyword.control.c0",
+      "match": "\\b(let|rec|mutable|if|then|else|in|and|panic|where|guard)\\b"
+    },
+    {
+      "name": "keyword.type.c0",
+      "match": "\\b(type|with|of)\\b"
+    },
+    {
+      "name": "keyword.other.c0",
+      "match": "\\b(fun|module|open|extern|import|match|val|is|requires|returns|as|when|true|false|unit)\\b"
+    },
+    {
+      "name": "keyword.control_flow.c0",
+      "match": "\\b(chan|go|using)\\b"
+    },
+    {
+      "name": "constant.numeric.integer.c0",
+      "match": "\\b[0-9]+\\b"
+    },
+    {
+      "name": "constant.numeric.float.c0",
+      "match": "\\b[0-9]+\\.[0-9]+\\b"
+    },
+    {
+      "name": "string.quoted.double.c0",
+      "begin": "\\"",
+      "end": "\\""
+    },
+    {
+      "name": "variable.parameter.function.c0",
+      "match": "\\b[a-z_][a-zA-Z0-9_']*\\b"
+    },
+    {
+      "name": "variable.other.constant.c0",
+      "match": "\\b[A-Z][a-zA-Z0-9_']*\\b"
+    }
+  ]
+}

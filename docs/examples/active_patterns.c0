@@ -1,0 +1,17 @@
+module ActivePatternsDemo
+
+let (|Positive|_|) (n: int) : int option =
+  if n > 0 then Some n else None
+
+let (|Even|_|) (n: int) : int option =
+  if n - (n / 2) * 2 = 0 then Some n else None
+
+let describe (n: int) : string =
+  match n with
+  | Positive p when p > 100 -> "big positive"
+  | Positive p -> "positive"
+  | Even e -> "even"
+  | _ -> "other"
+
+let main () =
+  print_line (describe 42)

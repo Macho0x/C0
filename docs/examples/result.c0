@@ -1,0 +1,26 @@
+module ResultExample
+
+type user = { id: int; name: string }
+type error = NotFound | InvalidInput of string
+
+let findUser (id: int) : (user, error) result =
+  if id < 0 then Error (InvalidInput "negative id")
+  else if id = 42 then Ok { id = 42; name = "Alice" }
+  else Error NotFound
+
+let validateName (u: user) : (user, error) result =
+  if u.name = "" then Error (InvalidInput "empty name")
+  else Ok u
+
+let loadUser (id: int) : (user, error) result =
+  result {
+    let! user = findUser id
+    let! validated = validateName user
+    return validated
+  }
+
+let getUserName (id: int) : string =
+  match loadUser id with
+  | Ok u -> u.name
+  | Error NotFound -> "unknown"
+  | Error (InvalidInput msg) -> "invalid: " ^ msg

@@ -1,0 +1,12 @@
+module Main
+
+(* Concurrency example: create a typed channel with an explicit
+   element-type annotation, receive from it, and print the result.
+
+   The annotation `: int chan` directly constrains the channel's
+   element type, bypassing the Hindley-Milner generalization issue. *)
+
+let main () =
+  let ch : int chan = Chan.make () in
+  let v = Chan.recv ch in
+  print_line (int_to_string v)

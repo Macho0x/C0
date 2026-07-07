@@ -1,0 +1,28 @@
+module Main
+
+(* Declare a linear resource type *)
+type handle : 1
+
+(* The Close function discharges a linear handle *)
+let Close (h: handle) : unit =
+  print_line "resource closed"
+
+(* A function that uses a handle *)
+let useHandle (h: handle) : unit =
+  print_line "using handle"
+
+(* region demonstrates scoped resource management.
+   let! acquires a linear resource; it is auto-closed at region exit.
+   For v1, handle values can't be created in pure C0 — they come from
+   extern Go functions. This example demonstrates the structure.
+   In real code, `makeHandle` would be an extern call to a Go function
+   that allocates a resource. *)
+let process (h: handle) : unit =
+  region {
+    let! x = h
+    do! useHandle x
+    return ()
+  }
+
+let main () =
+  print_line "region demo"

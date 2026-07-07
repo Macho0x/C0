@@ -1,0 +1,205 @@
+module Trading.SimpleBot
+
+(* Simplified Hyperliquid trading bot focusing on core patterns.
+   Shows gorilla/websocket imports, Hyperliquid API integration,
+   and C0 idioms.
+
+   Target exchange: Hyperliquid (https://hyperliquid.xyz)
+     WS  : wss://api.hyperliquid.xyz/ws
+     REST: https://api.hyperliquid.xyz/info (queries)
+           https://api.hyperliquid.xyz/exchange (orders)
+*)
+
+(* ------------------------------------------------------------------ *)
+(* Extern Go bindings for gorilla/websocket                              *)
+(* ------------------------------------------------------------------ *)
+
+extern "go" "github.com/gorilla/websocket" {
+  (* Dialer connects to a WebSocket URL *)
+  val Dialer : { url: string } -> { conn: conn, err: error } result
+
+  (* Read/write messages *)
+  val ReadMessage : conn -> { msg: bytes, err: error } result
+  val WriteJSON : conn -> 'a -> error option
+
+  (* Connection management *)
+  val Close : conn -> error option
+}
+
+(* ------------------------------------------------------------------ *)
+(* Extern Go bindings for Hyperliquid REST API                           *)
+(* ------------------------------------------------------------------ *)
+
+extern "go" "encoding/json" {
+  val Unmarshal : bytes -> 'a -> error option
+  val Marshal : 'a -> { bytes: bytes, err: error } result
+}
+
+extern "go" "net/http" {
+  val Post : string -> string -> bytes -> { resp: resp, err: error } result
+}
+
+extern "go" "fmt" {
+  val Println : 'a list -> unit
+  val Sprintf : string -> 'a -> string
+}
+
+(* ------------------------------------------------------------------ *)
+(* Domain types                                                       *)
+(* ------------------------------------------------------------------ *)
+
+type order =
+  { coin: string
+  ; isBuy: bool
+  ; px: float         (* price for limit orders, 0 for market *)
+  ; sz: float         (* size *)
+  ; reduceOnly: bool
+  }
+
+type all_mids_msg =
+  { channel: string
+  ; data: { mids: (string * string) list }
+  }
+
+(* ------------------------------------------------------------------ *)
+(* WebSocket subscription helpers                                       *)
+(* ------------------------------------------------------------------ *)
+
+(* Subscription message for allMids channel *)
+let subscribeMsg : bytes =
+  (* JSON: {"method":"subscribe","subscription":{"type":"allMids"}} *)
+  extern_go_marshal_subscribe_all_mids
+
+(* Connect to Hyperliquid WebSocket *)
+let connectWs (url: string) : conn =
+  match Dialer { url = url } with
+  | Ok { conn = c } -> c
+  | Error e -> panic (Sprintf "dial failed: %s" e)
+
+(* ------------------------------------------------------------------ *)
+(* Parser helpers                                                     *)
+(* ------------------------------------------------------------------ *)
+
+(* Parse a mid price from string *)
+let parseFloat (s: string) : float =
+  extern_go_parse_float s
+
+(* Find a coin's mid price in the allMids response *)
+let findMid (mids: (string * string) list) (coin: string) : float option =
+  let rec loop (remaining: (string * string) list) : float option =
+    match remaining with
+    | [] -> None
+    | (k, v) :: rest ->
+        if k = coin then Some (parseFloat v)
+        else loop rest
+  in
+  loop mids
+
+(* ------------------------------------------------------------------ *)
+(* Trading logic                                                      *)
+(* ------------------------------------------------------------------ *)
+
+(* EWMA fair value tracker *)
+type ewma_state =
+  { mutable value: float
+  ; mutable initialized: bool
+  ; alpha: float
+  }
+
+let updateEwma (e: ewma_state) (newPrice: float) : float =
+  if not e.initialized then
+    e.value <- newPrice
+    ; e.initialized <- true
+  else
+    e.value <- e.alpha *. newPrice +. (1.0 -. e.alpha) *. e.value
+  ;
+  e.value
+
+(* Decide trading action based on price deviation *)
+let decideTrade
+  (fairValue: float)
+  (currentMid: float)
+  (coin: string)
+  (edgeBps: float)
+  : order option =
+  if fairValue <= 0.0 then
+    None
+  else
+    let deviationBps = (currentMid -. fairValue) /. fairValue *. 10000.0 in
+    if deviationBps > edgeBps then
+      (* Mid is high → sell *)
+      Some { coin = coin
+           ; isBuy = false
+           ; px = 0.0
+           ; sz = 0.01
+           ; reduceOnly = false }
+    else if deviationBps < (0.0 -. edgeBps) then
+      (* Mid is low → buy *)
+      Some { coin = coin
+           ; isBuy = true
+           ; px = 0.0
+           ; sz = 0.01
+           ; reduceOnly = false }
+    else
+      None
+
+(* Place order via REST API *)
+let placeOrder (o: order) : unit =
+  let body = match Marshal o with
+    | Ok { bytes = b } -> b
+    | Error e -> panic (Sprintf "marshal failed: %s" e)
+  in
+  match Post "https://api.hyperliquid.xyz/info" "application/json" body with
+  | Ok { resp = _ } -> Println ["order placed for " ^ o.coin]
+  | Error e -> Println ["order failed: " ^ e]
+
+(* ------------------------------------------------------------------ *)
+(* Main trading loop                                                  *)
+(* ------------------------------------------------------------------ *)
+
+let run (coin: string) (edgeBps: float) : unit =
+  (* Connect and subscribe *)
+  let conn = connectWs "wss://api.hyperliquid.xyz/ws" in
+  let _ = WriteJSON conn subscribeMsg in
+
+  (* Setup EWMA tracker *)
+  let ewma = { value = 0.0; initialized = false; alpha = 0.05 } in
+
+  (* Message processing loop *)
+  let running = ref true in
+  while !running do
+    match ReadMessage conn with
+    | Ok { msg = bytes } ->
+        (* Parse allMids message *)
+        let parsed : all_mids_msg option =
+          match Unmarshal bytes (ref { channel = ""; data = { mids = [] } }) with
+          | None -> None
+          | Some msg ->
+              if msg.channel = "allMids" then Some msg
+              else None
+        in
+
+        (* Process price update *)
+        match parsed with
+        | Some msg ->
+            (match findMid msg.data.mids coin with
+             | Some midPrice ->
+                 let fair = updateEwma ewma midPrice in
+                 match decideTrade fair midPrice coin edgeBps with
+                 | Some ord ->
+                     Println ["edge detected on " ^ coin]
+                     ; placeOrder ord
+                 | None -> ()
+             | None -> ())
+        | None -> ()
+    | Error e ->
+        Println ["read error: " ^ e]
+        ; running := false
+  done
+  ;
+  let _ = Close conn in
+  Println ["bot stopped"]
+
+let main () =
+  (* Trade BTC with 5 bps edge threshold *)
+  run "BTC" 5.0

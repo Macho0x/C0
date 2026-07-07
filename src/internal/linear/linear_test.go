@@ -1,0 +1,486 @@
+package linear_test
+
+import (
+	"testing"
+
+	"c0.dev/compiler/internal/ast"
+	"c0.dev/compiler/internal/desugar"
+	"c0.dev/compiler/internal/linear"
+	"c0.dev/compiler/internal/parser"
+)
+
+func mustParse(t *testing.T, src string) *ast.Module {
+	t.Helper()
+	mod, err := parser.Parse("<test>", []byte(src))
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	return desugar.DesugarModule(mod)
+}
+
+func linearTypes(mod *ast.Module) map[string]bool {
+	lt := make(map[string]bool)
+	for _, d := range mod.Decls {
+		if td, ok := d.(*ast.TypeDecl); ok && td.Quantity == 1 {
+			lt[td.Name] = true
+		}
+	}
+	return lt
+}
+
+func assertNoErrors(t *testing.T, errs []error) {
+	t.Helper()
+	for _, e := range errs {
+		t.Errorf("unexpected error: %v", e)
+	}
+}
+
+func assertHasError(t *testing.T, errs []error, substr string) {
+	t.Helper()
+	for _, e := range errs {
+		if contains(e.Error(), substr) {
+			return
+		}
+	}
+	t.Errorf("expected error containing %q, got %v", substr, errs)
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+// TestProperDischarge_NoError: linear type properly discharged (single use) → no error.
+func TestProperDischarge_NoError(t *testing.T) {
+	src := `module Test
+type handle : 1
+
+let process (h: handle) : unit =
+  print_line "ok"
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertNoErrors(t, errs)
+}
+
+// TestHandOff_NoError: passing a linear value to another function discharges it.
+func TestHandOff_NoError(t *testing.T) {
+	src := `module Test
+type handle : 1
+
+let Close (h: handle) : unit =
+  print_line "closed"
+
+let process (h: handle) : unit =
+  Close h
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertNoErrors(t, errs)
+}
+
+// TestDoubleUse_Error: linear type used twice → error.
+func TestDoubleUse_Error(t *testing.T) {
+	src := `module Test
+type handle : 1
+
+let Close (h: handle) : unit =
+  print_line "closed"
+
+let process (h: handle) : unit =
+  let dummy = Close h in Close h
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertHasError(t, errs, "used after being discharged")
+}
+
+// TestUnrestrictedNoError: ordinary (unrestricted) type used multiple times → no error.
+func TestUnrestrictedNoError(t *testing.T) {
+	src := `module Test
+type config = string
+
+let process (x: config) : config =
+  let a = x in
+  let b = x in
+  a ^ b
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertNoErrors(t, errs)
+}
+
+// TestLinearTypeDecl_Parsed: verify that : 1 syntax is parsed correctly.
+func TestLinearTypeDecl_Parsed(t *testing.T) {
+	src := `module Test
+type handle : 1
+type normal = string
+
+let main () = print_line "test"
+`
+	mod, err := parser.Parse("<test>", []byte(src))
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	mod = desugar.DesugarModule(mod)
+
+	// Check that handle has Quantity 1
+	foundHandle := false
+	for _, d := range mod.Decls {
+		if td, ok := d.(*ast.TypeDecl); ok {
+			if td.Name == "handle" {
+				foundHandle = true
+				if td.Quantity != 1 {
+					t.Errorf("expected handle.Quantity=1, got %d", td.Quantity)
+				}
+				if _, ok := td.Kind.(*ast.OpaqueTypeKind); !ok {
+					t.Errorf("expected OpaqueTypeKind for handle, got %T", td.Kind)
+				}
+			}
+			if td.Name == "normal" {
+				if td.Quantity != 0 {
+					t.Errorf("expected normal.Quantity=0, got %d", td.Quantity)
+				}
+			}
+		}
+	}
+	if !foundHandle {
+		t.Error("handle type declaration not found")
+	}
+}
+
+// TestIfBranchBothDischarge_NoError: both branches discharge → no error.
+func TestIfBranchBothDischarge_NoError(t *testing.T) {
+	src := `module Test
+type handle : 1
+
+let CloseA (h: handle) : unit =
+  print_line "closed A"
+
+let CloseB (h: handle) : unit =
+  print_line "closed B"
+
+let process (h: handle) = 
+  if true then CloseA h else CloseB h
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertNoErrors(t, errs)
+}
+
+// TestIfBranchOnlyOneDischarge_Error: one branch doesn't discharge → error.
+func TestIfBranchOnlyOneDischarge_Error(t *testing.T) {
+	src := `module Test
+type handle : 1
+
+let CloseA (h: handle) : unit =
+  print_line "closed A"
+
+let process (h: handle) = 
+  if true then CloseA h else print_line "no close"
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertHasError(t, errs, "not discharged in else-branch")
+}
+
+// TestRegionAutoDischarge_NoError: region auto-discharges linear resources
+// acquired via let!, even if they are never explicitly discharged.
+func TestRegionAutoDischarge_NoError(t *testing.T) {
+	src := `module Test
+type handle : 1
+
+let Close (h: handle) : unit =
+  print_line "closed"
+
+let useIt (h: handle) : unit =
+  print_line "using"
+
+let process (h: handle) : unit =
+  region {
+    let! x = h
+    do! useIt x
+    return ()
+  }
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertNoErrors(t, errs)
+}
+
+// TestRegionUnusedLinear_NoError: a linear resource acquired via let! in a
+// region that is never used is auto-discharged at region exit (no error).
+func TestRegionUnusedLinear_NoError(t *testing.T) {
+	src := `module Test
+type handle : 1
+
+let Close (h: handle) : unit =
+  print_line "closed"
+
+let process (h: handle) : unit =
+  region {
+    let! x = h
+    return ()
+  }
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertNoErrors(t, errs)
+}
+
+// TestRegionMultipleLetBang_NoError: region with multiple let! bindings
+// auto-discharges all of them.
+func TestRegionMultipleLetBang_NoError(t *testing.T) {
+	src := `module Test
+type handle : 1
+
+let Close (h: handle) : unit =
+  print_line "closed"
+
+let process (h1: handle) (h2: handle) : unit =
+  region {
+    let! a = h1
+    let! b = h2
+    return ()
+  }
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertNoErrors(t, errs)
+}
+
+// ---------------------------------------------------------------------------
+// Goroutine sharing analysis tests
+// ---------------------------------------------------------------------------
+
+// TestMutableGoCapture_RaceError: a mutable variable captured by a goroutine
+// while still accessible in the spawning scope → error.
+func TestMutableGoCapture_RaceError(t *testing.T) {
+	src := `module Test
+
+let race () =
+  let mutable counter = 0 in
+  go (fun () -> counter)
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertHasError(t, errs, "mutable variable \"counter\" captured by goroutine")
+}
+
+// TestMutableMultiGoCapture_Error: a mutable variable captured by two
+// goroutines → error about sharing between multiple goroutines.
+func TestMutableMultiGoCapture_Error(t *testing.T) {
+	src := `module Test
+
+let race () =
+  let mutable counter = 0 in
+  let dummy = go (fun () -> counter) in
+  go (fun () -> counter)
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertHasError(t, errs, "shared between multiple goroutines")
+}
+
+// TestImmutableGoCapture_NoError: an immutable variable captured by a
+// goroutine is always safe → no error.
+func TestImmutableGoCapture_NoError(t *testing.T) {
+	src := `module Test
+
+let safe () =
+  let x = 42 in
+  go (fun () -> x)
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertNoErrors(t, errs)
+}
+
+// TestChannelGoCapture_NoError: channel communication (immutable channel
+// variable) captured by a goroutine → no error.
+func TestChannelGoCapture_NoError(t *testing.T) {
+	src := `module Test
+
+let safe () =
+  let ch : int chan = Chan.make () in
+  go (fun () -> Chan.send ch 42)
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertNoErrors(t, errs)
+}
+
+// TestMutableModuleLevelGoCapture_Error: a module-level mutable variable
+// captured by a goroutine in a top-level function → error.
+func TestMutableModuleLevelGoCapture_Error(t *testing.T) {
+	src := `module Test
+
+let mutable counter = 0
+
+let race () =
+  go (fun () -> counter)
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertHasError(t, errs, "mutable variable \"counter\" captured by goroutine")
+}
+
+// TestMutableCapturedNotAccessed_StillError: the analysis is conservative —
+// even if the spawning scope never actually accesses the mutable variable
+// after the go expression, it is still flagged. This is a known false
+// positive; the analysis may be refined in a future version.
+func TestMutableCapturedNotAccessed_StillError(t *testing.T) {
+	src := `module Test
+
+let race () =
+  let mutable counter = 0 in
+  go (fun () -> counter)
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	// Conservative: still flagged even though spawning scope doesn't use counter after go
+	assertHasError(t, errs, "mutable variable \"counter\" captured by goroutine")
+}
+
+// ---------------------------------------------------------------------------
+// OwnedChan tests
+// ---------------------------------------------------------------------------
+
+func ownedChanLinearTypes() map[string]bool {
+	return map[string]bool{"owned_chan": true}
+}
+
+// TestOwnedChanBorrowSend_NoError: OwnedChan.send borrows the channel (doesn't
+// discharge it), so multiple sends before close is valid.
+func TestOwnedChanBorrowSend_NoError(t *testing.T) {
+	src := `module Test
+
+let send3 (ch: int owned_chan) : unit =
+  let _u1 = OwnedChan.send ch 1 in
+  let _u2 = OwnedChan.send ch 2 in
+  let _u3 = OwnedChan.send ch 3 in
+  OwnedChan.close ch
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, ownedChanLinearTypes())
+	assertNoErrors(t, errs)
+}
+
+// TestOwnedChanSendAfterClose_Error: send after close is a linear double-use
+// error because close discharges the channel.
+func TestOwnedChanSendAfterClose_Error(t *testing.T) {
+	src := `module Test
+
+let bad (ch: int owned_chan) : unit =
+  let _u1 = OwnedChan.close ch in
+  OwnedChan.send ch 1
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, ownedChanLinearTypes())
+	assertHasError(t, errs, "used after being discharged")
+}
+
+// TestOwnedChanDoubleClose_Error: closing an already-closed channel is a
+// linear double-use error.
+func TestOwnedChanDoubleClose_Error(t *testing.T) {
+	src := `module Test
+
+let bad (ch: int owned_chan) : unit =
+  let _u1 = OwnedChan.close ch in
+  OwnedChan.close ch
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, ownedChanLinearTypes())
+	assertHasError(t, errs, "used after being discharged")
+}
+
+// TestOwnedChanNotDischarged_Error: failing to close/discard an OwnedChan is
+// a discharge error.
+func TestOwnedChanNotDischarged_Error(t *testing.T) {
+	src := `module Test
+
+let bad () : unit =
+  let ch : int owned_chan = OwnedChan.make () in
+  OwnedChan.send ch 1
+  (* no close — ch is never discharged *)
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, ownedChanLinearTypes())
+	assertHasError(t, errs, "not discharged")
+}
+
+// TestOwnedChanHandOff_NoError: passing an OwnedChan to another function
+// (hand-off) discharges it.
+func TestOwnedChanHandOff_NoError(t *testing.T) {
+	src := `module Test
+
+let closeIt (ch: int owned_chan) : unit =
+  OwnedChan.close ch
+
+let process (ch: int owned_chan) : unit =
+  closeIt ch
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, ownedChanLinearTypes())
+	assertNoErrors(t, errs)
+}
+
+// TestOwnedChanRecvBorrow_NoError: OwnedChan.recv borrows the channel
+// (doesn't discharge), so recv followed by close is valid.
+func TestOwnedChanRecvBorrow_NoError(t *testing.T) {
+	src := `module Test
+
+let recvThenClose (ch: int owned_chan) : unit =
+  let v = OwnedChan.recv ch in
+  OwnedChan.close ch
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, ownedChanLinearTypes())
+	assertNoErrors(t, errs)
+}

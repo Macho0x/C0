@@ -1,0 +1,6 @@
+module Main
+
+let main () =
+  let ch = Chan.make () in
+  let u = Chan.close ch in
+  print_line "channel safety works!"

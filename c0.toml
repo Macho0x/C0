@@ -1,0 +1,8 @@
+# C0 compiler configuration
+# See docs/design/05-modules-and-packages.md for details.
+
+module_root = "github.com/example/c0demo"
+
+[mappings]
+"Std.IO"   = "c0.dev/std/io"
+"Std.List" = "c0.dev/std/list"

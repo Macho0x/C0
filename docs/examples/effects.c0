@@ -1,0 +1,20 @@
+module Main
+
+(* Explicit IO effect *)
+let readFile (path: string) : string with { io } =
+  (* would call extern Go file reading *)
+  path
+
+(* Pure function: no `with` clause *)
+let double (x: int) : int = x * 2
+
+(* Row-polymorphic: works with any effect set that includes log *)
+let logAndReturn (x: int) : int with { log } =
+  (* would log something *)
+  x
+
+(* Pure main *)
+let main () =
+  let n = double 21 in
+  let m = double (double 1) in
+  print_line (int_to_string (n + m))

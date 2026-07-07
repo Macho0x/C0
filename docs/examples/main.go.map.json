@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "source": "../docs/examples/concurrency.c0",
+  "generated": "main.go",
+  "mappings": [
+    {
+      "c0_line": 1,
+      "c0_column": 0,
+      "go_line": 1,
+      "go_column": 1
+    },
+    {
+      "c0_line": 1,
+      "c0_column": 1,
+      "go_line": 30,
+      "go_column": 1
+    }
+  ]
+}

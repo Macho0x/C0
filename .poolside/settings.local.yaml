@@ -1,0 +1,18 @@
+tools:
+    shell:
+        allow:
+            - ls *
+            - rm *
+            - find *
+            - head *
+            - echo *
+            - mkdir *
+            - cat *
+            - grep *
+            - cp *
+            - cd *
+            - go build *
+            - ./src/c0 lex *
+            - go mod *
+            - ./src/c0 lsp
+            - ./src/c0 test *

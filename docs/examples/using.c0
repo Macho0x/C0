@@ -1,0 +1,10 @@
+module UsingDemo
+
+type resource = { name: string }
+
+let Close (r: resource) : unit =
+  print_line ("closing " ^ r.name)
+
+let main () =
+  using r = { name = "demo" } in
+  print_line "using resource"

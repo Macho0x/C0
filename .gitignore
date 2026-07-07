@@ -1,0 +1,35 @@
+# Binaries
+c0
+c0.exe
+*.o
+*.test
+*.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependencies
+vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+/tmp/
+
+# Project-specific
+codedb.snapshot
+*.snapshot
+
+# Environment
+.env
+.env.local

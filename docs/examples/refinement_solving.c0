@@ -1,0 +1,15 @@
+module Main
+
+let safeDiv (a: int) (b: int where b <> 0) : int = a / b
+
+let compute (x: int) (y: int) : int =
+  if y <> 0 then
+    safeDiv x y    (* proven: y <> 0 from if-condition -> no runtime check *)
+  else
+    0
+
+let risky (x: int) (y: int) : int =
+  safeDiv x y      (* unproven: no context -> runtime check emitted *)
+
+let main () =
+  print_line (int_to_string (compute 100 5))

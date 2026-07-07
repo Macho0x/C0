@@ -1,0 +1,17 @@
+module MacrosDemo
+
+type status = Ok | Err of string
+
+let describe (s: status) : string =
+  if s is Ok then "ok" else "not ok"
+
+let message (s: status) : string =
+  s as Err msg -> msg else "fine"
+
+let handle (s: status) : string =
+  guard Err msg = s else "no error"
+
+let main () =
+  let s = Ok in
+  print_line (describe s)
+

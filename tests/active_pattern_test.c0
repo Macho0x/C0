@@ -1,0 +1,12 @@
+module ActivePatternTest
+
+let (|Positive|_|) (n: int) : int option =
+  if n > 0 then Some n else None
+
+let main () =
+  assert (describe 5 = "positive")
+
+let describe (n: int) : string =
+  match n with
+  | Positive _ -> "positive"
+  | _ -> "other"

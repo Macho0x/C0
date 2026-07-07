@@ -1,0 +1,8 @@
+module Main
+
+extern "go" "strings" {
+  val ToUpper : string -> string
+}
+
+let main () =
+  print_line (ToUpper "hello")

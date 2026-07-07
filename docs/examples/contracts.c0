@@ -1,0 +1,11 @@
+module Main
+
+let safeDiv (a: int) (b: int where b <> 0) : int = a / b
+
+let clamp (x: int) (lo: int) (hi: int where hi >= lo) : int where result >= lo && result <= hi =
+  if x < lo then lo
+  else if x > hi then hi
+  else x
+
+let main () =
+  print_line (int_to_string (safeDiv 100 5))

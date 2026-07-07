@@ -1,0 +1,163 @@
+package prelude_test
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"c0.dev/compiler/internal/ast"
+	"c0.dev/compiler/internal/codegen"
+	"c0.dev/compiler/internal/config"
+	"c0.dev/compiler/internal/parser"
+	"c0.dev/compiler/internal/prelude"
+	"c0.dev/compiler/internal/typecheck"
+)
+
+func TestPreludeBindings(t *testing.T) {
+	p := prelude.Default()
+	if p == nil {
+		t.Fatal("expected non-nil prelude")
+	}
+
+	// Check that key bindings exist
+	names := []string{"print_line", "print", "int_to_string", "float_to_string",
+		"string_concat", "list_length", "list_append", "panic_message"}
+	for _, name := range names {
+		b := p.Lookup(name)
+		if b == nil {
+			t.Errorf("missing prelude binding: %s", name)
+			continue
+		}
+		if b.Lowering.Func == "" && b.Lowering.Operator == "" {
+			t.Errorf("prelude binding %s has no lowering", name)
+		}
+		if b.Scheme == nil {
+			t.Errorf("prelude binding %s has no type scheme", name)
+		}
+	}
+}
+
+func TestPrintLineTypeCheck(t *testing.T) {
+	src := `module Test
+let main () =
+  print_line "hello"
+`
+	mod := parseString(t, src)
+	errs := typecheck.Check(mod)
+	if len(errs) > 0 {
+		for _, e := range errs {
+			t.Errorf("type error: %v", e)
+		}
+	}
+}
+
+func TestPrintLineCompiles(t *testing.T) {
+	src := `module Test
+let main () =
+  print_line "hello"
+`
+	mod := parseString(t, src)
+	gen := codegen.NewGenerator("test.c0", config.DefaultConfig())
+	goSrc, err := gen.Generate(mod)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	if !strings.Contains(goSrc, "fmt.Println") {
+		t.Error("expected fmt.Println in generated code")
+	}
+	if !strings.Contains(goSrc, `"fmt"`) {
+		t.Error("expected fmt import in generated code")
+	}
+
+	// Verify it builds
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "main.go")
+	os.WriteFile(outPath, []byte(goSrc), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0644)
+
+	cmd := exec.Command("go", "build", outPath)
+	cmd.Dir = tmpDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
+	}
+}
+
+func TestIntToStringCompiles(t *testing.T) {
+	src := `module Test
+let main () =
+  print_line (int_to_string 42)
+`
+	mod := parseString(t, src)
+	gen := codegen.NewGenerator("test.c0", config.DefaultConfig())
+	goSrc, err := gen.Generate(mod)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	if !strings.Contains(goSrc, "strconv.Itoa") {
+		t.Error("expected strconv.Itoa in generated code")
+	}
+}
+
+func TestStringConcatLowering(t *testing.T) {
+	src := `module Test
+let main () =
+  print_line (string_concat "Hello, " "World!")
+`
+	mod := parseString(t, src)
+	gen := codegen.NewGenerator("test.c0", config.DefaultConfig())
+	goSrc, err := gen.Generate(mod)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	// string_concat a b should lower to a + b
+	if !strings.Contains(goSrc, `"Hello, " +`) {
+		t.Error("expected string concat lowering to + operator")
+	}
+}
+
+func TestConsoleDotPrintLineBackCompat(t *testing.T) {
+	src := `module Test
+let main () =
+  Console.print_line "hello"
+`
+	mod := parseString(t, src)
+	gen := codegen.NewGenerator("test.c0", config.DefaultConfig())
+	goSrc, err := gen.Generate(mod)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	if !strings.Contains(goSrc, "fmt.Println") {
+		t.Error("expected fmt.Println (Console.print_line backward compat)")
+	}
+}
+
+func TestPreludeShadowable(t *testing.T) {
+	// User can define their own print_line
+	src := `module Test
+let print_line (s: string) = s
+let main () =
+  print_line "hello"
+`
+	mod := parseString(t, src)
+	errs := typecheck.Check(mod)
+	if len(errs) > 0 {
+		for _, e := range errs {
+			t.Errorf("type error: %v", e)
+		}
+	}
+}
+
+func parseString(t *testing.T, src string) *ast.Module {
+	t.Helper()
+	mod, err := parser.Parse("test.c0", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	return mod
+}

@@ -1,0 +1,47 @@
+module Trading.OrderBook
+
+type side = Buy | Sell
+
+type order =
+  { id: string
+  ; symbol: string
+  ; side: side
+  ; price: float
+  ; qty: int
+  }
+
+type fill =
+  { buyOrder: string
+  ; sellOrder: string
+  ; price: float
+  ; qty: int
+  }
+
+type book =
+  { bids: order list
+  ; asks: order list
+  }
+
+let emptyBook : book = { bids = []; asks = [] }
+
+let isBetter (side: side) (a: float) (b: float) : bool =
+  match side with
+  | Buy -> a > b
+  | Sell -> a < b
+
+let rec insertBy (greater: float -> float -> bool) (o: order) (orders: order list) : order list =
+  match orders with
+  | [] -> [o]
+  | first :: rest ->
+      if greater o.price first.price then o :: orders
+      else first :: insertBy greater o rest
+
+let addOrder (book: book) (o: order) : book =
+  match o.side with
+  | Buy -> { book with bids = insertBy (isBetter Buy) o book.bids }
+  | Sell -> { book with asks = insertBy (isBetter Sell) o book.asks }
+
+let bestBid (book: book) : float option =
+  match book.bids with
+  | [] -> None
+  | b :: _ -> Some b.price
