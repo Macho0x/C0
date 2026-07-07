@@ -1,0 +1,18 @@
+module RecordsTest
+
+type point = { x: int; y: int }
+
+let makePoint (x: int) (y: int) : point = { x = x; y = y }
+
+let getX (p: point) : int = p.x
+
+let getY (p: point) : int = p.y
+
+let equal (p: point) (q: point) : bool = p.x = q.x && p.y = q.y
+
+let main () =
+  let p = makePoint 3 4 in
+  let chk1 = assert (getX p = 3) in
+  let chk2 = assert (getY p = 4) in
+  let chk3 = assert (equal p { x = 3; y = 4 }) in
+  assert (equal p { x = 0; y = 0 } = false)

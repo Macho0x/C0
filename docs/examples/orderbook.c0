@@ -38,8 +38,8 @@ let rec insertBy (greater: float -> float -> bool) (o: order) (orders: order lis
 
 let addOrder (book: book) (o: order) : book =
   match o.side with
-  | Buy -> { book with bids = insertBy (isBetter Buy) o book.bids }
-  | Sell -> { book with asks = insertBy (isBetter Sell) o book.asks }
+  | Buy -> { bids = insertBy (isBetter Buy) o book.bids; asks = book.asks }
+  | Sell -> { bids = book.bids; asks = insertBy (isBetter Sell) o book.asks }
 
 let bestBid (book: book) : float option =
   match book.bids with

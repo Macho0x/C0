@@ -1,17 +1,19 @@
 module ActivePatternsDemo
 
-let (|Positive|_|) (n: int) : int option =
-  if n > 0 then Some n else None
+type int_option = | Some of { value: int } | None
 
-let (|Even|_|) (n: int) : int option =
-  if n - (n / 2) * 2 = 0 then Some n else None
+let isPositive (n: int) : int_option =
+  if n > 0 then Some { value = n } else None
+
+let isEven (n: int) : bool =
+  n - (n / 2) * 2 = 0
 
 let describe (n: int) : string =
-  match n with
-  | Positive p when p > 100 -> "big positive"
-  | Positive p -> "positive"
-  | Even e -> "even"
-  | _ -> "other"
+  match isPositive n with
+  | Some { value = p } when p > 100 -> "big positive"
+  | Some { value = _ } -> "positive"
+  | None when isEven n -> "even"
+  | None -> "other"
 
 let main () =
   print_line (describe 42)

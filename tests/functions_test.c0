@@ -1,0 +1,19 @@
+module FunctionsTest
+
+let double (x: int) : int = x + x
+
+let apply (f: int -> int) (x: int) : int = f x
+
+let compose (f: int -> int) (g: int -> int) (x: int) : int = f (g x)
+
+let rec loop (acc: int) (m: int) : int =
+  if m <= 1 then acc else loop (acc * m) (m - 1)
+
+let factorial (n: int) : int = loop 1 n
+
+let main () =
+  let chk1 = assert (double 3 = 6) in
+  let chk2 = assert (apply double 5 = 10) in
+  let chk3 = assert (compose double double 3 = 12) in
+  let chk4 = assert (factorial 0 = 1) in
+  assert (factorial 5 = 120)

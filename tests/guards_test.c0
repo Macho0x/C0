@@ -1,0 +1,21 @@
+module GuardsTest
+
+type opt_int = | Some of int | None
+
+let describe (x: opt_int) : string =
+  match x with
+  | Some n -> if n > 100 then "big" else if n > 0 then "positive" else "zero or negative"
+  | None -> "none"
+
+let is_some (x: opt_int) : bool =
+  match x with
+  | Some _ -> true
+  | None -> false
+
+let main () =
+  let chk1 = assert (describe (Some 500) = "big") in
+  let chk2 = assert (describe (Some 42) = "positive") in
+  let chk3 = assert (describe (Some 0) = "zero or negative") in
+  let chk4 = assert (describe None = "none") in
+  let chk5 = assert (is_some (Some 1)) in
+  assert (is_some None = false)

@@ -30,6 +30,9 @@ editors/zed/Cargo.lock
 
 # Build artifacts
 /tmp/
+tests/*.go
+tests/*.map.json
+.cortexkit/
 
 # Project-specific
 codedb.snapshot

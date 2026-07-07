@@ -1,6 +1,8 @@
 module Trading.AllMidsBot
 
-(* AllMids WebSocket trading bot.
+(* DESIGN SKETCH — does not compile with the current bootstrap compiler.
+
+   AllMids WebSocket trading bot.
    Illustrates C0's extern Go interop with gorilla/websocket,
    JSON parsing, channel-based concurrency, and order placement.
 
@@ -23,9 +25,9 @@ module Trading.AllMidsBot
 
 extern "go" "github.com/gorilla/websocket" {
   (* The dialer dials a websocket URL and returns a connection. *)
-  val Dialer : { url: string } -> { conn: conn, err: error } result
+  val Dialer : { url: string } -> { conn: conn; err: error } result
   (* ReadMessage blocks until a message arrives. *)
-  val ReadMessage : conn -> { msg: bytes, err: error } result
+  val ReadMessage : conn -> { msg: bytes; err: error } result
   (* WriteJSON sends a value as JSON. *)
   val WriteJSON : conn -> 'a -> error option
   (* Close terminates the connection. *)
@@ -36,11 +38,11 @@ extern "go" "encoding/json" {
   (* Unmarshal parses JSON bytes into a C0 record. *)
   val Unmarshal : bytes -> 'a -> error option
   (* Marshal serialises a C0 record to JSON bytes. *)
-  val Marshal : 'a -> { bytes: bytes, err: error } result
+  val Marshal : 'a -> { bytes: bytes; err: error } result
 }
 
 extern "go" "net/http" {
-  val Post : string -> string -> bytes -> { resp: resp, err: error } result
+  val Post : string -> string -> bytes -> { resp: resp; err: error } result
 }
 
 extern "go" "fmt" {
@@ -68,9 +70,9 @@ type all_mids_msg =
 
 type market_state =
   { symbol: string
-  ; mutable mid: float
-  ; mutable samples: int
-  ; mutable fairValue: float
+  ; mid: float
+  ; samples: int
+  ; fairValue: float
   }
 
 (* ------------------------------------------------------------------ *)
@@ -160,51 +162,54 @@ let run (symbol: string) (edgeBps: float) : unit =
   (* Spawn a goroutine that reads messages and sends parsed
      mids on a channel; the main loop consumes them. *)
   let mids = Chan.make () : float chan in
-  go (fun () ->
-    let running = ref true in
-    while !running do
-      match ReadMessage conn with
-      | Ok { msg = bytes } ->
-          (* Parse the allMids message and extract our symbol's mid. *)
-          let parsed : all_mids_msg option =
-            match Unmarshal bytes (ref { channel = ""; data = { mids = [] } }) with
-            | None -> None
-            | Some _ ->
-                (* In a full implementation we'd walk the mids list
-                   and find our symbol. Simplified here. *)
-                Some { channel = "allMids"; data = { mids = [] } }
-          in
-          (match parsed with
-           | Some msg when msg.channel = "allMids" ->
-               (* Find our symbol in the mids list. *)
-               let rec find (sym: string) (xs: (string * string) list) : float option =
-                 match xs with
-                 | [] -> None
-                 | (k, v) :: rest ->
-                     if k = sym then Some (parseFloat v)
-                     else find sym rest
-               in
-               (match find symbol msg.data.mids with
-                | Some px -> Chan.send mids px
-                | None -> ())
-           | _ -> ())
-      | Error e ->
-          print_line ("read error: " ^ e)
-          running := false
-    done)
+  let stop = Chan.make () : unit chan in
+  let rec readerLoop () =
+    match ReadMessage conn with
+    | Ok { msg = bytes } ->
+        (* Parse the allMids message and extract our symbol's mid. *)
+        let parsed : all_mids_msg option =
+          match Unmarshal bytes { channel = ""; data = { mids = [] } } with
+          | None -> None
+          | Some _ ->
+              (* In a full implementation we'd walk the mids list
+                 and find our symbol. Simplified here. *)
+              Some { channel = "allMids"; data = { mids = [] } }
+        in
+        (match parsed with
+         | Some msg when msg.channel = "allMids" ->
+             (* Find our symbol in the mids list. *)
+             let rec find (sym: string) (xs: (string * string) list) : float option =
+               match xs with
+               | [] -> None
+               | (k, v) :: rest ->
+                   if k = sym then Some (parseFloat v)
+                   else find sym rest
+             in
+             (match find symbol msg.data.mids with
+              | Some px -> Chan.send mids px
+              | None -> ());
+             readerLoop ()
+         | _ -> readerLoop ())
+    | Error e ->
+        print_line ("read error: " ^ e);
+        Chan.send stop ()
+  in
+  go readerLoop
   ;
   (* Main loop: consume mids, update fair value, decide, trade. *)
-  let trading = ref true in
-  while !trading do
+  let rec tradingLoop () =
     let px = Chan.recv mids in
-    updateFairValue mkt px 0.05
+    updateFairValue mkt px 0.05;
     (match decide mkt edgeBps with
      | Some order ->
-         print_line (Sprintf "edge detected on %s, placing order" symbol)
-         placeOrder order
-     | None -> ())
-  done
+         print_line (Sprintf "edge detected on %s, placing order" symbol);
+         placeOrder order;
+         tradingLoop ()
+     | None -> tradingLoop ())
+  in
+  go tradingLoop
   ;
+  let _ = Chan.recv stop in
   Close conn
 
 let main () =

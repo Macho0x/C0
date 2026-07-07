@@ -1,6 +1,8 @@
 module Main
 
-(* Compile-time data race detection example.
+(* DESIGN SKETCH — expected to fail type checking (demonstrates compiler error detection).
+
+   Compile-time data race detection example.
 
    The C0 compiler performs goroutine sharing analysis as part of its
    linear discharge checker. This analysis flags potential data races

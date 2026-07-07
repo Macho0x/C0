@@ -6,5 +6,8 @@ let Close (r: resource) : unit =
   print_line ("closing " ^ r.name)
 
 let main () =
-  using r = { name = "demo" } in
-  print_line "using resource"
+  region {
+    let! r = { name = "demo" }
+    do! print_line "using resource"
+    return ()
+  }

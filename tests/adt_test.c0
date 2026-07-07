@@ -1,0 +1,20 @@
+module AdtTest
+
+type color = | Red | Green | Blue
+
+let numFields (c: color) : int =
+  match c with
+  | Red -> 0
+  | Green -> 1
+  | Blue -> 2
+
+let isRed (c: color) : bool =
+  match c with
+  | Red -> true
+  | _ -> false
+
+let main () =
+  let chk1 = assert (numFields Red = 0) in
+  let chk2 = assert (numFields Green = 1) in
+  let chk3 = assert (numFields Blue = 2) in
+  assert (isRed Red)

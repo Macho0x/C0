@@ -1,6 +1,8 @@
 module Trading.SimpleBot
 
-(* Simplified Hyperliquid trading bot focusing on core patterns.
+(* DESIGN SKETCH — does not compile with the current bootstrap compiler.
+
+   Simplified Hyperliquid trading bot focusing on core patterns.
    Shows gorilla/websocket imports, Hyperliquid API integration,
    and C0 idioms.
 
@@ -16,10 +18,10 @@ module Trading.SimpleBot
 
 extern "go" "github.com/gorilla/websocket" {
   (* Dialer connects to a WebSocket URL *)
-  val Dialer : { url: string } -> { conn: conn, err: error } result
+  val Dialer : { url: string } -> { conn: conn; err: error } result
 
   (* Read/write messages *)
-  val ReadMessage : conn -> { msg: bytes, err: error } result
+  val ReadMessage : conn -> { msg: bytes; err: error } result
   val WriteJSON : conn -> 'a -> error option
 
   (* Connection management *)
@@ -32,11 +34,11 @@ extern "go" "github.com/gorilla/websocket" {
 
 extern "go" "encoding/json" {
   val Unmarshal : bytes -> 'a -> error option
-  val Marshal : 'a -> { bytes: bytes, err: error } result
+  val Marshal : 'a -> { bytes: bytes; err: error } result
 }
 
 extern "go" "net/http" {
-  val Post : string -> string -> bytes -> { resp: resp, err: error } result
+  val Post : string -> string -> bytes -> { resp: resp; err: error } result
 }
 
 extern "go" "fmt" {
@@ -165,14 +167,14 @@ let run (coin: string) (edgeBps: float) : unit =
   (* Setup EWMA tracker *)
   let ewma = { value = 0.0; initialized = false; alpha = 0.05 } in
 
-  (* Message processing loop *)
-  let running = ref true in
-  while !running do
+  (* Message processing loop as tail-recursive function *)
+  let stop = Chan.make () : unit chan in
+  let rec processLoop () =
     match ReadMessage conn with
     | Ok { msg = bytes } ->
         (* Parse allMids message *)
         let parsed : all_mids_msg option =
-          match Unmarshal bytes (ref { channel = ""; data = { mids = [] } }) with
+          match Unmarshal bytes { channel = ""; data = { mids = [] } } with
           | None -> None
           | Some msg ->
               if msg.channel = "allMids" then Some msg
@@ -180,23 +182,27 @@ let run (coin: string) (edgeBps: float) : unit =
         in
 
         (* Process price update *)
-        match parsed with
-        | Some msg ->
-            (match findMid msg.data.mids coin with
-             | Some midPrice ->
-                 let fair = updateEwma ewma midPrice in
-                 match decideTrade fair midPrice coin edgeBps with
-                 | Some ord ->
-                     Println ["edge detected on " ^ coin]
-                     ; placeOrder ord
-                 | None -> ()
-             | None -> ())
-        | None -> ()
+        (match parsed with
+         | Some msg ->
+             (match findMid msg.data.mids coin with
+              | Some midPrice ->
+                  let fair = updateEwma ewma midPrice in
+                  match decideTrade fair midPrice coin edgeBps with
+                  | Some ord ->
+                      Println ["edge detected on " ^ coin];
+                      placeOrder ord;
+                      processLoop ()
+                  | None -> processLoop ()
+              | None -> processLoop ())
+         | None -> processLoop ())
     | Error e ->
-        Println ["read error: " ^ e]
-        ; running := false
-  done
+        Println ["read error: " ^ e];
+        Chan.send stop ();
+        processLoop ()
+  in
+  go processLoop
   ;
+  let _ = Chan.recv stop in
   let _ = Close conn in
   Println ["bot stopped"]
 
