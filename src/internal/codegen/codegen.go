@@ -3215,6 +3215,12 @@ func (g *Generator) emitHTTPHelpers() {
 // ---------------------------------------------------------------------------
 
 func (g *Generator) emitExternDecl(d *ast.ExternDecl) {
+	// Emit inline Go code blocks first (verbatim into the generated file)
+	for _, block := range d.GoBlocks {
+		g.buf.WriteString("\n")
+		g.buf.WriteString(block)
+		g.buf.WriteString("\n\n")
+	}
 	g.emitf("// extern %q %q\n", d.Lang, d.Path)
 	for _, ev := range d.Vals {
 		g.emitf("// val %s : %s\n", ev.Name, g.typeToGo(ev.Type))

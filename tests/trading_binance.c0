@@ -1,7 +1,76 @@
 module Main
 
+extern "go" "net/http" {}
+extern "go" "encoding/json" {}
+extern "go" "io" {}
+extern "go" "strconv" {}
+
 extern "go" "math" {
   val Sqrt : float -> float
+}
+
+extern "go" "" {
+  go {
+    func httpGetString(url string) string {
+      resp, err := http.Get(url)
+      if err != nil {
+        return ""
+      }
+      defer resp.Body.Close()
+      body, err := io.ReadAll(resp.Body)
+      if err != nil {
+        return ""
+      }
+      return string(body)
+    }
+
+    func jsonExtractFloats(jsonStr string, index int) []float64 {
+      var raw []any
+      if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+        return []float64{}
+      }
+      result := make([]float64, 0, len(raw))
+      for _, item := range raw {
+        arr, ok := item.([]any)
+        if !ok || len(arr) <= index {
+          continue
+        }
+        s, ok := arr[index].(string)
+        if !ok {
+          continue
+        }
+        f, err := strconv.ParseFloat(s, 64)
+        if err != nil {
+          continue
+        }
+        result = append(result, f)
+      }
+      return result
+    }
+
+    func jsonExtractStrings(jsonStr string, index int) []string {
+      var raw []any
+      if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+        return []string{}
+      }
+      result := make([]string, 0, len(raw))
+      for _, item := range raw {
+        arr, ok := item.([]any)
+        if !ok || len(arr) <= index {
+          continue
+        }
+        s, ok := arr[index].(string)
+        if !ok {
+          continue
+        }
+        result = append(result, s)
+      }
+      return result
+    }
+  }
+  val httpGetString : string -> string
+  val jsonExtractFloats : string -> int -> float list
+  val jsonExtractStrings : string -> int -> string list
 }
 
 (* ------ Statistics ------ *)
@@ -156,11 +225,11 @@ let rec last_of (xs: string list) : string =
     | _ :: _ -> last_of rest
 
 let header_from_json (json: string) : string =
-  let opens = json_extract_strings json 1 in
-  let highs = json_extract_strings json 2 in
-  let lows = json_extract_strings json 3 in
-  let closes = json_extract_strings json 4 in
-  let vols = json_extract_strings json 5 in
+  let opens = jsonExtractStrings json 1 in
+  let highs = jsonExtractStrings json 2 in
+  let lows = jsonExtractStrings json 3 in
+  let closes = jsonExtractStrings json 4 in
+  let vols = jsonExtractStrings json 5 in
   let open_s = last_of opens in
   let high_s = last_of highs in
   let low_s = last_of lows in
@@ -171,9 +240,9 @@ let header_from_json (json: string) : string =
 (* ------ Main ------ *)
 
 let main () =
-  let json = http_get_string "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=500" in
-  let prices = json_extract_floats json 4 in
-  let volumes = json_extract_floats json 5 in
+  let json = httpGetString "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=500" in
+  let prices = jsonExtractFloats json 4 in
+  let volumes = jsonExtractFloats json 5 in
   let n = length_float prices in
   let ns = float_to_string n in
   let hdr = header_from_json json in

@@ -54,9 +54,10 @@ func (*TypeDecl) topDeclNode() {}
 
 // ExternDecl is an `extern` block (parsed but not elaborated).
 type ExternDecl struct {
-	Lang  string   // e.g. "go"
-	Path  string   // e.g. "github.com/example/lib"
-	Vals  []ExternVal
+	Lang     string      // e.g. "go"
+	Path     string      // e.g. "github.com/example/lib"
+	Vals     []ExternVal
+	GoBlocks []string    // raw Go source code from go { ... } blocks (inline Go extern)
 }
 
 func (*ExternDecl) topDeclNode() {}

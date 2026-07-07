@@ -13,6 +13,7 @@ package parser
 
 import (
 	"fmt"
+	"strings"
 
 	"c0.dev/compiler/internal/ast"
 	lc0 "c0.dev/compiler/internal/lexer"
@@ -32,6 +33,7 @@ func (e *ParseError) Error() string {
 // Parser holds the state of the recursive-descent parser.
 type Parser struct {
 	file      string
+	src       []byte // raw source bytes for reading inline Go blocks
 	tokens    []token.Token
 	pos       int     // index into tokens slice
 	errs      []error
@@ -43,7 +45,7 @@ func Parse(file string, src []byte) (*ast.Module, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Parser{file: file, tokens: toks}
+	p := &Parser{file: file, src: src, tokens: toks}
 	mod := p.parseModule()
 	if len(p.errs) > 0 {
 		// Return the module along with the first error so callers can inspect
@@ -107,6 +109,110 @@ func (p *Parser) errorf(format string, args ...any) error {
 	}
 	p.errs = append(p.errs, err)
 	return err
+}
+
+// parseGoBlock parses a `go { … }` block inside an extern declaration.
+// It reads the raw Go source text between braces, uses source byte offsets
+// to advance the parser position past all tokens inside the block INCLUDING
+// the closing '}', and returns the Go code content (without surrounding braces).
+func (p *Parser) parseGoBlock() string {
+	braceTok, _ := p.expect(token.LBRACE)
+	if braceTok.Type != token.LBRACE {
+		return ""
+	}
+	startOffset := braceTok.Loc.Offset
+
+	// Read raw source bytes and get the byte offset of the closing '}'.
+	code, endOffset := p.readRawGoBlock(startOffset)
+
+	// Advance parser position past all tokens whose source offset is
+	// inside the go block, consuming the closing '}' token too.
+	for p.pos < len(p.tokens) {
+		tok := p.cur()
+		if tok.Type == token.EOF {
+			break
+		}
+		if tok.Loc.Offset > endOffset {
+			// We've consumed the closing '}'. Stop.
+			break
+		}
+		p.advance()
+	}
+
+	return code
+}
+
+// readRawGoBlock reads raw source bytes from just after '{' until the matching '}'.
+// It counts brace depth in the raw source, skipping string literals and comments.
+// Returns the Go code content (trimmed) and the byte offset of the closing '}'.
+func (p *Parser) readRawGoBlock(braceOffset int) (string, int) {
+	if braceOffset >= len(p.src) || p.src[braceOffset] != '{' {
+		p.errorf("internal: readRawGoBlock called without opening brace")
+		return "", braceOffset + 1
+	}
+	pos := braceOffset + 1 // skip '{'
+	depth := 1
+	for pos < len(p.src) && depth > 0 {
+		switch p.src[pos] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				// Don't advance past the matching '}'
+				content := string(p.src[braceOffset+1 : pos])
+				return strings.TrimSpace(content), pos
+			}
+		case '/':
+			// Skip line comments and block comments
+			if pos+1 < len(p.src) && p.src[pos+1] == '/' {
+				pos += 2
+				for pos < len(p.src) && p.src[pos] != '\n' {
+					pos++
+				}
+				continue
+			}
+			if pos+1 < len(p.src) && p.src[pos+1] == '*' {
+				pos += 2
+				for pos+1 < len(p.src) && !(p.src[pos] == '*' && p.src[pos+1] == '/') {
+					pos++
+				}
+				pos += 2 // skip */
+				continue
+			}
+		case '"':
+			// Skip Go string literal
+			pos++
+			for pos < len(p.src) && p.src[pos] != '"' {
+				if p.src[pos] == '\\' {
+					pos++ // skip escaped char
+				}
+				pos++
+			}
+		case '\'':
+			// Skip Go rune literal
+			pos++
+			for pos < len(p.src) && p.src[pos] != '\'' {
+				if p.src[pos] == '\\' {
+					pos++
+				}
+				pos++
+			}
+		case '`':
+			// Skip Go raw string literal
+			pos++
+			for pos < len(p.src) && p.src[pos] != '`' {
+				pos++
+			}
+		}
+		pos++
+	}
+	if depth != 0 {
+		p.errorf("unterminated go block (missing '}')")
+		return "", braceOffset + 1
+	}
+	content := string(p.src[braceOffset+1 : pos])
+	return strings.TrimSpace(content), pos
 }
 
 // ---------------------------------------------------------------------------
@@ -525,7 +631,11 @@ func (p *Parser) parseExternDecl() ast.TopDecl {
 
 	p.expect(token.LBRACE)
 	for p.cur().Type != token.RBRACE && p.cur().Type != token.EOF {
-		if p.match(token.VAL) {
+		if p.match(token.GO) {
+			// Inline Go extern: go { ... }
+			code := p.parseGoBlock()
+			ed.GoBlocks = append(ed.GoBlocks, code)
+		} else if p.match(token.VAL) {
 			ev := ast.ExternVal{}
 			nameTok := p.cur()
 			if nameTok.Type == token.IDENT || nameTok.Type == token.CONSTRUCTOR {
@@ -538,7 +648,7 @@ func (p *Parser) parseExternDecl() ast.TopDecl {
 			ev.Type = p.parseType()
 			ed.Vals = append(ed.Vals, ev)
 		} else {
-			p.errorf("expected 'val' inside extern block, got %s", p.cur().Type)
+			p.errorf("expected 'go' or 'val' inside extern block, got %s", p.cur().Type)
 			p.advance()
 		}
 	}
