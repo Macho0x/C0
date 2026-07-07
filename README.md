@@ -5,6 +5,16 @@
   </picture>
 </p>
 
+<p align="center">
+  <a href="https://github.com/Macho0x/C0/actions/workflows/ci.yml">
+    <img alt="CI status" src="https://github.com/Macho0x/C0/workflows/CI/badge.svg">
+  </a>
+  <a href="https://github.com/Macho0x/C0/releases">
+    <img alt="Latest release" src="https://img.shields.io/github/v/release/Macho0x/C0?display_name=tag&label=release">
+  </a>
+  <img alt="License" src="https://img.shields.io/badge/license-MIT%2FApache--2.0-blue">
+</p>
+
 <h1 align="center">C0</h1>
 
 <p align="center">

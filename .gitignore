@@ -1,7 +1,7 @@
 # Binaries
-c0
-c0.exe
-main
+/c0
+/c0.exe
+/main
 *.o
 *.test
 *.out
