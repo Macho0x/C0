@@ -9,69 +9,67 @@ extern "go" "math" {
   val Sqrt : float -> float
 }
 
-extern "go" "" {
-  go {
-    func httpGetString(url string) string {
-      resp, err := http.Get(url)
-      if err != nil {
-        return ""
-      }
-      defer resp.Body.Close()
-      body, err := io.ReadAll(resp.Body)
-      if err != nil {
-        return ""
-      }
-      return string(body)
+@golang {
+  func httpGetString(url string) string {
+    resp, err := http.Get(url)
+    if err != nil {
+      return ""
     }
-
-    func jsonExtractFloats(jsonStr string, index int) []float64 {
-      var raw []any
-      if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
-        return []float64{}
-      }
-      result := make([]float64, 0, len(raw))
-      for _, item := range raw {
-        arr, ok := item.([]any)
-        if !ok || len(arr) <= index {
-          continue
-        }
-        s, ok := arr[index].(string)
-        if !ok {
-          continue
-        }
-        f, err := strconv.ParseFloat(s, 64)
-        if err != nil {
-          continue
-        }
-        result = append(result, f)
-      }
-      return result
+    defer resp.Body.Close()
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+      return ""
     }
-
-    func jsonExtractStrings(jsonStr string, index int) []string {
-      var raw []any
-      if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
-        return []string{}
-      }
-      result := make([]string, 0, len(raw))
-      for _, item := range raw {
-        arr, ok := item.([]any)
-        if !ok || len(arr) <= index {
-          continue
-        }
-        s, ok := arr[index].(string)
-        if !ok {
-          continue
-        }
-        result = append(result, s)
-      }
-      return result
-    }
+    return string(body)
   }
-  val httpGetString : string -> string
-  val jsonExtractFloats : string -> int -> float list
-  val jsonExtractStrings : string -> int -> string list
+
+  func jsonExtractFloats(jsonStr string, index int) []float64 {
+    var raw []any
+    if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+      return []float64{}
+    }
+    result := make([]float64, 0, len(raw))
+    for _, item := range raw {
+      arr, ok := item.([]any)
+      if !ok || len(arr) <= index {
+        continue
+      }
+      s, ok := arr[index].(string)
+      if !ok {
+        continue
+      }
+      f, err := strconv.ParseFloat(s, 64)
+      if err != nil {
+        continue
+      }
+      result = append(result, f)
+    }
+    return result
+  }
+
+  func jsonExtractStrings(jsonStr string, index int) []string {
+    var raw []any
+    if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+      return []string{}
+    }
+    result := make([]string, 0, len(raw))
+    for _, item := range raw {
+      arr, ok := item.([]any)
+      if !ok || len(arr) <= index {
+        continue
+      }
+      s, ok := arr[index].(string)
+      if !ok {
+        continue
+      }
+      result = append(result, s)
+    }
+    return result
+  }
 }
+val httpGetString : string -> string
+val jsonExtractFloats : string -> int -> float list
+val jsonExtractStrings : string -> int -> string list
 
 (* ------ Statistics ------ *)
 

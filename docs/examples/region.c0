@@ -1,14 +1,14 @@
-module Main
+module main
 
 (* Declare a linear resource type *)
-type handle : 1
+type Handle : 1
 
 (* The Close function discharges a linear handle *)
-let Close (h: handle) : unit =
+let Close (h: Handle) : unit =
   print_line "resource closed"
 
 (* A function that uses a handle *)
-let useHandle (h: handle) : unit =
+let useHandle (h: Handle) : unit =
   print_line "using handle"
 
 (* region demonstrates scoped resource management.
@@ -17,7 +17,7 @@ let useHandle (h: handle) : unit =
    extern Go functions. This example demonstrates the structure.
    In real code, `makeHandle` would be an extern call to a Go function
    that allocates a resource. *)
-let process (h: handle) : unit =
+let process (h: Handle) : unit =
   region {
     let! x = h
     do! useHandle x

@@ -1,0 +1,13 @@
+module main
+
+type Shape =
+  | Circle of { radius: float }
+  | Point
+
+let area (s: Shape) : float =
+  match s with
+  | Circle { radius } -> radius
+  | Point -> 0.0
+
+let main () =
+  assert (area (Circle { radius = 2.0 }) > 1.99)

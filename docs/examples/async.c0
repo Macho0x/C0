@@ -1,0 +1,11 @@
+module main
+
+let compute () : int chan =
+  async {
+    return 42
+  }
+
+let main () : unit =
+  let ch = compute () in
+  let v = Chan.recv ch in
+  assert (v = 42)

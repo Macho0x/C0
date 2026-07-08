@@ -1,0 +1,11 @@
+module result
+
+let isOk (x: ('ok, 'err) result) : bool =
+  match x with
+  | Ok _ -> true
+  | Error _ -> false
+
+let isError (x: ('ok, 'err) result) : bool =
+  match x with
+  | Error _ -> true
+  | Ok _ -> false

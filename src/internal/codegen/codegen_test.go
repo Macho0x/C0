@@ -15,6 +15,20 @@ import (
 	"c0.dev/compiler/internal/typecheck"
 )
 
+func externFinalReturn(t ast.Type) ast.Type {
+	for {
+		fn, ok := t.(*ast.TFun)
+		if !ok {
+			return t
+		}
+		if _, ok2 := fn.To.(*ast.TFun); ok2 {
+			t = fn.To
+			continue
+		}
+		return fn.To
+	}
+}
+
 var examplesDir = "../../../docs/examples"
 
 func mustParse(t *testing.T, filename string) *ast.Module {
@@ -81,14 +95,34 @@ func TestCompileResult(t *testing.T) {
 	if !strings.Contains(goSrc, "type User struct") {
 		t.Error("missing User struct")
 	}
-	if !strings.Contains(goSrc, "type Error interface") {
-		t.Error("missing Error interface")
+	if !strings.Contains(goSrc, "type UserError interface") {
+		t.Error("missing UserError interface")
 	}
 	if !strings.Contains(goSrc, "func findUser") {
 		t.Error("missing findUser function")
 	}
 	if !strings.Contains(goSrc, ".IsOk()") {
 		t.Error("missing result IsOk check")
+	}
+}
+
+func TestExternTupleCallCodegen(t *testing.T) {
+	src := `module main
+extern "go" "strconv" { val Atoi : string -> (int, string) }
+let main () = let pair = Atoi "42" in pair
+`
+	mod, err := parser.Parse("t.c0", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod = desugar.DesugarModule(mod)
+	gen := codegen.NewGenerator("t.c0", config.DefaultConfig())
+	goSrc, err := gen.Generate(mod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(goSrc, "__t.F0, __t.F1 = strconv.Atoi") {
+		t.Fatalf("expected multi-value extern assignment, got:\n%s", goSrc)
 	}
 }
 

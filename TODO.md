@@ -30,11 +30,16 @@ This file tracks the remaining work to make C0 a usable language. It is kept in 
 - [x] Mutable fields and bindings
 - [x] Active patterns
 - [x] Match macros (`is`, `as`, `guard`)
-- [x] F#-style computation expressions (`result { ... }`; `async` reserved)
+- [x] F#-style computation expressions (`result { ... }`, `async { ... }`)
 - [x] Row polymorphism
 - [x] Concurrency primitives (`go`, `chan`, `select`)
 - [x] `using` for resource cleanup
-- [x] `extern` Go interop
+- [x] `extern` Go interop (`@golang { }` embed blocks)
+- [x] `private` module visibility
+- [x] `%` modulo operator
+- [x] Extern 2-tuple returns
+- [x] Flow-sensitive goroutine liveness (fewer race false positives)
+- [x] std/ modules (`std.io`, `std.list`, `std.option`, `std.result`)
 - [x] Effect rows (erased, row-polymorphic effect tracking in types)
 - [x] Linear resource types (modal linearity, opt-in for resource-kinded types)
 - [x] Region scopes (computation expression for scoped resource cleanup)

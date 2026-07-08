@@ -1,8 +1,8 @@
-module UsingDemo
+module main
 
-type resource = { name: string }
+type Resource = { name: string }
 
-let Close (r: resource) : unit =
+let Close (r: Resource) : unit =
   print_line ("closing " ^ r.name)
 
 let main () =

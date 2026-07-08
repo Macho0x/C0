@@ -4,21 +4,21 @@
 //
 // Desugaring rules:
 //
-//   is:   expr is pattern
-//         → match expr with | pattern -> true | _ -> false
+//	is:   expr is pattern
+//	      → match expr with | pattern -> true | _ -> false
 //
-//   as:   expr as pattern -> then_expr else else_expr
-//         → match expr with | pattern -> then_expr | _ -> else_expr
+//	as:   expr as pattern -> then_expr else else_expr
+//	      → match expr with | pattern -> then_expr | _ -> else_expr
 //
-//   guard (single):
-//         guard pattern = rhs else else_expr
-//         → match rhs with | pattern -> body | _ -> else_expr
+//	guard (single):
+//	      guard pattern = rhs else else_expr
+//	      → match rhs with | pattern -> body | _ -> else_expr
 //
-//   guard (multiple):
-//         guard p1 = e1 and p2 = e2 else else_expr
-//         → match e1 with
-//           | p1 -> match e2 with | p2 -> body | _ -> else_expr
-//           | _ -> else_expr
+//	guard (multiple):
+//	      guard p1 = e1 and p2 = e2 else else_expr
+//	      → match e1 with
+//	        | p1 -> match e2 with | p2 -> body | _ -> else_expr
+//	        | _ -> else_expr
 package desugar
 
 import (
@@ -45,6 +45,8 @@ func desugarDecl(d ast.TopDecl) {
 		// Type declarations contain types, not expressions
 	case *ast.ExternDecl:
 		// Extern declarations contain types, not expressions
+	case *ast.GolangEmbedDecl:
+		// @golang embed blocks contain raw Go, not C0 expressions
 	}
 }
 
@@ -230,11 +232,13 @@ func desugarAs(e *ast.AsMatchExpr) ast.Expr {
 
 // guard p1 = e1 and p2 = e2 ... else elseExpr
 // → nested match where the innermost binding returns its bound value:
-//   match e1 with | p1 -> match e2 with ... | p2 -> <bound value> | _ -> elseExpr
-//                   | _ -> elseExpr
+//
+//	match e1 with | p1 -> match e2 with ... | p2 -> <bound value> | _ -> elseExpr
+//	                | _ -> elseExpr
 //
 // For a single binding guard Err msg = s else "no error":
-//   match s with | Err msg -> msg | _ -> "no error"
+//
+//	match s with | Err msg -> msg | _ -> "no error"
 func desugarGuard(e *ast.GuardExpr) ast.Expr {
 	if len(e.Bindings) == 0 {
 		return e.Else_
@@ -310,13 +314,15 @@ func extractPatternValue(p ast.Pattern, defaultExpr ast.Expr) ast.Expr {
 // desugarCompExpr desugars a computation expression into ordinary expressions.
 //
 // result { let! x = e; return f x }  →
-//   match e with | Ok x -> f x | Error e -> Error e
+//
+//	match e with | Ok x -> f x | Error e -> Error e
 //
 // For chained let! bindings:
-//   result { let! x = a; let! y = b; return x + y }  →
-//   match a with
-//   | Ok x -> match b with | Ok y -> Ok (x + y) | Error e -> Error e
-//   | Error e -> Error e
+//
+//	result { let! x = a; let! y = b; return x + y }  →
+//	match a with
+//	| Ok x -> match b with | Ok y -> Ok (x + y) | Error e -> Error e
+//	| Error e -> Error e
 //
 // do! expr is like let! _ = expr.
 // return! expr passes expr through directly.
@@ -430,13 +436,91 @@ func desugarResultCE(e *ast.CompExpr) ast.Expr {
 }
 
 func desugarAsyncCE(e *ast.CompExpr) ast.Expr {
-	// For v1, desugar async { ... } to a simple pattern.
-	// Return a placeholder that the codegen can handle as a comment.
-	// Full async support requires goroutines and channels, which are not
-	// yet implemented in the code generator.
-	// Return a unit value with a comment.
-	_ = e
+	var result ast.Expr
+	for i := len(e.Ops) - 1; i >= 0; i-- {
+		op := e.Ops[i]
+		switch o := op.(type) {
+		case *ast.LetBangOp:
+			inner := result
+			if inner == nil {
+				inner = unitExpr()
+			}
+			bindingName := patternName(o.Pattern)
+			result = letIn(bindingName, asyncRecv(DesugarExpr(o.Expr)), inner)
+		case *ast.ReturnOp:
+			result = DesugarExpr(o.Expr)
+		case *ast.ReturnBangOp:
+			result = DesugarExpr(o.Expr)
+		case *ast.DoBangOp:
+			inner := result
+			if inner == nil {
+				inner = unitExpr()
+			}
+			result = letIn("_", asyncRecv(DesugarExpr(o.Expr)), inner)
+		case *ast.LetOp:
+			inner := result
+			if inner == nil {
+				inner = unitExpr()
+			}
+			result = letIn(patternName(o.Pattern), DesugarExpr(o.Expr), inner)
+		case *ast.BodyOp:
+			result = DesugarExpr(o.Expr)
+		}
+	}
+	if result == nil {
+		result = unitExpr()
+	}
+	return wrapAsyncFuture(result)
+}
+
+func unitExpr() ast.Expr {
 	return &ast.LitExpr{Value: nil, Kind: token.UNIT}
+}
+
+func patternName(p ast.Pattern) string {
+	if ip, ok := p.(*ast.IdentPattern); ok {
+		return ip.Name
+	}
+	return "x"
+}
+
+func letIn(name string, rhs ast.Expr, body ast.Expr) ast.Expr {
+	return &ast.LetInExpr{
+		Bindings: []ast.LetBinding{{Name: name, Body: rhs}},
+		Body:     body,
+	}
+}
+
+func asyncRecv(ch ast.Expr) ast.Expr {
+	return &ast.AppExpr{
+		Func: &ast.IdentExpr{Name: "Chan.recv"},
+		Arg:  ch,
+	}
+}
+
+func wrapAsyncFuture(value ast.Expr) ast.Expr {
+	makeCh := &ast.AppExpr{
+		Func: &ast.IdentExpr{Name: "Chan.make"},
+		Arg:  unitExpr(),
+	}
+	sendStmt := &ast.AppExpr{
+		Func: &ast.AppExpr{
+			Func: &ast.IdentExpr{Name: "Chan.send"},
+			Arg:  &ast.IdentExpr{Name: "__async_ch"},
+		},
+		Arg: value,
+	}
+	goBody := &ast.FunExpr{
+		Params: []ast.Param{{Name: ""}}, // fun () -> …
+		Body:   sendStmt,
+	}
+	return &ast.LetInExpr{
+		Bindings: []ast.LetBinding{
+			{Name: "__async_ch", Body: makeCh},
+			{Name: "__async_go", Body: &ast.GoExpr{Expr: goBody}},
+		},
+		Body: &ast.IdentExpr{Name: "__async_ch"},
+	}
 }
 
 var g string // dummy for LetOp binding name

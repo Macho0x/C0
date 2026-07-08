@@ -18,9 +18,9 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestDefaultResolution(t *testing.T) {
 	cfg := config.DefaultConfig()
-	goPath, goPkg := cfg.ResolveImport("Std.IO")
-	if goPath != "c0.dev/std/io" {
-		t.Errorf("expected c0.dev/std/io, got %s", goPath)
+	goPath, goPkg := cfg.ResolveImport("std.io")
+	if goPath != "github.com/Macho0x/C0/std/io" {
+		t.Errorf("expected github.com/Macho0x/C0/std/io, got %s", goPath)
 	}
 	if goPkg != "io" {
 		t.Errorf("expected package io, got %s", goPkg)
@@ -110,8 +110,8 @@ func TestMissingConfigFile(t *testing.T) {
 		t.Fatal("expected default config")
 	}
 	// Default resolution should work
-	goPath, _ := cfg.ResolveImport("Std.IO")
-	if goPath != "c0.dev/std/io" {
+	goPath, _ := cfg.ResolveImport("std.io")
+	if goPath != "github.com/Macho0x/C0/std/io" {
 		t.Errorf("expected default path, got %s", goPath)
 	}
 }
@@ -150,7 +150,7 @@ func TestC0TomlAtProjectRoot(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load project c0.toml: %v", err)
 			}
-			if cfg.ModuleRoot != "github.com/example/c0demo" {
+			if cfg.ModuleRoot != "github.com/Macho0x/C0" {
 				t.Errorf("unexpected module_root: %s", cfg.ModuleRoot)
 			}
 			found = true

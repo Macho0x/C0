@@ -89,6 +89,81 @@ let f (x: int) : int = x + "hello"
 	}
 }
 
+func TestPrivateSameModuleOk(t *testing.T) {
+	src := `module main
+private let helper x = x + 1
+let main () = helper 1
+`
+	mod, err := parser.Parse("test.c0", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	errs := typecheck.Check(mod)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+}
+
+func TestPrivateCrossModuleRejected(t *testing.T) {
+	lib := `module lib
+private let helper x = x
+let publicFn x = helper x
+`
+	consumer := `module main
+let main () = helper 1
+`
+	libMod, err := parser.Parse("lib.c0", []byte(lib))
+	if err != nil {
+		t.Fatalf("parse lib: %v", err)
+	}
+	consMod, err := parser.Parse("main.c0", []byte(consumer))
+	if err != nil {
+		t.Fatalf("parse main: %v", err)
+	}
+	_, _, errs := typecheck.CheckWithTypesAndDeps(consMod, map[string]*ast.Module{"lib": libMod})
+	if len(errs) == 0 {
+		t.Fatal("expected error referencing private helper")
+	}
+	found := false
+	for _, e := range errs {
+		if strings.Contains(e.Error(), "private") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected private access error, got %v", errs)
+	}
+}
+
+func TestPrivateUppercaseNameRejected(t *testing.T) {
+	src := `module main
+private let Helper x = x
+let main () = Helper 1
+`
+	mod, err := parser.Parse("test.c0", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	errs := typecheck.Check(mod)
+	if len(errs) == 0 {
+		t.Fatal("expected error for private uppercase name")
+	}
+}
+
+func TestModuloFloatRejected(t *testing.T) {
+	src := `module main
+let main () = 1.5 % 1.0
+`
+	mod, err := parser.Parse("test.c0", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	errs := typecheck.Check(mod)
+	if len(errs) == 0 {
+		t.Fatal("expected type error for float %")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Location tests: verify type errors include source locations
 // ---------------------------------------------------------------------------

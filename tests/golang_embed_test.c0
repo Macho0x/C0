@@ -1,0 +1,16 @@
+module main
+
+extern "go" "strings" {
+  val ToUpper : string -> string
+}
+
+@golang {
+  func greet(name string) string {
+    return "Hello, " + name + "!"
+  }
+}
+val greet : string -> string
+
+let main () =
+  let chk = assert (ToUpper "hi" = "HI") in
+  print_line (greet "C0")

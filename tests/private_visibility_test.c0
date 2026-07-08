@@ -1,0 +1,6 @@
+module main
+
+private let parseInput (x: int) : int = x + 1
+
+let main () =
+  assert (parseInput 1 = 2)

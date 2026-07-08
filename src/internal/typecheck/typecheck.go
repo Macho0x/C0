@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"c0.dev/compiler/internal/active"
 	"c0.dev/compiler/internal/ast"
@@ -99,16 +101,39 @@ func (e *Env) InScope() map[int64]bool {
 
 // Checker holds the mutable state during type checking.
 type Checker struct {
-	env   *Env              // current environment
-	sub   types.Subst       // current substitution
-	errs  []error           // accumulated errors
-	types typeinfo.TypeMap  // maps expression AST nodes to their inferred types
+	env            *Env             // current environment
+	sub            types.Subst      // current substitution
+	errs           []error          // accumulated errors
+	types          typeinfo.TypeMap // maps expression AST nodes to their inferred types
+	privateNames   map[string]bool  // names marked private in the current module
+	blockedNames   map[string]string // private name → defining module path
+	importedModule string           // module being checked (for error messages)
 }
 
 // pkgFromPath extracts a Go package name from an import path (last segment).
 func pkgFromPath(path string) string {
 	parts := strings.Split(path, "/")
 	return parts[len(parts)-1]
+}
+
+func (c *Checker) bindExternVals(importPath string, vals []ast.ExternVal) {
+	pkgName := pkgFromPath(importPath)
+	for _, ev := range vals {
+		t := c.convertASTType(ev.Type)
+		if refined := c.refineExternType(importPath, ev.Name, t); refined != nil {
+			t = refined
+		}
+		scheme := types.Mono(t)
+		if c.env.Lookup(ev.Name) != nil {
+			c.errorf("extern binding %q conflicts with existing name", ev.Name)
+		} else {
+			c.env.Bind(ev.Name, scheme)
+		}
+		if importPath != "" {
+			qualified := pkgName + "." + ev.Name
+			c.env.Bind(qualified, scheme)
+		}
+	}
 }
 
 // Check runs type inference on a complete module.
@@ -121,12 +146,21 @@ func Check(mod *ast.Module) []error {
 // resolved types for every expression node, a VarTypeMap with resolved
 // types for let-bound variables, plus any errors.
 func CheckWithTypes(mod *ast.Module) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
+	return CheckWithTypesAndDeps(mod, nil)
+}
+
+// CheckWithTypesAndDeps type-checks mod after binding exported names from dependency modules.
+func CheckWithTypesAndDeps(mod *ast.Module, deps map[string]*ast.Module) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
 	c := &Checker{
-		env:   NewEnv(nil),
-		sub:   types.EmptySubst(),
-		types: make(typeinfo.TypeMap),
+		env:          NewEnv(nil),
+		sub:          types.EmptySubst(),
+		types:        make(typeinfo.TypeMap),
+		privateNames: make(map[string]bool),
+		blockedNames: make(map[string]string),
 	}
 	c.initBuiltins()
+	c.importedModule = mod.Name
+	c.bindDependencyExports(deps)
 	c.checkModule(mod)
 
 	// Apply the final substitution to all recorded types so they are fully
@@ -364,6 +398,10 @@ func (c *Checker) checkModule(mod *ast.Module) {
 		if !ok {
 			continue
 		}
+		if td.Private {
+			c.markPrivate(td.Name)
+			c.checkPrivateName(td.Name)
+		}
 		scheme := c.convertTypeDecl(td)
 		c.env.Bind(td.Name, scheme)
 		typeDecls[td.Name] = scheme
@@ -376,33 +414,13 @@ func (c *Checker) checkModule(mod *ast.Module) {
 		case *ast.LetDecl:
 			c.checkLetDecl(d)
 		case *ast.ExternDecl:
-			// Reject non-Go extern for now
 			if d.Lang != "go" {
 				c.errorf("only 'go' extern is supported, got %q", d.Lang)
 				continue
 			}
-			// Extract a short package name from the import path
-			pkgName := pkgFromPath(d.Path)
-			for _, ev := range d.Vals {
-				t := c.convertASTType(ev.Type)
-
-				// Optional gosig fallback: try to refine the type from the
-				// real Go signature. This gives better lambda param types.
-				if refined := c.refineExternType(d.Path, ev.Name, t); refined != nil {
-					t = refined
-				}
-
-				scheme := types.Mono(t)
-				// Bind unqualified name
-				if c.env.Lookup(ev.Name) != nil {
-					c.errorf("extern binding %q conflicts with existing name", ev.Name)
-				} else {
-					c.env.Bind(ev.Name, scheme)
-				}
-				// Also bind qualified name: pkg.Name
-				qualified := pkgName + "." + ev.Name
-				c.env.Bind(qualified, scheme)
-			}
+			c.bindExternVals(d.Path, d.Vals)
+		case *ast.GolangEmbedDecl:
+			c.bindExternVals("", d.Vals)
 		case *ast.TypeDecl:
 			// Already handled in first pass
 		}
@@ -597,6 +615,12 @@ func (c *Checker) convertASTType(at ast.Type) types.Type {
 // ---------------------------------------------------------------------------
 
 func (c *Checker) checkLetDecl(d *ast.LetDecl) {
+	if d.Private {
+		for _, b := range d.Bindings {
+			c.markPrivate(b.Name)
+			c.checkPrivateName(b.Name)
+		}
+	}
 	// Active pattern: let (|Name|_|) (arg: T) : U option = body
 	if d.ActivePattern {
 		for _, b := range d.Bindings {
@@ -821,6 +845,10 @@ func (c *Checker) inferLit(e *ast.LitExpr) types.Type {
 }
 
 func (c *Checker) inferIdent(e *ast.IdentExpr) types.Type {
+	if mod, blocked := c.blockedNames[e.Name]; blocked {
+		c.errorfAt(e.Loc, "cannot access private binding %q from module %s", e.Name, mod)
+		return types.Unit
+	}
 	s := c.env.Lookup(e.Name)
 	if s == nil {
 		// External/unknown identifier — give it a fresh polymorphic type.
@@ -1000,11 +1028,13 @@ func (c *Checker) inferBinary(e *ast.BinaryExpr) types.Type {
 	right := c.infer(e.Right)
 
 	switch e.Op {
-	case token.PLUS, token.MINUS, token.STAR, token.SLASH:
+	case token.PLUS, token.MINUS, token.STAR, token.SLASH, token.PERCENT:
 		// Arithmetic: both operands must be the same numeric type (int or float)
 		c.unifyAt(e.Loc, left, right)
-		// Also allow int+int=int, float+float=float
-		// (We just unify them; the result type is the unified type.)
+		if e.Op == token.PERCENT {
+			c.unifyAt(e.Loc, left, types.Int)
+			c.unifyAt(e.Loc, right, types.Int)
+		}
 		return left
 
 	case token.STARDOT, token.PLUSDOT, token.MINUSDOT, token.SLASHDOT:
@@ -1449,8 +1479,19 @@ func (c *Checker) refineExternType(importPath, funcName string, declared types.T
 			return nil
 		}
 		resultType = rt
+	case 2:
+		elems := make([]types.Type, 2)
+		for i, r := range sig.Results {
+			rt := goTypeToC0Type(r.Type)
+			if rt == nil {
+				fmt.Fprintf(os.Stderr, "c0: gosig fallback for %s.%s: cannot map Go result type %q to C0\n",
+					importPath, funcName, r.Type)
+				return nil
+			}
+			elems[i] = rt
+		}
+		resultType = &types.TTuple{Elems: elems}
 	default:
-		// Multiple return values — keep the declared type.
 		fmt.Fprintf(os.Stderr, "c0: gosig fallback for %s.%s: %d result values (not supported)\n",
 			importPath, funcName, len(sig.Results))
 		return nil
@@ -1670,4 +1711,78 @@ func splitGoParams(s string) []string {
 		params = append(params, last)
 	}
 	return params
+}
+
+func (c *Checker) markPrivate(name string) {
+	c.privateNames[name] = true
+}
+
+func (c *Checker) checkPrivateName(name string) {
+	if name == "" {
+		return
+	}
+	r, _ := utf8.DecodeRuneInString(name)
+	if unicode.IsUpper(r) {
+		c.errorf("private binding %q must use mixedCaps (lower initial)", name)
+	}
+}
+
+func collectPrivateNames(mod *ast.Module) map[string]bool {
+	priv := make(map[string]bool)
+	for _, d := range mod.Decls {
+		switch d := d.(type) {
+		case *ast.LetDecl:
+			if d.Private {
+				for _, b := range d.Bindings {
+					priv[b.Name] = true
+				}
+			}
+		case *ast.TypeDecl:
+			if d.Private {
+				priv[d.Name] = true
+			}
+		}
+	}
+	return priv
+}
+
+func (c *Checker) bindDependencyExports(deps map[string]*ast.Module) {
+	if len(deps) == 0 {
+		return
+	}
+	for modName, dep := range deps {
+		priv := collectPrivateNames(dep)
+		for name := range priv {
+			c.blockedNames[name] = modName
+		}
+		depChecker := &Checker{
+			env:          NewEnv(nil),
+			sub:          types.EmptySubst(),
+			types:        make(typeinfo.TypeMap),
+			privateNames: priv,
+			blockedNames: make(map[string]string),
+		}
+		depChecker.initBuiltins()
+		depChecker.checkModule(dep)
+		for _, d := range dep.Decls {
+			switch d := d.(type) {
+			case *ast.LetDecl:
+				if d.Private {
+					continue
+				}
+				for _, b := range d.Bindings {
+					if s := depChecker.env.Lookup(b.Name); s != nil {
+						c.env.Bind(b.Name, s)
+					}
+				}
+			case *ast.TypeDecl:
+				if d.Private {
+					continue
+				}
+				if s := depChecker.env.Lookup(d.Name); s != nil {
+					c.env.Bind(d.Name, s)
+				}
+			}
+		}
+	}
 }

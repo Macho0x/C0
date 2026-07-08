@@ -35,10 +35,11 @@ type Parser struct {
 	file      string
 	src       []byte // raw source bytes for reading inline Go blocks
 	tokens    []token.Token
-	pos       int     // index into tokens slice
+	pos       int // index into tokens slice
 	errs      []error
 	wherePred bool // true when parsing a where-clause predicate (stops at =)
 }
+
 // Parse reads a complete C0 source file and returns the AST module.
 func Parse(file string, src []byte) (*ast.Module, error) {
 	toks, err := lc0.Lex(file, src)
@@ -317,10 +318,24 @@ func (p *Parser) parseQualifiedName() string {
 
 func (p *Parser) parseTopDecl() ast.TopDecl {
 	switch p.cur().Type {
+	case token.AT:
+		return p.parseGolangEmbedDecl()
+	case token.PRIVATE:
+		p.advance()
+		switch p.cur().Type {
+		case token.LET:
+			return p.parseLetDecl(true, true)
+		case token.TYPE:
+			return p.parseTypeDecl(true)
+		default:
+			p.errorf("expected let or type after private, got %s", p.cur().Type)
+			p.advance()
+			return nil
+		}
 	case token.LET:
-		return p.parseLetDecl(true)
+		return p.parseLetDecl(true, false)
 	case token.TYPE:
-		return p.parseTypeDecl()
+		return p.parseTypeDecl(false)
 	case token.EXTERN:
 		return p.parseExternDecl()
 	case token.MODULE:
@@ -342,9 +357,9 @@ func (p *Parser) parseTopDecl() ast.TopDecl {
 
 // parseLetDecl parses a top-level `let` (no `in`), or
 // an active pattern `let (|Name|_|) (...) = ...`.
-func (p *Parser) parseLetDecl(isTopLevel bool) *ast.LetDecl {
+func (p *Parser) parseLetDecl(isTopLevel bool, isPrivate bool) *ast.LetDecl {
 	p.expect(token.LET)
-	decl := &ast.LetDecl{}
+	decl := &ast.LetDecl{Private: isPrivate}
 
 	// Active pattern: let (|Name|_|) ...
 	if p.cur().Type == token.LPAREN && p.peek().Type == token.PIPE {
@@ -456,7 +471,7 @@ func (p *Parser) parseParams() []ast.Param {
 // Type declarations
 // ---------------------------------------------------------------------------
 
-func (p *Parser) parseTypeDecl() ast.TopDecl {
+func (p *Parser) parseTypeDecl(isPrivate bool) ast.TopDecl {
 	p.expect(token.TYPE)
 
 	// We handle the first binding inline; `and` produces additional decls.
@@ -477,6 +492,7 @@ func (p *Parser) parseTypeDecl() ast.TopDecl {
 	// via a side channel.  For the bootstrap we accept this limitation.
 	// A production parser would push the extras onto a pending queue.
 	if len(allDecls) > 0 {
+		allDecls[0].Private = isPrivate
 		return allDecls[0]
 	}
 	return nil
@@ -604,6 +620,42 @@ func (p *Parser) parseADTTypeKindNoPipe() *ast.ADTTypeKind {
 }
 
 // ---------------------------------------------------------------------------
+// @golang embedded Go
+// ---------------------------------------------------------------------------
+
+func (p *Parser) parseGolangEmbedDecl() *ast.GolangEmbedDecl {
+	p.expect(token.AT)
+	nameTok := p.cur()
+	if nameTok.Type != token.IDENT && nameTok.Type != token.CONSTRUCTOR {
+		p.errorf("expected attribute name after @, got %s", nameTok.Type)
+		return nil
+	}
+	if nameTok.Lexeme != "golang" {
+		p.errorf("unknown attribute @%s (expected @golang)", nameTok.Lexeme)
+		return nil
+	}
+	p.advance()
+	decl := &ast.GolangEmbedDecl{}
+	decl.GoCode = p.parseGoBlock()
+	for p.cur().Type == token.VAL {
+		p.advance()
+		ev := ast.ExternVal{}
+		nameTok := p.cur()
+		if nameTok.Type == token.IDENT || nameTok.Type == token.CONSTRUCTOR {
+			p.advance()
+			ev.Name = nameTok.Lexeme
+		} else {
+			p.errorf("expected val binding name, got %s", nameTok.Type)
+			continue
+		}
+		p.expect(token.COLON)
+		ev.Type = p.parseType()
+		decl.Vals = append(decl.Vals, ev)
+	}
+	return decl
+}
+
+// ---------------------------------------------------------------------------
 // Extern declarations
 // ---------------------------------------------------------------------------
 
@@ -632,9 +684,13 @@ func (p *Parser) parseExternDecl() ast.TopDecl {
 	p.expect(token.LBRACE)
 	for p.cur().Type != token.RBRACE && p.cur().Type != token.EOF {
 		if p.match(token.GO) {
-			// Inline Go extern: go { ... }
-			code := p.parseGoBlock()
-			ed.GoBlocks = append(ed.GoBlocks, code)
+			if p.cur().Type == token.LBRACE {
+				p.errorf("use @golang { ... } for embedded Go code (go { } inside extern is removed)")
+				p.parseGoBlock()
+			} else {
+				p.errorf("unexpected 'go' inside extern block")
+				p.advance()
+			}
 		} else if p.match(token.VAL) {
 			ev := ast.ExternVal{}
 			nameTok := p.cur()
@@ -694,7 +750,7 @@ func (p *Parser) precedence(op token.TokenType) int {
 		return precCons
 	case token.PLUS, token.MINUS, token.CARET, token.PLUSDOT, token.MINUSDOT:
 		return precAdd
-	case token.STAR, token.SLASH, token.STARDOT, token.SLASHDOT:
+	case token.STAR, token.SLASH, token.STARDOT, token.SLASHDOT, token.PERCENT:
 		return precMul
 	default:
 		return 0
@@ -1044,7 +1100,7 @@ func (p *Parser) parseMatchArms() []ast.MatchArm {
 
 func (p *Parser) parseLetInExpr() ast.Expr {
 	letLoc := p.cur().Loc
-	decl := p.parseLetDecl(false)
+	decl := p.parseLetDecl(false, false)
 	// `in` is optional — when absent the offside rule treats the next
 	// expression at the same or greater indentation as the body.
 	p.match(token.IN)
@@ -1557,4 +1613,3 @@ func (p *Parser) parseCompOp() ast.CompOp {
 		return &ast.BodyOp{Expr: expr}
 	}
 }
-

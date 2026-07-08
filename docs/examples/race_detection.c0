@@ -1,53 +1,15 @@
-module Main
+module main
 
-(* DESIGN SKETCH — expected to fail type checking (demonstrates compiler error detection).
+(* Compile-time goroutine sharing analysis demo (good patterns only).
+   Flow-sensitive liveness suppresses false positives when a mutable
+   variable is captured by go but not used afterward in the spawning scope. *)
 
-   Compile-time data race detection example.
-
-   The C0 compiler performs goroutine sharing analysis as part of its
-   linear discharge checker. This analysis flags potential data races
-   when `mutable` variables are captured by `go` closures while they
-   are still accessible in the spawning scope.
-
-   The analysis is CONSERVATIVE: it flags ALL mutable captures by
-   goroutines, even if the spawning scope never accesses the variable
-   after the `go` expression. This is sound (no false negatives) but
-   may produce false positives. A future version may add flow-sensitive
-   liveness analysis to suppress false positives. *)
-
-(* ❌ BAD: mutable counter shared with goroutine.
-   The checker would flag this:
-     "potential data race: mutable variable 'counter' captured by
-      goroutine is still accessible in spawning scope" *)
-let badExample () : unit =
-  let mutable counter = 0 in
-  go (fun () ->
-    print_line (int_to_string counter)
-  )
-
-(* ❌ BAD: mutable counter shared between multiple goroutines.
-   The checker would flag this:
-     "potential data race: mutable variable 'counter' shared between
-      multiple goroutines" *)
-let multiGoroutineExample () : unit =
-  let mutable counter = 0 in
-  let dummy = go (fun () ->
-    print_line (int_to_string counter)
-  ) in
-  go (fun () ->
-    print_line (int_to_string counter)
-  )
-
-(* ✅ GOOD: immutable capture — no race possible.
-   Immutable variables are always safe to share between goroutines. *)
 let immutableExample () : unit =
   let x = 42 in
   go (fun () ->
     print_line (int_to_string x)
   )
 
-(* ✅ GOOD: channel communication — the idiomatic safe pattern.
-   Channels are the communication mechanism; no mutable state is shared. *)
 let channelExample () : unit =
   let ch : int chan = Chan.make () in
   let dummy = go (fun () -> Chan.send ch 42) in

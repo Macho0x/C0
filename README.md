@@ -38,14 +38,14 @@
 ### Algebraic data types + pattern matching
 
 ```c0
-module Main
+module main
 
-type shape =
+type Shape =
   | Circle of { radius: float }
   | Rect of { width: float; height: float }
   | Point
 
-let area (s: shape) : float =
+let area (s: Shape) : float =
   match s with
   | Circle { radius } -> 3.14159 *. radius *. radius
   | Rect { width; height } -> width *. height

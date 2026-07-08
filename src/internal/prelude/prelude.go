@@ -17,9 +17,9 @@ import (
 
 // Binding describes one prelude entry.
 type Binding struct {
-	Name     string     // user‑visible name, e.g. "print_line"
+	Name     string        // user‑visible name, e.g. "print_line"
 	Scheme   *types.Scheme // type scheme
-	Lowering Lowering   // how to emit Go code for a call
+	Lowering Lowering      // how to emit Go code for a call
 }
 
 // Lowering describes how a call to a prelude function is lowered to Go.

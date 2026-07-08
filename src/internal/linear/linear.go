@@ -61,6 +61,9 @@ type checker struct {
 	allLinear         map[string]bool // all linear variables ever bound (for double-use detection)
 	mutableVars       map[string]bool // mutable variables currently in scope
 	goroutineCaptured map[string]bool // mutable vars already captured by a go (per-binding)
+	pendingGoRace     map[string]bool // mutable captures pending liveness check at scope end
+	accessedAfterGo   map[string]bool // mutable vars accessed after a go in current scope
+	goSeenInSeq       bool            // sequential go seen in current binding body
 	borrowVarName     string          // when set, useVar treats this variable as a borrow (no discharge)
 }
 
@@ -190,6 +193,8 @@ func (c *checker) useVar(name string) {
 func (c *checker) checkModule(mod *ast.Module) {
 	// Initialize module-level mutable tracking
 	c.mutableVars = make(map[string]bool)
+	c.pendingGoRace = make(map[string]bool)
+	c.accessedAfterGo = make(map[string]bool)
 
 	// First pass: collect module-level mutable variable declarations.
 	// These variables are visible to all subsequent bindings.
@@ -211,13 +216,17 @@ func (c *checker) checkModule(mod *ast.Module) {
 				c.goroutineCaptured = make(map[string]bool)
 				c.checkBinding(d.Bindings[i])
 			}
-		case *ast.TypeDecl, *ast.ExternDecl:
+		case *ast.TypeDecl, *ast.ExternDecl, *ast.GolangEmbedDecl:
 			// no expressions
 		}
 	}
 }
 
 func (c *checker) checkBinding(b ast.LetBinding) {
+	c.pendingGoRace = make(map[string]bool)
+	c.accessedAfterGo = make(map[string]bool)
+	c.goSeenInSeq = false
+
 	// Bind parameters: check type annotations for linear types
 	for _, p := range b.Params {
 		if c.isLinearType(p.Type) {
@@ -226,6 +235,7 @@ func (c *checker) checkBinding(b ast.LetBinding) {
 	}
 
 	c.checkExpr(b.Body)
+	c.flushGoRaceChecks()
 
 	// At function exit: auto-discharge any remaining linear parameters.
 	for _, p := range b.Params {
@@ -252,6 +262,9 @@ func (c *checker) checkExpr(e ast.Expr) {
 		// nothing to do
 
 	case *ast.IdentExpr:
+		if c.goSeenInSeq && c.mutableVars[e.Name] {
+			c.accessedAfterGo[e.Name] = true
+		}
 		c.useVar(e.Name)
 
 	case *ast.ConstructorExpr:
@@ -373,6 +386,7 @@ func (c *checker) checkExpr(e ast.Expr) {
 		}
 
 		c.checkExpr(e.Body)
+		c.flushGoRaceChecks()
 
 	case *ast.FunExpr:
 		savedLive := copyLive(c.live)
@@ -446,10 +460,9 @@ func (c *checker) checkExpr(e ast.Expr) {
 		c.checkExpr(e.Inner)
 
 	case *ast.GoExpr:
-		// Goroutine sharing analysis: check the closure for captured
-		// mutable variables BEFORE doing normal linear checking.
 		c.checkGoCaptures(e.Expr)
 		c.checkExpr(e.Expr)
+		c.goSeenInSeq = true
 
 	case *ast.SelectExpr:
 		for i := range e.Cases {
@@ -574,15 +587,24 @@ func (c *checker) checkGoCaptures(closure ast.Expr) {
 		if !c.mutableVars[name] {
 			continue
 		}
-		// This mutable variable is captured by the goroutine and is
-		// still accessible in the spawning scope → potential data race.
 		if c.goroutineCaptured[name] {
 			c.errf("potential data race: mutable variable %q shared between multiple goroutines", name)
 		} else {
-			c.errf("potential data race: mutable variable %q captured by goroutine is still accessible in spawning scope", name)
+			c.pendingGoRace[name] = true
 		}
 		c.goroutineCaptured[name] = true
 	}
+}
+
+func (c *checker) flushGoRaceChecks() {
+	for name := range c.pendingGoRace {
+		if c.accessedAfterGo[name] {
+			c.errf("potential data race: mutable variable %q captured by goroutine is still accessible in spawning scope", name)
+		}
+	}
+	c.pendingGoRace = make(map[string]bool)
+	c.accessedAfterGo = make(map[string]bool)
+	c.goSeenInSeq = false
 }
 
 // collectFreeVars walks an expression and returns the set of free variable

@@ -1,16 +1,16 @@
-module LinearDemo
+module main
 
 (* Declare a linear resource type with the : 1 annotation *)
-type handle : 1
+type Handle : 1
 
 (* A function that receives a linear handle (hand-off) and "closes" it.
    In v1, the parameter h is auto-discharged at function exit since
    the real cleanup happens in Go (extern). *)
-let Close (h: handle) : unit =
+let Close (h: Handle) : unit =
   print_line "resource closed"
 
 (* A function that demonstrates accepting and discharging a linear value *)
-let process (h: handle) : unit =
+let process (h: Handle) : unit =
   Close h   (* h used as argument to Close → discharged by hand-off *)
 
 (* Main entry point *)

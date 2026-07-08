@@ -1,5 +1,3 @@
-# C0 Syntax
-
 ## Source style
 
 C0 uses **offside-rule** syntax (like F# and Python): indentation defines block structure. The language is case-sensitive.

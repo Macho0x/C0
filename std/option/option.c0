@@ -1,0 +1,11 @@
+module option
+
+let isSome (x: 'a option) : bool =
+  match x with
+  | Some _ -> true
+  | None -> false
+
+let isNone (x: 'a option) : bool =
+  match x with
+  | None -> true
+  | Some _ -> false

@@ -1,18 +1,18 @@
-module ResultExample
+module main
 
-type user = { id: int; name: string }
-type error = NotFound | InvalidInput of string
+type User = { id: int; name: string }
+type UserError = NotFound | InvalidInput of string
 
-let findUser (id: int) : (user, error) result =
+let findUser (id: int) : (User, UserError) result =
   if id < 0 then Error (InvalidInput "negative id")
   else if id = 42 then Ok { id = 42; name = "Alice" }
   else Error NotFound
 
-let validateName (u: user) : (user, error) result =
+let validateName (u: User) : (User, UserError) result =
   if u.name = "" then Error (InvalidInput "empty name")
   else Ok u
 
-let loadUser (id: int) : (user, error) result =
+let loadUser (id: int) : (User, UserError) result =
   result {
     let! user = findUser id
     let! validated = validateName user
@@ -24,3 +24,6 @@ let getUserName (id: int) : string =
   | Ok u -> u.name
   | Error NotFound -> "unknown"
   | Error (InvalidInput msg) -> "invalid: " ^ msg
+
+let main () =
+  print_line (getUserName 42)

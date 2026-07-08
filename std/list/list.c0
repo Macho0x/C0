@@ -1,0 +1,6 @@
+module list
+
+let rec Map (f: 'a -> 'b) (xs: 'a list) : 'b list =
+  match xs with
+  | [] -> []
+  | x :: rest -> f x :: Map f rest

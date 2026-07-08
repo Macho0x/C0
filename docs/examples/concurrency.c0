@@ -1,4 +1,4 @@
-module Main
+module main
 
 (* Concurrency example: create a typed channel with an explicit
    element-type annotation, receive from it, and print the result.

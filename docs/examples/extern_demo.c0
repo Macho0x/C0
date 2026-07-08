@@ -1,34 +1,30 @@
-module Main
+module main
 
 extern "go" "strings" {
   val ToUpper : string -> string
   val ToLower : string -> string
 }
 
-extern "go" "" {
-  go {
-    func greet(name string) string {
-      return "Hello, " + name + "!"
-    }
-    func addPrefix(prefix string, msg string) string {
-      return "[" + prefix + "] " + msg
-    }
+@golang {
+  func greet(name string) string {
+    return "Hello, " + name + "!"
   }
-  val greet : string -> string
-  val addPrefix : string -> string -> string
+  func addPrefix(prefix string, msg string) string {
+    return "[" + prefix + "] " + msg
+  }
 }
+val greet : string -> string
+val addPrefix : string -> string -> string
 
 extern "go" "fmt" {}
 extern "go" "time" {}
 
-extern "go" "" {
-  go {
-    func nowString() string {
-      return time.Now().Format("15:04:05")
-    }
+@golang {
+  func nowString() string {
+    return time.Now().Format("15:04:05")
   }
-  val nowString : unit -> string
 }
+val nowString : unit -> string
 
 let main () =
   let a = ToUpper "hello from C0" in

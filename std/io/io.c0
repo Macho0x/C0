@@ -1,0 +1,12 @@
+module io
+
+extern "go" "fmt" {}
+
+@golang {
+  func printLine(msg string) {
+    fmt.Println(msg)
+  }
+}
+val printLine : string -> unit
+
+let PrintLine (msg: string) : unit = printLine msg

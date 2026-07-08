@@ -1,20 +1,23 @@
-module Shapes
+module main
 
-type shape =
+type Shape =
   | Circle of { radius: float }
   | Rect of { width: float; height: float }
   | Point
 
-let area (s: shape) : float =
+let area (s: Shape) : float =
   match s with
   | Circle { radius } -> 3.14159 *. radius *. radius
   | Rect { width; height } -> width *. height
   | Point -> 0.0
 
-let describe (s: shape) : string =
+let describe (s: Shape) : string =
   match s with
   | Circle { radius } when radius > 10.0 -> "big circle"
   | Circle _ -> "small circle"
   | Rect { width; height } when width = height -> "square"
   | Rect _ -> "rectangle"
   | Point -> "point"
+
+let main () =
+  print_line (describe (Circle { radius = 5.0 }))

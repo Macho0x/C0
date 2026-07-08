@@ -8,22 +8,23 @@
 package lexer
 
 import (
-	"c0.dev/compiler/internal/token"
 	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"c0.dev/compiler/internal/token"
 )
 
 // Lexer holds the state of the scanner.
 type Lexer struct {
-	src      []byte        // full source text (UTF‑8)
-	file     string        // source filename
-	pos      int           // current byte offset (0‑based)
-	line     int           // current line (1‑based)
-	col      int           // current column (1‑based)
-	tokens   []token.Token // accumulated token stream
+	src    []byte        // full source text (UTF‑8)
+	file   string        // source filename
+	pos    int           // current byte offset (0‑based)
+	line   int           // current line (1‑based)
+	col    int           // current column (1‑based)
+	tokens []token.Token // accumulated token stream
 }
 
 // Lex runs the complete lexer over src and returns the token stream.
@@ -198,6 +199,12 @@ func (l *Lexer) run() {
 		case r == '^':
 			l.consumeN(1)
 			l.emit(token.CARET, "^", nil)
+		case r == '@':
+			l.consumeN(1)
+			l.emit(token.AT, "@", nil)
+		case r == '%':
+			l.consumeN(1)
+			l.emit(token.PERCENT, "%", nil)
 		case r == '?':
 			l.consumeN(1)
 			l.emit(token.QUESTION, "?", nil)
@@ -412,7 +419,7 @@ func (l *Lexer) lexCharOrTyvar() {
 	if isIdentStart(r) && r != '\'' {
 		// Type variable: 'a, 'key, etc.
 		// Consume the leading letter, then the rest of the identifier tail.
-		l.advance()                       // consume first letter
+		l.advance() // consume first letter
 		tail := l.readIdentTail()
 		name := "'" + string(r) + tail
 		l.emit(token.TYVAR, name, nil)

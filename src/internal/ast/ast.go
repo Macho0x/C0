@@ -2,9 +2,10 @@
 package ast
 
 import (
-	"c0.dev/compiler/internal/token"
 	"fmt"
 	"strings"
+
+	"c0.dev/compiler/internal/token"
 )
 
 // ---------------------------------------------------------------------------
@@ -13,9 +14,9 @@ import (
 
 // Module represents a complete C0 source file.
 type Module struct {
-	Name   string        // module path, e.g. "Trading.OrderBook"
-	Opens  []OpenStmt    // open directives
-	Decls  []TopDecl     // top-level declarations
+	Name  string     // module path, e.g. "Trading.OrderBook"
+	Opens []OpenStmt // open directives
+	Decls []TopDecl  // top-level declarations
 }
 
 // OpenStmt is an `open Path` statement.
@@ -36,7 +37,8 @@ type TopDecl interface {
 type LetDecl struct {
 	Rec           bool
 	Mutable       bool
-	ActivePattern bool        // true for `let (|Name|_|) …`
+	Private       bool
+	ActivePattern bool         // true for `let (|Name|_|) …`
 	Bindings      []LetBinding // multiple when `and` is used
 }
 
@@ -48,19 +50,28 @@ type TypeDecl struct {
 	TypeParams []string // e.g. ["'a"]
 	Kind       TypeKind
 	Quantity   int // 0 = unrestricted (default), 1 = linear
+	Private    bool
 }
 
 func (*TypeDecl) topDeclNode() {}
 
 // ExternDecl is an `extern` block (parsed but not elaborated).
 type ExternDecl struct {
-	Lang     string      // e.g. "go"
-	Path     string      // e.g. "github.com/example/lib"
+	Lang     string // e.g. "go"
+	Path     string // e.g. "github.com/example/lib"
 	Vals     []ExternVal
-	GoBlocks []string    // raw Go source code from go { ... } blocks (inline Go extern)
+	GoBlocks []string // raw Go source code from go { ... } blocks (inline Go extern)
 }
 
 func (*ExternDecl) topDeclNode() {}
+
+// GolangEmbedDecl is a top-level `@golang { ... }` block with optional `val` signatures.
+type GolangEmbedDecl struct {
+	GoCode string
+	Vals   []ExternVal
+}
+
+func (*GolangEmbedDecl) topDeclNode() {}
 
 // ExternVal is a single `val` inside an extern block.
 type ExternVal struct {
@@ -245,8 +256,8 @@ func (*IdentExpr) exprNode() {}
 // e.g. `None`, `Some 42`.
 type ConstructorExpr struct {
 	Name string
-	Arg  Expr             // nil when no argument
-	Loc  token.SourceLoc  // source location
+	Arg  Expr            // nil when no argument
+	Loc  token.SourceLoc // source location
 }
 
 func (*ConstructorExpr) exprNode() {}
@@ -288,10 +299,10 @@ type MatchArm struct {
 
 // LetInExpr is `let binding in body`.
 type LetInExpr struct {
-	Mutable   bool            // true for `let mutable … in …`
-	Bindings  []LetBinding
-	Body      Expr
-	Loc       token.SourceLoc // source location
+	Mutable  bool // true for `let mutable … in …`
+	Bindings []LetBinding
+	Body     Expr
+	Loc      token.SourceLoc // source location
 }
 
 func (*LetInExpr) exprNode() {}
@@ -386,7 +397,7 @@ type RecordField struct {
 // RecordUpdateExpr is `{ expr with field = value; ... }`.
 type RecordUpdateExpr struct {
 	Base   Expr
-	Fields []RecordField // all have Values set
+	Fields []RecordField   // all have Values set
 	Loc    token.SourceLoc // source location
 }
 
@@ -411,8 +422,8 @@ func (*TupleExpr) exprNode() {}
 
 // ListExpr is a list literal: `[a; b; c]` or `[]`.
 type ListExpr struct {
-	Elems []Expr           // nil for `[]`
-	Loc   token.SourceLoc  // source location
+	Elems []Expr          // nil for `[]`
+	Loc   token.SourceLoc // source location
 }
 
 func (*ListExpr) exprNode() {}
@@ -427,7 +438,7 @@ func (*ParenExpr) exprNode() {}
 
 // CompExpr is a computation expression: `builder { ops }`.
 type CompExpr struct {
-	Builder string  // e.g. "result", "async"
+	Builder string // e.g. "result", "async"
 	Ops     []CompOp
 	Loc     token.SourceLoc // source location
 }

@@ -15,6 +15,8 @@ package codegen
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -22,6 +24,7 @@ import (
 	"c0.dev/compiler/internal/active"
 	"c0.dev/compiler/internal/ast"
 	"c0.dev/compiler/internal/config"
+	"c0.dev/compiler/internal/parser"
 	"c0.dev/compiler/internal/prelude"
 	"c0.dev/compiler/internal/refine"
 	"c0.dev/compiler/internal/token"
@@ -31,30 +34,30 @@ import (
 
 // Generator emits Go source code for a C0 module.
 type Generator struct {
-	buf       strings.Builder
-	indent    int
-	srcFile   string // original C0 source file path
+	buf     strings.Builder
+	indent  int
+	srcFile string // original C0 source file path
 
 	// source-map tracking
-	srcMap  *SourceMap
-	goLine  int // current Go output line (1-based)
-	goCol   int // current Go output column (1-based)
+	srcMap *SourceMap
+	goLine int // current Go output line (1-based)
+	goCol  int // current Go output column (1-based)
 
 	// module state
-	moduleName  string // C0 module name
-	goPkg       string // Go package name
-	goFileName  string // suggested output file name
+	moduleName string // C0 module name
+	goPkg      string // Go package name
+	goFileName string // suggested output file name
 
 	// type tracking
-	adts     map[string]*ast.TypeDecl // ADT declarations
-	records  map[string]*ast.TypeDecl // record declarations
-	opaqueTypes map[string]*ast.TypeDecl // opaque (linear) type declarations
-	usedOption map[string]string      // Go type name → element Go type
-	usedResult map[string][]string    // Go type name → [okGoType, errGoType]
-	usedTuple  map[string][]string     // Go type name → field Go type names
-	funcRetType map[string]string      // C0 func name → Go return type (for ?)
-	funcParamCount map[string]int       // C0 func name → number of parameters
-	funcParamTypes map[string][]string  // C0 func name → Go types of parameters
+	adts           map[string]*ast.TypeDecl // ADT declarations
+	records        map[string]*ast.TypeDecl // record declarations
+	opaqueTypes    map[string]*ast.TypeDecl // opaque (linear) type declarations
+	usedOption     map[string]string        // Go type name → element Go type
+	usedResult     map[string][]string      // Go type name → [okGoType, errGoType]
+	usedTuple      map[string][]string      // Go type name → field Go type names
+	funcRetType    map[string]string        // C0 func name → Go return type (for ?)
+	funcParamCount map[string]int           // C0 func name → number of parameters
+	funcParamTypes map[string][]string      // C0 func name → Go types of parameters
 
 	// inferred types from typechecker (for polymorphic codegen)
 	typeMap    typeinfo.TypeMap
@@ -65,20 +68,22 @@ type Generator struct {
 	goToC0 map[string]string // Go name → C0 name (reverse)
 
 	// module / import resolution
-	cfg          *config.Config       // project configuration
+	cfg             *config.Config    // project configuration
 	resolvedImports map[string]string // C0 module name → Go import path
-	importPkgs  map[string]string    // Go import path → Go package name
+	importPkgs      map[string]string // Go import path → Go package name
+	openExports     map[string]string // exported name from open → Go package name
 
 	// prelude bindings
 	prelude *prelude.Prelude
 
 	// extern tracking
 	externImports map[string]string // Go import path → package name
-	externNames   map[string]string // C0 name → Go qualified name (pkg.Name)
+	externNames    map[string]string // C0 name → Go qualified name (pkg.Name)
+	externRetTypes map[string]ast.Type // C0 extern val name → full function type
 
 	// row-polymorphic function params: funcName → field names
-	rowParams     map[string][]string
-	rowParamName  map[string]string     // funcName → row param name
+	rowParams    map[string][]string
+	rowParamName map[string]string // funcName → row param name
 
 	currentFunc string // function being generated (for ? operator)
 	varCounter  int    // for generating unique tmp variable names
@@ -87,42 +92,44 @@ type Generator struct {
 	usedHTTP    bool   // whether HTTP/JSON helpers are needed
 
 	// refinement contract tracking
-	provenSites       refine.ProvenSites      // call sites proven safe by refinement solver
-	refinementParams  map[string][]refinedParam // func name → refinement-annotated params
+	provenSites      refine.ProvenSites        // call sites proven safe by refinement solver
+	refinementParams map[string][]refinedParam // func name → refinement-annotated params
 }
 
 // refinedParam stores information about a refinement-annotated parameter.
 type refinedParam struct {
-	index int                  // parameter index
-	name  string               // parameter name
-	rt    *ast.RefinementType  // the refinement type
+	index int                 // parameter index
+	name  string              // parameter name
+	rt    *ast.RefinementType // the refinement type
 }
 
 // NewGenerator creates a new code generator.
 func NewGenerator(srcFile string, cfg *config.Config) *Generator {
 	return &Generator{
-		srcFile:     srcFile,
-		goLine:      1,
-		goCol:       1,
-		cfg:         cfg,
-		prelude:     prelude.Default(),
-		externImports: make(map[string]string),
-		externNames:   make(map[string]string),
-		rowParams:     make(map[string][]string),
-		rowParamName:  make(map[string]string),
-		resolvedImports: make(map[string]string),
-		importPkgs:  make(map[string]string),
-		adts:        make(map[string]*ast.TypeDecl),
-		records:     make(map[string]*ast.TypeDecl),
-		opaqueTypes: make(map[string]*ast.TypeDecl),
-		usedOption:  make(map[string]string),
-		usedResult:  make(map[string][]string),
-		usedTuple:   make(map[string][]string),
-		funcRetType: make(map[string]string),
-		funcParamCount: make(map[string]int),
-		funcParamTypes: make(map[string][]string),
-		c0ToGo:      make(map[string]string),
-		goToC0:      make(map[string]string),
+		srcFile:          srcFile,
+		goLine:           1,
+		goCol:            1,
+		cfg:              cfg,
+		prelude:          prelude.Default(),
+		externImports:    make(map[string]string),
+		externNames:      make(map[string]string),
+		externRetTypes:   make(map[string]ast.Type),
+		rowParams:        make(map[string][]string),
+		rowParamName:     make(map[string]string),
+		resolvedImports:  make(map[string]string),
+		importPkgs:       make(map[string]string),
+		openExports:      make(map[string]string),
+		adts:             make(map[string]*ast.TypeDecl),
+		records:          make(map[string]*ast.TypeDecl),
+		opaqueTypes:      make(map[string]*ast.TypeDecl),
+		usedOption:       make(map[string]string),
+		usedResult:       make(map[string][]string),
+		usedTuple:        make(map[string][]string),
+		funcRetType:      make(map[string]string),
+		funcParamCount:   make(map[string]int),
+		funcParamTypes:   make(map[string][]string),
+		c0ToGo:           make(map[string]string),
+		goToC0:           make(map[string]string),
 		refinementParams: make(map[string][]refinedParam),
 	}
 }
@@ -246,6 +253,9 @@ func (g *Generator) Generate(mod *ast.Module) (string, error) {
 	// Collect extern imports
 	g.collectExterns(mod)
 
+	// Map opened modules' exported names to Go package qualifiers
+	g.collectOpenExports(mod)
+
 	// Build the body first so we know what imports are needed
 	var body strings.Builder
 	origBuf := g.buf
@@ -270,6 +280,8 @@ func (g *Generator) Generate(mod *ast.Module) (string, error) {
 			g.emitLetDecl(d)
 		case *ast.ExternDecl:
 			g.emitExternDecl(d)
+		case *ast.GolangEmbedDecl:
+			g.emitGolangEmbedDecl(d)
 		}
 	}
 
@@ -413,11 +425,7 @@ func (g *Generator) scanUsedTypes(at ast.Type) {
 		g.scanUsedTypes(t.Arg)
 	case *ast.TTuple:
 		if len(t.Elems) >= 2 {
-			parts := make([]string, len(t.Elems))
-			for i, e := range t.Elems {
-				parts[i] = g.typeToGo(e)
-			}
-			goType := "Tuple" + strings.Join(parts, "")
+			goType, parts := g.tupleGoName(t)
 			g.usedTuple[goType] = parts
 		}
 		for _, e := range t.Elems {
@@ -477,7 +485,7 @@ func (g *Generator) goName(c0Name string) string {
 	if mapped, ok := g.c0ToGo[c0Name]; ok {
 		return mapped
 	}
-	return exported(c0Name)
+	return c0Name
 }
 
 func exported(s string) string {
@@ -589,14 +597,8 @@ func (g *Generator) typeToGo(at ast.Type) string {
 		finalReturn := g.lastReturnType(t)
 		return fmt.Sprintf("func(%s) %s", strings.Join(allParams, ", "), finalReturn)
 	case *ast.TTuple:
-		if len(t.Elems) == 2 {
-			return g.typeToGo(t.Elems[0]) + "_and_" + g.typeToGo(t.Elems[1])
-		}
-		parts := make([]string, len(t.Elems))
-		for i, e := range t.Elems {
-			parts[i] = g.typeToGo(e)
-		}
-		return strings.Join(parts, "_and_")
+		name, _ := g.tupleGoName(t)
+		return name
 	case *ast.TVar:
 		return "interface{}"
 	case *ast.TRecord:
@@ -698,28 +700,152 @@ func (g *Generator) resolveOpens(mod *ast.Module) {
 // collectExterns gathers all extern import paths and registers name mappings.
 func (g *Generator) collectExterns(mod *ast.Module) {
 	for _, d := range mod.Decls {
-		ed, ok := d.(*ast.ExternDecl)
-		if !ok {
-			continue
-		}
-		if ed.Lang != "go" {
-			continue
-		}
-		pkgName := packageNameFromPath2(ed.Path)
-		if ed.Path != "" {
-			g.externImports[ed.Path] = pkgName
-		}
-
-		for _, ev := range ed.Vals {
-			var qualified string
-			if ed.Path == "" {
-				qualified = ev.Name // same package, no prefix
-			} else {
-				qualified = pkgName + "." + ev.Name
+		switch d := d.(type) {
+		case *ast.ExternDecl:
+			g.collectExternDecl(d)
+		case *ast.GolangEmbedDecl:
+			for _, ev := range d.Vals {
+				g.externNames[ev.Name] = ev.Name
+				g.externRetTypes[ev.Name] = ev.Type
+				if ret := finalReturnASTType(ev.Type); ret != nil {
+					g.scanUsedTypes(ret)
+				}
 			}
-			g.externNames[ev.Name] = qualified
 		}
 	}
+}
+
+func (g *Generator) collectExternDecl(ed *ast.ExternDecl) {
+	if ed.Lang != "go" {
+		return
+	}
+	pkgName := packageNameFromPath2(ed.Path)
+	if ed.Path != "" {
+		g.externImports[ed.Path] = pkgName
+	}
+	for _, ev := range ed.Vals {
+		var qualified string
+		if ed.Path == "" {
+			qualified = ev.Name
+		} else {
+			qualified = pkgName + "." + ev.Name
+		}
+		g.externNames[ev.Name] = qualified
+		g.externRetTypes[ev.Name] = ev.Type
+		if ret := finalReturnASTType(ev.Type); ret != nil {
+			g.scanUsedTypes(ret)
+		}
+	}
+}
+
+// finalReturnASTType walks a curried function type to its final return type.
+func finalReturnASTType(t ast.Type) ast.Type {
+	for {
+		fn, ok := t.(*ast.TFun)
+		if !ok {
+			return t
+		}
+		if _, ok2 := fn.To.(*ast.TFun); ok2 {
+			t = fn.To
+			continue
+		}
+		return fn.To
+	}
+}
+
+func (g *Generator) tupleGoName(t *ast.TTuple) (string, []string) {
+	parts := make([]string, len(t.Elems))
+	for i, e := range t.Elems {
+		parts[i] = g.typeToGo(e)
+	}
+	if len(parts) == 2 {
+		return parts[0] + "_and_" + parts[1], parts
+	}
+	return strings.Join(parts, "_and_"), parts
+}
+
+func (g *Generator) externReturnTuple(funcName string) *ast.TTuple {
+	t, ok := g.externRetTypes[funcName]
+	if !ok {
+		return nil
+	}
+	ret := finalReturnASTType(t)
+	tup, ok := ret.(*ast.TTuple)
+	if !ok || len(tup.Elems) < 2 {
+		return nil
+	}
+	return tup
+}
+
+func (g *Generator) collectOpenExports(mod *ast.Module) {
+	if g.cfg == nil || len(mod.Opens) == 0 {
+		return
+	}
+	root := findProjectRootFromFile(g.srcFile)
+	if root == "" {
+		return
+	}
+	for _, o := range mod.Opens {
+		goPath, pkg := g.cfg.ResolveImport(o.Path)
+		c0Path := localC0PathForImport(root, goPath)
+		if c0Path == "" {
+			continue
+		}
+		src, err := os.ReadFile(c0Path)
+		if err != nil {
+			continue
+		}
+		depMod, err := parser.Parse(c0Path, src)
+		if err != nil {
+			continue
+		}
+		for _, d := range depMod.Decls {
+			switch d := d.(type) {
+			case *ast.LetDecl:
+				if d.Private {
+					continue
+				}
+				for _, b := range d.Bindings {
+					g.openExports[b.Name] = pkg
+				}
+			case *ast.TypeDecl:
+				if d.Private {
+					continue
+				}
+				g.openExports[d.Name] = pkg
+			}
+		}
+	}
+}
+
+func findProjectRootFromFile(srcFile string) string {
+	dir, err := filepath.Abs(filepath.Dir(srcFile))
+	if err != nil {
+		return ""
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "c0.toml")); err == nil {
+			return dir
+		}
+		if _, err := os.Stat(filepath.Join(dir, "std")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+func localC0PathForImport(projectRoot, goImport string) string {
+	const prefix = "github.com/Macho0x/C0/"
+	if !strings.HasPrefix(goImport, prefix) {
+		return ""
+	}
+	rel := strings.TrimPrefix(goImport, prefix)
+	pkg := filepath.Base(rel)
+	return filepath.Join(projectRoot, filepath.FromSlash(rel), pkg+".c0")
 }
 
 func (g *Generator) emitImports() {
@@ -1388,20 +1514,44 @@ func (g *Generator) emitIdent(e *ast.IdentExpr) {
 		g.buf.WriteString(qualified)
 		return
 	}
+	if pkg, ok := g.openExports[e.Name]; ok {
+		if _, local := g.funcParamCount[e.Name]; !local {
+			if _, local := g.funcRetType[e.Name]; !local {
+				g.buf.WriteString(pkg + "." + e.Name)
+				return
+			}
+		}
+	}
 	// Use the name as-is; prelude lowerings are handled in emitApp
 	g.buf.WriteString(e.Name)
 }
 
 func (g *Generator) emitConstructor(e *ast.ConstructorExpr) {
-	// Check for extern-qualified names first
-	if qualified, ok := g.externNames[e.Name]; ok {
-		g.buf.WriteString(qualified)
+	// Open-module exported value called as Constructor token (MixedCaps).
+	if pkg, ok := g.openExports[e.Name]; ok {
+		g.buf.WriteString(pkg + "." + e.Name)
 		if e.Arg != nil {
 			g.buf.WriteString("(")
 			g.emitExpr(e.Arg, false)
 			g.buf.WriteString(")")
 		}
 		return
+	}
+	// Check for extern-qualified names first
+	if _, ok := g.externNames[e.Name]; ok {
+		if tup := g.externReturnTuple(e.Name); tup != nil && e.Arg != nil {
+			g.emitExternTupleCall(&ast.IdentExpr{Name: e.Name}, []ast.Expr{e.Arg}, tup, false)
+			return
+		}
+		if qualified, ok := g.externNames[e.Name]; ok {
+			g.buf.WriteString(qualified)
+			if e.Arg != nil {
+				g.buf.WriteString("(")
+				g.emitExpr(e.Arg, false)
+				g.buf.WriteString(")")
+			}
+			return
+		}
 	}
 	// Check user-defined ADTs first (they take priority over built-in names)
 	varName := g.findVariantStruct(e.Name)
@@ -1732,6 +1882,11 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 	}
 
 	// Check for partial application
+	if funcName == "" {
+		if cons, ok := funcExpr.(*ast.ConstructorExpr); ok && cons.Arg == nil {
+			funcName = cons.Name
+		}
+	}
 	if funcName != "" {
 		paramCount := g.funcParamCount[funcName]
 		if paramCount > 0 && len(args) < paramCount {
@@ -1797,6 +1952,14 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 		return
 	}
 
+	// Extern call returning a 2+ tuple → multi-value Go assignment wrapped in struct.
+	if funcName != "" {
+		if tup := g.externReturnTuple(funcName); tup != nil {
+			g.emitExternTupleCall(funcExpr, args, tup, isStmt)
+			return
+		}
+	}
+
 	g.emitExpr(funcExpr, false)
 	g.buf.WriteString("(")
 	// When the function has zero Go params (because its only param was unit `()`),
@@ -1836,6 +1999,33 @@ func (g *Generator) getExprName(e ast.Expr) string {
 		return ident.Name
 	}
 	return ""
+}
+
+func (g *Generator) emitExternTupleCall(funcExpr ast.Expr, args []ast.Expr, tup *ast.TTuple, isStmt bool) {
+	tupleGo, _ := g.tupleGoName(tup)
+	g.buf.WriteString("func() " + tupleGo + " {\n")
+	g.indent++
+	g.emitf("var __t %s\n", tupleGo)
+	g.buf.WriteString("__t.F0")
+	for i := 1; i < len(tup.Elems); i++ {
+		g.buf.WriteString(fmt.Sprintf(", __t.F%d", i))
+	}
+	g.buf.WriteString(" = ")
+	g.emitExpr(funcExpr, false)
+	g.buf.WriteString("(")
+	for i, arg := range args {
+		if i > 0 {
+			g.buf.WriteString(", ")
+		}
+		g.emitExpr(arg.(ast.Expr), false)
+	}
+	g.buf.WriteString(")\n")
+	g.emitf("return __t\n")
+	g.indent--
+	g.buf.WriteString("}()")
+	if isStmt {
+		g.buf.WriteString("\n")
+	}
 }
 
 func (g *Generator) emitPartialApp(funcName string, givenArgs []ast.Expr, totalParams int) {
@@ -2105,7 +2295,8 @@ func (g *Generator) collectArgs(e ast.Expr) []ast.Expr {
 }
 
 // isNotPattern checks if an IfExpr matches the desugaring of `not expr`:
-//   if condition then false else true
+//
+//	if condition then false else true
 func isNotPattern(e *ast.IfExpr) bool {
 	falseLit, thenOk := e.ThenBranch.(*ast.LitExpr)
 	trueLit, elseOk := e.ElseBranch.(*ast.LitExpr)
@@ -2465,6 +2656,10 @@ func (g *Generator) emitLetIn(e *ast.LetInExpr) {
 				// let ch = Chan.make () → ch := C0ChanMake()
 				g.usedChan = true
 				g.emitf("%s := C0ChanMake()\n", b.Name)
+			} else if _, ok := b.Body.(*ast.GoExpr); ok {
+				// go is a statement in Go, not an expression — emit without binding.
+				g.emitExpr(b.Body, true)
+				g.buf.WriteString("\n")
 			} else {
 				g.emitf("%s := ", b.Name)
 				g.emitExpr(b.Body, false)
@@ -2496,10 +2691,15 @@ func (g *Generator) emitLetIn(e *ast.LetInExpr) {
 
 func (g *Generator) emitFun(e *ast.FunExpr) {
 	g.buf.WriteString("func(")
-	for i, p := range e.Params {
-		if i > 0 {
+	first := true
+	for _, p := range e.Params {
+		if p.Name == "" {
+			continue // unit parameter from fun () ->
+		}
+		if !first {
 			g.buf.WriteString(", ")
 		}
+		first = false
 		g.buf.WriteString(p.Name)
 		g.buf.WriteString(" ")
 		if p.Type != nil {
@@ -2593,7 +2793,7 @@ func (g *Generator) emitQuestion(e *ast.QuestionExpr) {
 	tmp := fmt.Sprintf("_tmp%d", g.varCounter)
 	g.emitExpr(e.Left, false)
 	g.buf.WriteString("\n")
-	// The assignment to tmp is done INSIDE the let-in emitter, 
+	// The assignment to tmp is done INSIDE the let-in emitter,
 	// so we just generate the value expression here.
 	// Actually, the QuestionExpr IS the right-hand side of a let binding.
 	// We generate: tmp := expr; if !tmp.IsOk() { return tmp }; x := tmp.MustOk()
@@ -2638,15 +2838,17 @@ func (g *Generator) emitGoExpr(e *ast.GoExpr) {
 	if pe, ok := inner.(*ast.ParenExpr); ok {
 		inner = pe.Inner
 	}
-	if _, ok := inner.(*ast.FunExpr); ok {
-		// emitFun generates `func(...) ...` — just add `go` prefix
-		g.emitExpr(inner, false)
-		g.buf.WriteString("()")
-	} else {
-		g.buf.WriteString("func() { ")
-		g.emitExpr(inner, false)
-		g.buf.WriteString(" }()")
+	if fe, ok := inner.(*ast.FunExpr); ok {
+		g.buf.WriteString("func() {\n")
+		g.indent++
+		g.emitExpr(fe.Body, true)
+		g.indent--
+		g.buf.WriteString("\n}()")
+		return
 	}
+	g.buf.WriteString("func() { ")
+	g.emitExpr(inner, false)
+	g.buf.WriteString(" }()")
 }
 
 func (g *Generator) emitSelectExpr(e *ast.SelectExpr) {
@@ -3002,7 +3204,8 @@ func (g *Generator) emitActiveMatch(e *ast.MatchExpr) {
 // ---------------------------------------------------------------------------
 
 // emitPreconditionCheck emits a runtime check for a parameter refinement:
-//   if !(<pred>) { panic("<func>: precondition violated: <pred text>") }
+//
+//	if !(<pred>) { panic("<func>: precondition violated: <pred text>") }
 func (g *Generator) emitPreconditionCheck(funcName, paramName string, rt *ast.RefinementType) {
 	var predBuf strings.Builder
 	origBuf := g.buf
@@ -3016,7 +3219,8 @@ func (g *Generator) emitPreconditionCheck(funcName, paramName string, rt *ast.Re
 }
 
 // emitPostconditionCheck emits a defer check for a return type refinement:
-//   defer func() { if !(<pred>) { panic("<func>: postcondition violated") } }()
+//
+//	defer func() { if !(<pred>) { panic("<func>: postcondition violated") } }()
 func (g *Generator) emitPostconditionCheck(funcName string, rt *ast.RefinementType) {
 	var predBuf strings.Builder
 	origBuf := g.buf
@@ -3215,13 +3419,19 @@ func (g *Generator) emitHTTPHelpers() {
 // ---------------------------------------------------------------------------
 
 func (g *Generator) emitExternDecl(d *ast.ExternDecl) {
-	// Emit inline Go code blocks first (verbatim into the generated file)
-	for _, block := range d.GoBlocks {
+	g.emitf("// extern %q %q\n", d.Lang, d.Path)
+	for _, ev := range d.Vals {
+		g.emitf("// val %s : %s\n", ev.Name, g.typeToGo(ev.Type))
+	}
+	g.buf.WriteString("\n")
+}
+
+func (g *Generator) emitGolangEmbedDecl(d *ast.GolangEmbedDecl) {
+	if d.GoCode != "" {
 		g.buf.WriteString("\n")
-		g.buf.WriteString(block)
+		g.buf.WriteString(d.GoCode)
 		g.buf.WriteString("\n\n")
 	}
-	g.emitf("// extern %q %q\n", d.Lang, d.Path)
 	for _, ev := range d.Vals {
 		g.emitf("// val %s : %s\n", ev.Name, g.typeToGo(ev.Type))
 	}

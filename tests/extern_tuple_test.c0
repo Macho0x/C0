@@ -1,0 +1,19 @@
+module main
+
+extern "go" "strconv" {}
+
+@golang {
+  func atoiPair(s string) (int, string) {
+    n, err := strconv.Atoi(s)
+    if err != nil {
+      return 0, err.Error()
+    }
+    return n, ""
+  }
+}
+val atoiPair : string -> (int, string)
+
+let main () =
+  let pair = atoiPair "42" in
+  let a = assert (pair.F0 = 42) in
+  assert (pair.F1 = "")

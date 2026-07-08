@@ -1008,6 +1008,111 @@ func uriToPath(uri string) string {
 // Test runner
 // ---------------------------------------------------------------------------
 
+const c0ProjectImportPrefix = "github.com/Macho0x/C0/"
+
+func findProjectRoot(start string) string {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return ""
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "c0.toml")); err == nil {
+			return dir
+		}
+		if _, err := os.Stat(filepath.Join(dir, "std")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+func localC0PathForImport(projectRoot, goImport string) string {
+	if !strings.HasPrefix(goImport, c0ProjectImportPrefix) {
+		return ""
+	}
+	rel := strings.TrimPrefix(goImport, c0ProjectImportPrefix)
+	pkg := filepath.Base(rel)
+	return filepath.Join(projectRoot, filepath.FromSlash(rel), pkg+".c0")
+}
+
+func compileC0ModuleToGo(c0Path string, cfg *config.Config) (string, string, error) {
+	src, err := os.ReadFile(c0Path)
+	if err != nil {
+		return "", "", err
+	}
+	mod, err := parser.Parse(c0Path, src)
+	if err != nil {
+		return "", "", err
+	}
+	mod = desugar.DesugarModule(mod)
+	tm, vtm, typeErrs := typecheck.CheckWithTypes(mod)
+	if len(typeErrs) > 0 {
+		return "", "", fmt.Errorf("type errors in %s: %v", c0Path, typeErrs[0])
+	}
+	gen := codegen.NewGenerator(c0Path, cfg)
+	gen.SetTypeMap(tm, vtm)
+	goSrc, err := gen.Generate(mod)
+	if err != nil {
+		return "", "", err
+	}
+	return goSrc, gen.GoFileName(), nil
+}
+
+func writeOpenDependencies(mod *ast.Module, cfg *config.Config, projectRoot, tmpDir string) (string, error) {
+	if projectRoot == "" || len(mod.Opens) == 0 {
+		return "module test\n\ngo 1.22\n", nil
+	}
+	var replaces []string
+	var requires []string
+	compiled := make(map[string]bool)
+	for _, o := range mod.Opens {
+		goPath, _ := cfg.ResolveImport(o.Path)
+		c0Path := localC0PathForImport(projectRoot, goPath)
+		if c0Path == "" {
+			continue
+		}
+		if _, err := os.Stat(c0Path); err != nil {
+			continue
+		}
+		abs, _ := filepath.Abs(c0Path)
+		if compiled[abs] {
+			continue
+		}
+		compiled[abs] = true
+
+		goSrc, goFile, err := compileC0ModuleToGo(c0Path, cfg)
+		if err != nil {
+			return "", err
+		}
+		rel := strings.TrimPrefix(goPath, c0ProjectImportPrefix)
+		depDir := filepath.Join(tmpDir, "deps", filepath.FromSlash(rel))
+		if err := os.MkdirAll(depDir, 0755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(filepath.Join(depDir, goFile), []byte(goSrc), 0644); err != nil {
+			return "", err
+		}
+		depMod := fmt.Sprintf("module %s\n\ngo 1.22\n", goPath)
+		if err := os.WriteFile(filepath.Join(depDir, "go.mod"), []byte(depMod), 0644); err != nil {
+			return "", err
+		}
+		replaces = append(replaces, fmt.Sprintf("replace %s => ./deps/%s", goPath, filepath.ToSlash(rel)))
+		requires = append(requires, fmt.Sprintf("require %s v0.0.0", goPath))
+	}
+	goMod := "module test\n\ngo 1.22\n"
+	if len(requires) > 0 {
+		goMod += "\n" + strings.Join(requires, "\n") + "\n"
+	}
+	if len(replaces) > 0 {
+		goMod += "\n" + strings.Join(replaces, "\n") + "\n"
+	}
+	return goMod, nil
+}
+
 func runTests(dir string) int {
 	pattern := filepath.Join(dir, "*_test.c0")
 	files, err := filepath.Glob(pattern)
@@ -1078,7 +1183,13 @@ func runTests(dir string) int {
 		}
 		defer os.RemoveAll(tmpDir)
 
-		goMod := fmt.Sprintf("module test\n\ngo 1.22\n")
+		projectRoot := findProjectRoot(dir)
+		goMod, err := writeOpenDependencies(mod, cfg, projectRoot, tmpDir)
+		if err != nil {
+			fmt.Printf("--- FAIL: %s (deps: %v)\n", name, err)
+			failed++
+			continue
+		}
 		os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goMod), 0644)
 
 		// Test files must be package main to produce an executable
@@ -1180,6 +1291,11 @@ func formatDecl(buf *strings.Builder, d ast.TopDecl, depth int) {
 		formatTypeDecl(buf, d, indent)
 	case *ast.ExternDecl:
 		buf.WriteString(fmt.Sprintf("%sextern %q %q { ... }\n", indent, d.Lang, d.Path))
+	case *ast.GolangEmbedDecl:
+		buf.WriteString(fmt.Sprintf("%s@golang { ... }\n", indent))
+		for _, v := range d.Vals {
+			buf.WriteString(fmt.Sprintf("%sval %s : ...\n", indent, v.Name))
+		}
 	}
 }
 

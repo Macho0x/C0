@@ -1,17 +1,16 @@
-module MacrosDemo
+module main
 
-type status = Ok | Err of string
+type Status = Ok | Err of string
 
-let describe (s: status) : string =
+let describe (s: Status) : string =
   if s is Ok then "ok" else "not ok"
 
-let message (s: status) : string =
+let message (s: Status) : string =
   s as Err msg -> msg else "fine"
 
-let handle (s: status) : string =
+let handle (s: Status) : string =
   guard Err msg = s else "no error"
 
 let main () =
   let s = Ok in
   print_line (describe s)
-

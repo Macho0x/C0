@@ -38,8 +38,10 @@ func DefaultConfig() *Config {
 	return &Config{
 		ModuleRoot: "",
 		Mappings: map[string]string{
-			"Std.IO":   "c0.dev/std/io",
-			"Std.List": "c0.dev/std/list",
+			"std.io":     "github.com/Macho0x/C0/std/io",
+			"std.list":   "github.com/Macho0x/C0/std/list",
+			"std.option": "github.com/Macho0x/C0/std/option",
+			"std.result": "github.com/Macho0x/C0/std/result",
 		},
 	}
 }
@@ -67,10 +69,14 @@ func (c *Config) ResolveImport(c0ModuleName string) (goImportPath, goPackageName
 
 	// 2. Built-in defaults
 	switch c0ModuleName {
-	case "Std.IO":
-		return "c0.dev/std/io", "io"
-	case "Std.List":
-		return "c0.dev/std/list", "list"
+	case "std.io", "Std.IO":
+		return "github.com/Macho0x/C0/std/io", "io"
+	case "std.list", "Std.List":
+		return "github.com/Macho0x/C0/std/list", "list"
+	case "std.option", "Std.Option":
+		return "github.com/Macho0x/C0/std/option", "option"
+	case "std.result", "Std.Result":
+		return "github.com/Macho0x/C0/std/result", "result"
 	}
 
 	// 3. Project module: combine ModuleRoot with lowercased path segments

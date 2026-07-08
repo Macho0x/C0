@@ -275,9 +275,9 @@ let main () = print_line "test"
 // Goroutine sharing analysis tests
 // ---------------------------------------------------------------------------
 
-// TestMutableGoCapture_RaceError: a mutable variable captured by a goroutine
-// while still accessible in the spawning scope → error.
-func TestMutableGoCapture_RaceError(t *testing.T) {
+// TestMutableGoCapture_NoErrorWhenNotUsedAfter: mutable captured by go but not
+// used afterward in the spawning scope → no error (flow-sensitive liveness).
+func TestMutableGoCapture_NoErrorWhenNotUsedAfter(t *testing.T) {
 	src := `module Test
 
 let race () =
@@ -288,7 +288,7 @@ let main () = print_line "test"
 `
 	mod := mustParse(t, src)
 	errs := linear.Check(mod, linearTypes(mod))
-	assertHasError(t, errs, "mutable variable \"counter\" captured by goroutine")
+	assertNoErrors(t, errs)
 }
 
 // TestMutableMultiGoCapture_Error: a mutable variable captured by two
@@ -340,28 +340,27 @@ let main () = print_line "test"
 	assertNoErrors(t, errs)
 }
 
-// TestMutableModuleLevelGoCapture_Error: a module-level mutable variable
-// captured by a goroutine in a top-level function → error.
+// TestMutableModuleLevelGoCapture_Error: module-level mutable used after go spawn.
 func TestMutableModuleLevelGoCapture_Error(t *testing.T) {
 	src := `module Test
 
 let mutable counter = 0
 
 let race () =
-  go (fun () -> counter)
+  let mutable counter = 0 in
+  let ignored = go (fun () -> counter) in
+  print_line (int_to_string counter)
 
 let main () = print_line "test"
 `
 	mod := mustParse(t, src)
 	errs := linear.Check(mod, linearTypes(mod))
-	assertHasError(t, errs, "mutable variable \"counter\" captured by goroutine")
+	assertHasError(t, errs, "mutable variable \"counter\"")
 }
 
-// TestMutableCapturedNotAccessed_StillError: the analysis is conservative —
-// even if the spawning scope never actually accesses the mutable variable
-// after the go expression, it is still flagged. This is a known false
-// positive; the analysis may be refined in a future version.
-func TestMutableCapturedNotAccessed_StillError(t *testing.T) {
+// TestMutableCapturedNotAccessed_NoError: flow-sensitive liveness — if the
+// spawning scope never accesses the mutable variable after go, no race error.
+func TestMutableCapturedNotAccessed_NoError(t *testing.T) {
 	src := `module Test
 
 let race () =
@@ -372,8 +371,23 @@ let main () = print_line "test"
 `
 	mod := mustParse(t, src)
 	errs := linear.Check(mod, linearTypes(mod))
-	// Conservative: still flagged even though spawning scope doesn't use counter after go
-	assertHasError(t, errs, "mutable variable \"counter\" captured by goroutine")
+	assertNoErrors(t, errs)
+}
+
+// TestMutableCapturedAndUsedAfterGo_Error: mutable variable used after go spawn.
+func TestMutableCapturedAndUsedAfterGo_Error(t *testing.T) {
+	src := `module Test
+
+let race () =
+  let mutable counter = 0 in
+  let ignored = go (fun () -> counter) in
+  print_line (int_to_string counter)
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertHasError(t, errs, "mutable variable \"counter\"")
 }
 
 // ---------------------------------------------------------------------------

@@ -1,8 +1,8 @@
-module ActivePatternsDemo
+module main
 
-type int_option = | Some of { value: int } | None
+type IntOption = | Some of { value: int } | None
 
-let isPositive (n: int) : int_option =
+let isPositive (n: int) : IntOption =
   if n > 0 then Some { value = n } else None
 
 let isEven (n: int) : bool =

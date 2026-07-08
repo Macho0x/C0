@@ -8,7 +8,7 @@ type TokenType int
 
 const (
 	EOF   TokenType = iota
-	ERROR // lexer error token
+	ERROR           // lexer error token
 	// NEWLINE is emitted for significant line breaks (layout).
 	// Currently the parser handles layout via column tracking, so the
 	// lexer skips whitespace entirely.  Reserved for future use.
@@ -54,6 +54,8 @@ const (
 	RETURNS
 	WHERE
 
+	PRIVATE // private visibility modifier
+
 	// --- delimiters ---
 	LPAREN   // (
 	RPAREN   // )
@@ -63,126 +65,132 @@ const (
 	RBRACKET // ]
 
 	// --- operators & symbols ---
-	ARROW     // ->
-	PIPE      // |
-	EQUALS    // =
-	SEMI      // ;
-	COLON     // :
-	DOT       // .
-	COMMA     // ,
-	STAR      // *
-	STARDOT   // *.  (float multiply)
-	PLUS      // +
-	MINUS     // -
-	SLASH     // /
+	AT         // @  (attribute prefix, e.g. @golang { ... })
+	ARROW      // ->
+	PIPE       // |
+	EQUALS     // =
+	SEMI       // ;
+	COLON      // :
+	DOT        // .
+	COMMA      // ,
+	STAR       // *
+	STARDOT    // *.  (float multiply)
+	PLUS       // +
+	MINUS      // -
+	SLASH      // /
 	UNDERSCORE // _
-	CONS      // ::
-	QUESTION  // ?
-	PIPEOP    // |>
-	DIAMOND   // <>
-	NEQ       // !=
-	EQEQ      // ==
-	LEQ       // <=
-	GEQ       // >=
-	LT        // <
-	GT        // >
-	CARET     // ^
-	LARROW    // <-
-	AMPAMP    // &&
-	PIPEPIPE  // ||
-	NOT       // not  (logical not — not a token, 'not' is a keyword)
-	BANG      // !   (used for let! and do! in computation expressions)
-	PLUSDOT   // +.  (float addition)
-	MINUSDOT  // -.  (float subtraction)
-	SLASHDOT  // /.  (float division)
+	CONS       // ::
+	QUESTION   // ?
+	PIPEOP     // |>
+	DIAMOND    // <>
+	NEQ        // !=
+	EQEQ       // ==
+	LEQ        // <=
+	GEQ        // >=
+	LT         // <
+	GT         // >
+	CARET      // ^
+	LARROW     // <-
+	AMPAMP     // &&
+	PIPEPIPE   // ||
+	NOT        // not  (logical not — not a token, 'not' is a keyword)
+	BANG       // !   (used for let! and do! in computation expressions)
+	PLUSDOT    // +.  (float addition)
+	MINUSDOT   // -.  (float subtraction)
+	SLASHDOT   // /.  (float division)
+
+	PERCENT    // %  (integer modulo)
 
 	// --- concurrency ---
-	CHAN // chan type
-	GO   // go keyword
+	CHAN  // chan type
+	GO    // go keyword
 	USING // using keyword
 
 	tokenCount // internal count
 )
 
 var tokenNames = [...]string{
-	EOF:        "EOF",
-	ERROR:      "ERROR",
-	IDENT:      "IDENT",
-	TYVAR:      "TYVAR",
+	EOF:         "EOF",
+	ERROR:       "ERROR",
+	IDENT:       "IDENT",
+	TYVAR:       "TYVAR",
 	CONSTRUCTOR: "CONSTRUCTOR",
-	INT:        "INT",
-	FLOAT:      "FLOAT",
-	STRING:     "STRING",
-	CHAR:       "CHAR",
-	LET:        "let",
-	REC:        "rec",
-	MUTABLE:    "mutable",
-	TYPE:       "type",
-	MATCH:      "match",
-	WITH:       "with",
-	IF:         "if",
-	THEN:       "then",
-	ELSE:       "else",
-	FUN:        "fun",
-	MODULE:     "module",
-	OPEN:       "open",
-	EXTERN:     "extern",
-	IMPORT:     "import",
-	AS:         "as",
-	WHEN:       "when",
-	OF:         "of",
-	IN:         "in",
-	AND:        "and",
-	PANIC:      "panic",
-	TRUE:       "true",
-	FALSE:      "false",
-	UNIT:       "()",
-	VAL:        "val",
-	GUARD:      "guard",
-	IS:         "is",
-	REQUIRES:   "requires",
-	RETURNS:    "returns",
-	WHERE:      "where",
-	LPAREN:     "(",
-	RPAREN:     ")",
-	LBRACE:     "{",
-	RBRACE:     "}",
-	LBRACKET:   "[",
-	RBRACKET:   "]",
-	ARROW:      "->",
-	PIPE:       "|",
-	EQUALS:     "=",
-	SEMI:       ";",
-	COLON:      ":",
-	DOT:        ".",
-	COMMA:      ",",
-	STAR:       "*",
-	STARDOT:    "*.",
-	PLUS:       "+",
-	MINUS:      "-",
-	SLASH:      "/",
-	UNDERSCORE: "_",
-	CONS:       "::",
-	QUESTION:   "?",
-	PIPEOP:     "|>",
-	DIAMOND:    "<>",
-	NEQ:        "!=",
-	EQEQ:       "==",
-	LEQ:        "<=",
-	GEQ:        ">=",
-	LT:         "<",
-	GT:         ">",
-	CARET:      "^",
-	LARROW:     "<-",
-	AMPAMP:     "&&",
-	PIPEPIPE:   "||",
-	BANG:       "!",
-	PLUSDOT:    "+.",
-	MINUSDOT:   "-.",
-	SLASHDOT:   "/.",
-	CHAN:       "chan",
-	GO:         "go",
-	USING:      "using",
+	INT:         "INT",
+	FLOAT:       "FLOAT",
+	STRING:      "STRING",
+	CHAR:        "CHAR",
+	LET:         "let",
+	REC:         "rec",
+	MUTABLE:     "mutable",
+	TYPE:        "type",
+	MATCH:       "match",
+	WITH:        "with",
+	IF:          "if",
+	THEN:        "then",
+	ELSE:        "else",
+	FUN:         "fun",
+	MODULE:      "module",
+	OPEN:        "open",
+	EXTERN:      "extern",
+	IMPORT:      "import",
+	AS:          "as",
+	WHEN:        "when",
+	OF:          "of",
+	IN:          "in",
+	AND:         "and",
+	PANIC:       "panic",
+	TRUE:        "true",
+	FALSE:       "false",
+	UNIT:        "()",
+	VAL:         "val",
+	GUARD:       "guard",
+	IS:          "is",
+	REQUIRES:    "requires",
+	RETURNS:     "returns",
+	WHERE:       "where",
+	PRIVATE:     "private",
+	LPAREN:      "(",
+	RPAREN:      ")",
+	LBRACE:      "{",
+	RBRACE:      "}",
+	LBRACKET:    "[",
+	RBRACKET:    "]",
+	AT:          "@",
+	ARROW:       "->",
+	PIPE:        "|",
+	EQUALS:      "=",
+	SEMI:        ";",
+	COLON:       ":",
+	DOT:         ".",
+	COMMA:       ",",
+	STAR:        "*",
+	STARDOT:     "*.",
+	PLUS:        "+",
+	MINUS:       "-",
+	SLASH:       "/",
+	UNDERSCORE:  "_",
+	CONS:        "::",
+	QUESTION:    "?",
+	PIPEOP:      "|>",
+	DIAMOND:     "<>",
+	NEQ:         "!=",
+	EQEQ:        "==",
+	LEQ:         "<=",
+	GEQ:         ">=",
+	LT:          "<",
+	GT:          ">",
+	CARET:       "^",
+	LARROW:      "<-",
+	AMPAMP:      "&&",
+	PIPEPIPE:    "||",
+	BANG:        "!",
+	PLUSDOT:     "+.",
+	MINUSDOT:    "-.",
+	SLASHDOT:    "/.",
+	PERCENT:     "%",
+	CHAN:        "chan",
+	GO:          "go",
+	USING:       "using",
 }
 
 // String returns the human-readable name of the token type.
@@ -198,7 +206,7 @@ func (t TokenType) IsKeyword() bool {
 	switch t {
 	case LET, REC, MUTABLE, TYPE, MATCH, WITH, IF, THEN, ELSE, FUN,
 		MODULE, OPEN, EXTERN, IMPORT, AS, WHEN, OF, IN, AND, PANIC,
-		TRUE, FALSE, UNIT, VAL, GUARD, IS, REQUIRES, RETURNS, WHERE, CHAN, GO, USING:
+		TRUE, FALSE, UNIT, VAL, GUARD, IS, REQUIRES, RETURNS, WHERE, PRIVATE, CHAN, GO, USING:
 		return true
 	}
 	return false
@@ -220,7 +228,7 @@ func (l SourceLoc) String() string {
 type Token struct {
 	Type    TokenType
 	Lexeme  string
-	Literal any   // parsed value for number/string literals (int64, float64, string)
+	Literal any // parsed value for number/string literals (int64, float64, string)
 	Loc     SourceLoc
 }
 
@@ -307,6 +315,8 @@ func LookupKeyword(s string) TokenType {
 		return RETURNS
 	case "where":
 		return WHERE
+	case "private":
+		return PRIVATE
 	case "not":
 		return NOT
 	case "chan":

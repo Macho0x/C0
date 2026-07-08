@@ -3,6 +3,7 @@ package parser_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"c0.dev/compiler/internal/ast"
@@ -14,8 +15,8 @@ var examplesDir = "../../../docs/examples"
 
 func TestParseHello(t *testing.T) {
 	mod := mustParse(t, "hello.c0")
-	if mod.Name != "Main" {
-		t.Errorf("expected module name Main, got %q", mod.Name)
+	if mod.Name != "main" {
+		t.Errorf("expected module name main, got %q", mod.Name)
 	}
 	if len(mod.Decls) != 1 {
 		t.Fatalf("expected 1 declaration, got %d", len(mod.Decls))
@@ -63,20 +64,20 @@ func TestParseHello(t *testing.T) {
 
 func TestParseShapes(t *testing.T) {
 	mod := mustParse(t, "shapes.c0")
-	if mod.Name != "Shapes" {
-		t.Errorf("expected Shapes, got %q", mod.Name)
+	if mod.Name != "main" {
+		t.Errorf("expected main, got %q", mod.Name)
 	}
-	if len(mod.Decls) != 3 {
-		t.Fatalf("expected 3 decls (type shape, let area, let describe), got %d", len(mod.Decls))
+	if len(mod.Decls) != 4 {
+		t.Fatalf("expected 4 decls (type Shape, let area, let describe, let main), got %d", len(mod.Decls))
 	}
 
-	// First decl: type shape = ADT
+	// First decl: type Shape = ADT
 	td, ok := mod.Decls[0].(*ast.TypeDecl)
 	if !ok {
 		t.Fatalf("expected TypeDecl, got %T", mod.Decls[0])
 	}
-	if td.Name != "shape" {
-		t.Errorf("expected type name shape, got %q", td.Name)
+	if td.Name != "Shape" {
+		t.Errorf("expected type name Shape, got %q", td.Name)
 	}
 	adt, ok := td.Kind.(*ast.ADTTypeKind)
 	if !ok {
@@ -134,23 +135,23 @@ func TestParseShapes(t *testing.T) {
 
 func TestParseResult(t *testing.T) {
 	mod := mustParse(t, "result.c0")
-	if mod.Name != "ResultExample" {
-		t.Errorf("expected ResultExample, got %q", mod.Name)
+	if mod.Name != "main" {
+		t.Errorf("expected main, got %q", mod.Name)
 	}
-	if len(mod.Decls) != 6 {
-		t.Fatalf("expected 6 decls, got %d", len(mod.Decls))
+	if len(mod.Decls) != 7 {
+		t.Fatalf("expected 7 decls, got %d", len(mod.Decls))
 	}
 
-	// type user = { id: int; name: string }
+	// type User = { id: int; name: string }
 	tdUser, ok := mod.Decls[0].(*ast.TypeDecl)
-	if !ok || tdUser.Name != "user" {
-		t.Error("expected type user")
+	if !ok || tdUser.Name != "User" {
+		t.Error("expected type User")
 	}
 
-	// type error = NotFound | InvalidInput of string
+	// type UserError = NotFound | InvalidInput of string
 	tdErr, ok := mod.Decls[1].(*ast.TypeDecl)
-	if !ok || tdErr.Name != "error" {
-		t.Error("expected type error")
+	if !ok || tdErr.Name != "UserError" {
+		t.Error("expected type UserError")
 	}
 
 	// let findUser ...
@@ -203,16 +204,16 @@ func TestParseOrderbook(t *testing.T) {
 		t.Fatalf("expected at least 8 decls, got %d", len(mod.Decls))
 	}
 
-	// type side = Buy | Sell
+	// type Side = Buy | Sell
 	td, ok := mod.Decls[0].(*ast.TypeDecl)
-	if !ok || td.Name != "side" {
-		t.Error("expected type side")
+	if !ok || td.Name != "Side" {
+		t.Error("expected type Side")
 	}
 
-	// type order = { ... }
+	// type Order = { ... }
 	td2, ok := mod.Decls[1].(*ast.TypeDecl)
-	if !ok || td2.Name != "order" {
-		t.Error("expected type order")
+	if !ok || td2.Name != "Order" {
+		t.Error("expected type Order")
 	}
 	_, ok = td2.Kind.(*ast.RecordTypeKind)
 	if !ok {
@@ -288,6 +289,59 @@ func TestLexResult(t *testing.T) {
 func TestLexOrderbook(t *testing.T) {
 	mod := mustParse(t, "orderbook.c0")
 	_ = mod
+}
+
+func TestParseGolangEmbed(t *testing.T) {
+	src := `module main
+
+extern "go" "fmt" {}
+
+@golang {
+  func nowString() string {
+    return fmt.Sprintf("%d", 1)
+  }
+}
+val nowString : unit -> string
+
+let main () = print_line (nowString ())
+`
+	mod, err := parser.Parse("golang.c0", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var found bool
+	for _, d := range mod.Decls {
+		if ge, ok := d.(*ast.GolangEmbedDecl); ok {
+			found = true
+			if !strings.Contains(ge.GoCode, "nowString") {
+				t.Error("expected Go code in embed block")
+			}
+			if len(ge.Vals) != 1 || ge.Vals[0].Name != "nowString" {
+				t.Errorf("expected val nowString, got %+v", ge.Vals)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected GolangEmbedDecl")
+	}
+}
+
+func TestRejectLegacyGoBlockInExtern(t *testing.T) {
+	src := `module main
+
+extern "go" "fmt" {
+  go {
+    func x() {}
+  }
+}
+`
+	_, err := parser.Parse("bad.c0", []byte(src))
+	if err == nil {
+		t.Fatal("expected parse error for go { } inside extern")
+	}
+	if !strings.Contains(err.Error(), "@golang") {
+		t.Errorf("expected @golang migration hint, got: %v", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
