@@ -7,10 +7,12 @@
     { "include": "#comments" },
     { "include": "#embedded-golang" },
     { "include": "#strings" },
-    { "include": "#numbers" },
-    { "include": "#keywords" },
-    { "include": "#types" },
+    { "include": "#bindings" },
+    { "include": "#type-declarations" },
     { "include": "#operators" },
+    { "include": "#keywords" },
+    { "include": "#literals" },
+    { "include": "#types" },
     { "include": "#identifiers" }
   ],
   "repository": {
@@ -28,6 +30,7 @@
         }
       ]
     },
+
     "embedded-golang": {
       "patterns": [
         {
@@ -39,6 +42,7 @@
         }
       ]
     },
+
     "strings": {
       "patterns": [
         {
@@ -65,127 +69,186 @@
         }
       ]
     },
-    "numbers": {
+
+    "bindings": {
       "patterns": [
         {
-          "name": "constant.numeric.float.goop",
-          "match": "\\b[0-9]+\\.[0-9]*(?:[eE][+-]?[0-9]+)?\\b"
+          "comment": "let binding with function name",
+          "match": "\\b(let)\\b(\\s+)(rec\\s+)?([a-z_][a-zA-Z0-9_']*)",
+          "captures": {
+            "1": { "name": "keyword.goop" },
+            "3": { "name": "keyword.goop" },
+            "4": { "name": "entity.name.function.binding.goop" }
+          }
         },
         {
-          "name": "constant.numeric.integer.goop",
-          "match": "\\b[0-9]+\\b"
+          "comment": "val binding",
+          "match": "\\b(val)\\b(\\s+)([a-z_][a-zA-Z0-9_']*)",
+          "captures": {
+            "1": { "name": "keyword.goop" },
+            "3": { "name": "entity.name.function.binding.goop" }
+          }
+        },
+        {
+          "comment": "type name in declaration",
+          "match": "\\b(type)\\b(\\s+)([a-z_][a-zA-Z0-9_']*)",
+          "captures": {
+            "1": { "name": "keyword.goop" },
+            "3": { "name": "entity.name.type.declaration.goop" }
+          }
+        },
+        {
+          "comment": "module name",
+          "match": "\\b(module)\\b(\\s+)([A-Z][a-zA-Z0-9_']*)",
+          "captures": {
+            "1": { "name": "keyword.goop" },
+            "3": { "name": "entity.name.type.module.goop" }
+          }
         }
       ]
     },
-    "keywords": {
+
+    "type-declarations": {
       "patterns": [
         {
-          "name": "keyword.control.goop",
-          "match": "\\b(if|then|else|match|with|when|guard|of|in|let|rec|mutable|and|as|select|return|where|is|using)\\b"
+          "comment": "ADT variant bar",
+          "match": "(\\|)(\\s*)([A-Z][a-zA-Z0-9_']*)",
+          "captures": {
+            "1": { "name": "keyword.other.goop" },
+            "3": { "name": "constant.language.capital-identifier.goop" }
+          }
         },
         {
-          "name": "keyword.declaration.goop",
-          "match": "\\b(module|import|type|val|fun|private|newtype)\\b"
-        },
-        {
-          "name": "keyword.other.goop",
-          "match": "\\b(golang|goop|go|chan|async|result|region|panic)\\b"
-        },
-        {
-          "name": "constant.language.goop",
-          "match": "\\b(true|false|unit|None|Some|Ok|Error)\\b"
+          "comment": "newtype constructor",
+          "match": "\\b(newtype)\\b",
+          "name": "keyword.goop"
         }
       ]
     },
-    "types": {
-      "patterns": [
-        {
-          "name": "variable.language.typevar.goop",
-          "match": "'[a-z][a-zA-Z0-9_']*"
-        },
-        {
-          "name": "support.type.primitive.goop",
-          "match": "\\b(bool|int|float|string|char|unit|bytes|rune|list|option|result|owned_chan)\\b"
-        }
-      ]
-    },
+
     "operators": {
       "patterns": [
         {
-          "name": "keyword.operator.error-propagation.goop",
-          "match": "\\?"
+          "name": "keyword.operator.goop",
+          "match": "->|=>|\\|>|::|\\?|\\^|\\+\\+|\\+\\.|\\*\\.|<>|<=|>=|==|!=|\\|\\||&&|[+\\-*/%.]"
         },
         {
-          "name": "keyword.operator.arrow.goop",
-          "match": "->"
+          "name": "keyword.other.goop",
+          "match": "(?<!\\[)(\\|)(?!\\])"
         },
         {
-          "name": "keyword.operator.pipe.goop",
-          "match": "\\|>"
-        },
-        {
-          "name": "keyword.operator.fatarrow.goop",
-          "match": "=>"
-        },
-        {
-          "name": "keyword.operator.assignment.goop",
-          "match": "="
-        },
-        {
-          "name": "keyword.operator.comparison.goop",
-          "match": "<>|<=|>=|<|>|==|!="
-        },
-        {
-          "name": "keyword.operator.arithmetic.goop",
-          "match": "\\+|\\-|\\*\\*|\\*|/\\.|\\*\\.|%|\\."
-        },
-        {
-          "name": "keyword.operator.logical.goop",
-          "match": "\\|\\||&&|!"
-        },
-        {
-          "name": "keyword.operator.concatenation.goop",
-          "match": "\\^"
-        },
-        {
-          "name": "keyword.operator.cons.goop",
-          "match": "::"
-        },
-        {
-          "name": "keyword.operator.range.goop",
-          "match": "\\.\\."
-        },
-        {
-          "name": "punctuation.separator.dot.goop",
-          "match": "\\."
-        },
-        {
-          "name": "punctuation.separator.comma.goop",
-          "match": ","
-        },
-        {
-          "name": "punctuation.separator.semicolon.goop",
-          "match": ";"
-        },
-        {
-          "name": "punctuation.separator.colon.goop",
+          "name": "keyword.other.goop punctuation.other.colon",
           "match": ":"
         },
         {
-          "name": "punctuation.bracket.goop",
-          "match": "[\\[\\]{}()|]"
+          "name": "keyword.other.goop punctuation.separator.semicolon",
+          "match": ";"
+        },
+        {
+          "name": "keyword.other.goop punctuation.separator.comma",
+          "match": ","
+        },
+        {
+          "name": "keyword.other.goop punctuation.other.period",
+          "match": "\\."
         }
       ]
     },
+
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.other.goop",
+          "match": "\\b(and|as|async|chan|else|fun|golang|go|goop|guard|if|import|in|is|match|mutable|of|panic|private|rec|region|result|return|select|then|type|using|val|when|where|with)\\b(?!')"
+        },
+        {
+          "name": "keyword.goop",
+          "match": "\\b(let|module)\\b(?!')"
+        }
+      ]
+    },
+
+    "literals": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.goop",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.goop",
+          "match": "\\b(None|Some|Ok|Error|unit)\\b"
+        },
+        {
+          "name": "constant.numeric.decimal.float.goop",
+          "match": "\\b[0-9]+\\.[0-9]+([eE][+-]?[0-9]+)?\\b"
+        },
+        {
+          "name": "constant.numeric.decimal.integer.goop",
+          "match": "\\b[0-9]+\\b"
+        },
+        {
+          "name": "constant.language.unit.goop",
+          "match": "\\(\\)"
+        },
+        {
+          "name": "constant.language.list.goop",
+          "match": "\\[\\]"
+        },
+        {
+          "name": "meta.brace.round.goop",
+          "begin": "\\(",
+          "end": "\\)",
+          "patterns": [{ "include": "$self" }]
+        },
+        {
+          "name": "meta.brace.curly.goop",
+          "begin": "\\{",
+          "end": "\\}",
+          "patterns": [{ "include": "$self" }]
+        },
+        {
+          "name": "meta.brace.square.goop",
+          "begin": "\\[",
+          "end": "\\]",
+          "patterns": [{ "include": "$self" }]
+        }
+      ]
+    },
+
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.goop",
+          "match": "'[a-z][a-zA-Z0-9_']*\\b|'_\\b"
+        },
+        {
+          "name": "support.type.goop",
+          "match": "\\b(bool|int|float|string|char|unit|bytes|rune|list|option|result|owned_chan|chan)\\b"
+        },
+        {
+          "name": "entity.name.type.goop",
+          "match": "\\b[A-Z][a-zA-Z0-9_']*\\b"
+        }
+      ]
+    },
+
     "identifiers": {
       "patterns": [
         {
-          "name": "entity.name.type.constructor.goop",
+          "name": "constant.language.goop",
+          "match": "\\b_\\b"
+        },
+        {
+          "name": "constant.language.capital-identifier.goop",
           "match": "\\b[A-Z][a-zA-Z0-9_']*\\b"
         },
         {
-          "name": "variable.goop",
+          "name": "variable.other.goop",
           "match": "\\b[a-z_][a-zA-Z0-9_']*\\b"
+        },
+        {
+          "name": "variable.other.property.goop",
+          "match": "\\b[a-z_][a-zA-Z0-9_']*(?=\\s*;)"
         }
       ]
     }
