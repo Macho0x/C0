@@ -340,7 +340,7 @@ func (p *Parser) parseTopDecl() ast.TopDecl {
 		p.advance()
 		switch p.cur().Type {
 		case token.LET:
-			return p.parseLetDecl(true, true)
+			return p.parseLetDecl(true)
 		case token.TYPE:
 			return p.parseTypeDecl(true)
 		default:
@@ -349,7 +349,7 @@ func (p *Parser) parseTopDecl() ast.TopDecl {
 			return nil
 		}
 	case token.LET:
-		return p.parseLetDecl(true, false)
+		return p.parseLetDecl(false)
 	case token.TYPE:
 		return p.parseTypeDecl(false)
 	case token.EXTERN:
@@ -378,7 +378,7 @@ func (p *Parser) parseTopDecl() ast.TopDecl {
 
 // parseLetDecl parses a top-level `let` (no `in`), or
 // an active pattern `let (|Name|_|) (...) = ...`.
-func (p *Parser) parseLetDecl(isTopLevel bool, isPrivate bool) *ast.LetDecl {
+func (p *Parser) parseLetDecl(isPrivate bool) *ast.LetDecl {
 	p.expect(token.LET)
 	decl := &ast.LetDecl{Private: isPrivate}
 
@@ -429,7 +429,7 @@ func (p *Parser) parseBinding() ast.LetBinding {
 	b := ast.LetBinding{}
 
 	tok := p.cur()
-	if tok.Type != token.IDENT && tok.Type != token.CONSTRUCTOR {
+	if tok.Type != token.IDENT && tok.Type != token.CONSTRUCTOR && tok.Type != token.UNDERSCORE {
 		p.errorf("expected binding name, got %s", tok.Type)
 		if p.cur().Type != token.EOF {
 			p.advance()
@@ -810,59 +810,6 @@ func (p *Parser) parseExternDeclSkip() ast.TopDecl {
 		}
 	}
 	return nil
-}
-
-func (p *Parser) parseExternDecl() ast.TopDecl {
-	p.expect(token.EXTERN)
-	ed := &ast.ExternDecl{}
-
-	// First string: language
-	tok := p.cur()
-	if tok.Type == token.STRING {
-		p.advance()
-		ed.Lang = tok.Lexeme
-	} else {
-		p.errorf("expected string literal for extern language, got %s", tok.Type)
-	}
-
-	// Second string: import path
-	tok = p.cur()
-	if tok.Type == token.STRING {
-		p.advance()
-		ed.Path = tok.Lexeme
-	} else {
-		p.errorf("expected string literal for extern path, got %s", tok.Type)
-	}
-
-	p.expect(token.LBRACE)
-	for p.cur().Type != token.RBRACE && p.cur().Type != token.EOF {
-		if p.match(token.GO) {
-			if p.cur().Type == token.LBRACE {
-				p.errorf("use @golang { ... } for embedded Go code (go { } inside extern is removed)")
-				p.parseGoBlock()
-			} else {
-				p.errorf("unexpected 'go' inside extern block")
-				p.advance()
-			}
-		} else if p.match(token.VAL) {
-			ev := ast.ExternVal{}
-			nameTok := p.cur()
-			if nameTok.Type == token.IDENT || nameTok.Type == token.CONSTRUCTOR {
-				p.advance()
-				ev.Name = nameTok.Lexeme
-			} else {
-				p.errorf("expected extern binding name, got %s", nameTok.Type)
-			}
-			p.expect(token.COLON)
-			ev.Type = p.parseType()
-			ed.Vals = append(ed.Vals, ev)
-		} else {
-			p.errorf("expected 'go' or 'val' inside extern block, got %s", p.cur().Type)
-			p.advance()
-		}
-	}
-	p.expect(token.RBRACE)
-	return ed
 }
 
 // ---------------------------------------------------------------------------
@@ -1264,7 +1211,7 @@ func (p *Parser) parseMatchArms() []ast.MatchArm {
 
 func (p *Parser) parseLetInExpr() ast.Expr {
 	letLoc := p.cur().Loc
-	decl := p.parseLetDecl(false, false)
+	decl := p.parseLetDecl(false)
 	// `in` is optional — when absent the offside rule treats the next
 	// expression at the same or greater indentation as the body.
 	p.match(token.IN)

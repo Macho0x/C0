@@ -19,8 +19,8 @@ import (
 	"strconv"
 	"strings"
 
-	"goop.dev/compiler/internal/checkpipeline"
 	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/checkpipeline"
 	"goop.dev/compiler/internal/codegen"
 	"goop.dev/compiler/internal/color"
 	"goop.dev/compiler/internal/config"
@@ -54,6 +54,18 @@ type Response struct {
 type ResponseError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+// lspResult builds a JSON-RPC response. A nil result encodes as JSON null;
+// without that, omitempty would omit "result" and break LSP clients.
+func lspResult(id interface{}, result interface{}) Response {
+	resp := Response{Jsonrpc: "2.0", ID: id}
+	if result == nil {
+		resp.Result = json.RawMessage("null")
+	} else {
+		resp.Result = result
+	}
+	return resp
 }
 
 type Diagnostic struct {
@@ -99,13 +111,14 @@ func main() {
 	inPlace := false // -i flag for in-place formatting
 	var filtered []string
 	for _, a := range args {
-		if a == "--no-source-map" {
+		switch a {
+		case "--no-source-map":
 			globalWriteMap = false
-		} else if a == "--color" {
+		case "--color":
 			colorOutput = true
-		} else if a == "-i" || a == "--in-place" {
+		case "-i", "--in-place":
 			inPlace = true
-		} else {
+		default:
 			filtered = append(filtered, a)
 		}
 	}
@@ -509,33 +522,29 @@ func (s *LSPServer) handleLSPRequest(req Request) Response {
 }
 
 func (s *LSPServer) handleInitialize(req Request) Response {
-	return Response{
-		Jsonrpc: "2.0",
-		ID:      req.ID,
-		Result: InitializeResult{
-			Capabilities: ServerCapabilities{
-				TextDocumentSync:   1,
-				HoverProvider:      true,
-				DefinitionProvider: true,
-				CompletionProvider: true,
-			},
+	return lspResult(req.ID, InitializeResult{
+		Capabilities: ServerCapabilities{
+			TextDocumentSync:   1,
+			HoverProvider:      true,
+			DefinitionProvider: true,
+			CompletionProvider: true,
 		},
-	}
+	})
 }
 
 func (s *LSPServer) handleDidSave(req Request) Response {
 	s.handleDocumentUpdate(req.Params)
-	return Response{Jsonrpc: "2.0", ID: req.ID}
+	return lspResult(req.ID, nil)
 }
 
 func (s *LSPServer) handleDidOpen(req Request) Response {
 	s.handleDocumentUpdate(req.Params)
-	return Response{Jsonrpc: "2.0", ID: req.ID}
+	return lspResult(req.ID, nil)
 }
 
 func (s *LSPServer) handleDidChange(req Request) Response {
 	s.handleDocumentUpdate(req.Params)
-	return Response{Jsonrpc: "2.0", ID: req.ID}
+	return lspResult(req.ID, nil)
 }
 
 // handleDocumentUpdate parses and type-checks a document, storing results for LSP use.
@@ -559,18 +568,18 @@ func (s *LSPServer) handleDocumentUpdate(params json.RawMessage) {
 	var diagnostics []Diagnostic
 
 	if parseErr != nil {
-		diagnostics = append(diagnostics, diagnosticFromError(parseErr, src))
+		diagnostics = append(diagnostics, diagnosticFromError(parseErr))
 	} else {
 		mod = desugar.DesugarModule(mod)
 
 		lspCfg := loadProjectConfig(fileName)
 		tm, vtm, typeErrs := typecheckModule(mod, fileName, lspCfg)
 		for _, terr := range typeErrs {
-			diagnostics = append(diagnostics, diagnosticFromError(terr, src))
+			diagnostics = append(diagnostics, diagnosticFromError(terr))
 		}
 
 		for _, terr := range lspSafetyDiagnostics(mod, tm, lspCfg) {
-			diagnostics = append(diagnostics, diagnosticFromError(terr, src))
+			diagnostics = append(diagnostics, diagnosticFromError(terr))
 		}
 
 		// Store state for hover/definition
@@ -586,7 +595,7 @@ func (s *LSPServer) handleDocumentUpdate(params json.RawMessage) {
 }
 
 // diagnosticFromError creates a Diagnostic with proper LSP range from an error.
-func diagnosticFromError(err error, src []byte) Diagnostic {
+func diagnosticFromError(err error) Diagnostic {
 	var diag Diagnostic
 	diag.Severity = SeverityError
 
@@ -718,25 +727,21 @@ func (s *LSPServer) handleHover(req Request) Response {
 
 	state, ok := s.states[params.TextDocument.URI]
 	if !ok {
-		return Response{Jsonrpc: "2.0", ID: req.ID, Result: nil}
+		return lspResult(req.ID, nil)
 	}
 
 	// Find the expression at this position
 	hoverText, found := s.findHoverInfo(state, params.Position)
 	if !found {
-		return Response{Jsonrpc: "2.0", ID: req.ID, Result: nil}
+		return lspResult(req.ID, nil)
 	}
 
-	return Response{
-		Jsonrpc: "2.0",
-		ID:      req.ID,
-		Result: HoverResponse{
-			Contents: HoverContents{
-				Kind:  "plaintext",
-				Value: hoverText,
-			},
+	return lspResult(req.ID, HoverResponse{
+		Contents: HoverContents{
+			Kind:  "plaintext",
+			Value: hoverText,
 		},
-	}
+	})
 }
 
 func (s *LSPServer) findHoverInfo(state *DocumentState, pos struct {
@@ -797,20 +802,16 @@ func (s *LSPServer) handleDefinition(req Request) Response {
 
 	state, ok := s.states[params.TextDocument.URI]
 	if !ok || state.Module == nil {
-		return Response{Jsonrpc: "2.0", ID: req.ID, Result: nil}
+		return lspResult(req.ID, nil)
 	}
 
 	loc := s.findDefinition(state, params.Position)
 	if loc == nil {
-		return Response{Jsonrpc: "2.0", ID: req.ID, Result: nil}
+		return lspResult(req.ID, nil)
 	}
 
 	loc.URI = params.TextDocument.URI
-	return Response{
-		Jsonrpc: "2.0",
-		ID:      req.ID,
-		Result:  loc,
-	}
+	return lspResult(req.ID, loc)
 }
 
 func (s *LSPServer) findDefinition(state *DocumentState, pos struct {
@@ -879,18 +880,14 @@ func (s *LSPServer) handleCompletion(req Request) Response {
 
 	state, ok := s.states[params.TextDocument.URI]
 	if !ok || state.Module == nil {
-		return Response{Jsonrpc: "2.0", ID: req.ID, Result: nil}
+		return lspResult(req.ID, nil)
 	}
 
 	items := s.collectCompletions(state)
-	return Response{
-		Jsonrpc: "2.0",
-		ID:      req.ID,
-		Result: CompletionList{
-			IsIncomplete: false,
-			Items:        items,
-		},
-	}
+	return lspResult(req.ID, CompletionList{
+		IsIncomplete: false,
+		Items:        items,
+	})
 }
 
 func (s *LSPServer) collectCompletions(state *DocumentState) []CompletionItem {
@@ -951,6 +948,9 @@ func readLSPMessage(r io.Reader) (Request, error) {
 			fmt.Sscanf(line, "Content-Length: %d", &contentLength)
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return req, err
+	}
 	if contentLength > 0 {
 		body := make([]byte, contentLength)
 		if _, err := io.ReadFull(r, body); err != nil {
@@ -1002,15 +1002,6 @@ func findProjectRoot(start string) string {
 		}
 		dir = parent
 	}
-}
-
-func localGoopPathForImport(projectRoot, goImport string) string {
-	if !strings.HasPrefix(goImport, goopProjectImportPrefix) {
-		return ""
-	}
-	rel := strings.TrimPrefix(goImport, goopProjectImportPrefix)
-	pkg := filepath.Base(rel)
-	return filepath.Join(projectRoot, filepath.FromSlash(rel), pkg+modresolve.SourceExt)
 }
 
 func compileGoopModuleToGo(goopPath string, cfg *config.Config) (string, string, error) {
@@ -1114,10 +1105,6 @@ func writeImportDependencies(mod *ast.Module, cfg *config.Config, projectRoot, t
 		goMod += "\n" + strings.Join(replaces, "\n") + "\n"
 	}
 	return goMod, nil
-}
-
-func writeOpenDependencies(mod *ast.Module, cfg *config.Config, projectRoot, tmpDir string) (string, error) {
-	return writeImportDependencies(mod, cfg, projectRoot, tmpDir, "")
 }
 
 func runTests(dir string) int {

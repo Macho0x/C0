@@ -1,7 +1,7 @@
 module Main
 
 let run (ch: int owned_chan) : unit =
-  let _dummy = go (fun () ->
+  let _ = go (fun () ->
     let u1 = OwnedChan.send ch 7 in
     OwnedChan.close ch
   ) in

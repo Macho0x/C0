@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.1
+
+### Parser & LSP
+- Allow `let _` discard bindings (idiomatic for `go` fire-and-forget)
+- Fix LSP hover/definition/completion returning invalid JSON-RPC when result is null
+- Check `scanner.Err()` after LSP header reads
+
+### Cleanup
+- Remove dead code: `parseExternDecl`, `localGoopPathForImport`, `writeOpenDependencies`
+- Drop unused parameters in `parseLetDecl` and `diagnosticFromError`
+- Promote `golang.org/x/tools` to a direct module dependency
+
 ## 0.7.0
 
 ### Formatter

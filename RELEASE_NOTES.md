@@ -1,15 +1,14 @@
-# Goop 0.7.0
+# Goop 0.7.1
 
-## Formatter
-- **`src/internal/fmt`**: `goop fmt` pretty-prints the parse tree without desugaring (preserves `guard`, `go (move ...)`, etc.)
-- Offside-rule layout for `match`, `if`, and `let` chains
+## Parser & LSP
+- **`let _`**: discard bindings are now accepted (e.g. `let _ = go (fun () -> ...)`)
+- **LSP null responses**: hover, definition, and completion no longer emit malformed JSON-RPC when there is nothing to show
+- **LSP I/O**: `readLSPMessage` checks `scanner.Err()` after reading headers
 
-## Concurrency safety
-- **LINEAR008**: channel-mediated race tracking when mutable values are sent on channels while still accessible in the spawning scope (`[check] concurrent`)
-- **DEADLOCK001**: narrow static deadlock lint for circular send/recv on unbuffered channels (`[check] deadlock`, default `warn`)
-
-## Examples
-- `docs/examples/channel_race.goop`
+## Cleanup
+- Removed unused parser and CLI helpers (`parseExternDecl`, `localGoopPathForImport`, `writeOpenDependencies`)
+- Tidied `go.mod` (`golang.org/x/tools` is now a direct dependency)
 
 ## Tests
+- `linear_go_handoff_test.goop` uses idiomatic `let _` syntax
 - Full `go test ./...` and 32 `goop test` integration tests passing
