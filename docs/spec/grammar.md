@@ -18,9 +18,9 @@ unit     := '()'
 ## Reserved words
 
 ```
-and as begin do done end for goop else false fun golang guard if import in
-let match module move mutable of panic private rec
-requires returns then to true type unit val when with
+and as begin chan do done end for go goop else false fun golang guard if import in
+let match module move mutable of panic private rec region result
+requires returns select then to true type unit val when with async
 ```
 
 ## Program structure
@@ -32,6 +32,7 @@ import_decl  := 'import' import_spec | 'import' '(' import_spec* ')'
 import_spec  := ident? ('golang' | 'c0') '.'? string import_vals?
 import_vals  := '{' 'val' ident ':' type* '}'
 top_decl     := val_decl | type_decl | golang_embed_decl
+golang_embed_decl := '@golang' '{' raw_go_code '}'
 ```
 
 ## Value declarations
@@ -132,6 +133,7 @@ app_type     := primary_type (primary_type)*
 primary_type := ident
               | tyvar
               | '(' type ')'
+              | type 'array'
               | '{' field_type (';' field_type)* ('|' '..')? '}'
               | '(' type (',' type)+ ')'
 
@@ -172,13 +174,4 @@ comp_op      := 'let!' pattern '=' expr
 comp_return  := 'return' expr
 ```
 
-## Extern declarations
-
-```
-extern_decl  := 'extern' string string '{' (extern_binding | go_block)* '}'
-extern_binding := 'val' ident ':' type
-go_block     := 'go' '{' raw_go_code '}'
-```
-
-`raw_go_code` is the raw source text between `{` and its matching `}`, including nested braces, string literals, and comments. The compiler emits this text verbatim into the generated Go file. Use separate `extern "go" "pkg" {}` declarations (empty val/go blocks) to add Go imports.
-```
+Legacy `extern "go"` and `open` declarations are parse errors (removed in v0.3). Use `import golang` / `import goop` and `@golang { ... }` embed blocks instead. See [05-modules-and-packages.md](../design/05-modules-and-packages.md).

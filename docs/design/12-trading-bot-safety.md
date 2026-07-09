@@ -1,4 +1,4 @@
-# Trading bot safety matrix (Goop v0.5.0)
+# Trading bot safety matrix (Goop v0.8.2)
 
 Goop targets compile-time prevention of common trading-bot failure modes.
 
@@ -10,8 +10,10 @@ Goop targets compile-time prevention of common trading-bot failure modes.
 | Dead match arm / wildcard | EXHAUST001/002 | Unreachable patterns |
 | Nil channel before init | NIL001 | `Chan.send`/`recv` before `Chan.make` |
 | Shared mutable position race | LINEAR006/007 | Linear + goroutine analysis |
+| Channel-mediated mutable race | LINEAR008 | `Chan.send` of mutable var still in parent scope |
+| Potential channel deadlock | DEADLOCK001 | Circular send/recv between two goroutines |
 | Send after close | LINEAR002 | Owned channel linearity |
-| Leaked owned channel | LINEIN001 | Channel not discharged |
+| Leaked owned channel | LINEAR001 | Channel not discharged |
 | Refinement violated at call | REFINE001 | VC disproves precondition |
 | Unproven refinement | REFINE002 | Runtime guard emitted |
 | Pure fn calls IO | UNIFY018 | `with {}` vs inferred `{ io }` |
@@ -19,8 +21,8 @@ Goop targets compile-time prevention of common trading-bot failure modes.
 
 ## Compile-time vs runtime
 
-- **Compile-time:** exhaustiveness, nil-channel (conservative), linearity, effect rows, newtypes, proven refinements.
-- **Runtime:** unproven refinements (REFINE002 guards), external I/O failures, venue API semantics.
+- **Compile-time:** exhaustiveness, nil-channel (conservative), linearity, effect rows, newtypes, proven refinements, narrow channel deadlock lint (DEADLOCK001).
+- **Runtime:** unproven refinements (REFINE002 guards), external I/O failures, venue API semantics, total deadlocks (Go runtime).
 
 ## Recommended patterns
 

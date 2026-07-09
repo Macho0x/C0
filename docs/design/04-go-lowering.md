@@ -418,28 +418,26 @@ func Process(h Handle) {
 
 Each `let!` acquires a linear resource and registers a `defer Close()` at region exit. The linear discharge checker auto-discharges region-bound variables. This replaces the legacy `using` block with compile-time-guaranteed cleanup.
 
-## Inline Go extern
+## Inline Go (`@golang`)
 
-Goop allows embedding raw Go functions directly inside `extern` declarations using a `go { ... }` block. The Go code is emitted verbatim into the generated file, enabling multi-step Go logic without editing the compiler.
+Goop embeds raw Go functions with `@golang { ... }` blocks. Declare Go imports with `import golang "path"` and expose bindings with `val` signatures:
 
 ```goop
-extern "go" "net/http" {}
-extern "go" "encoding/json" {}
-extern "go" "io" {}
-extern "go" "strconv" {}
+import (
+  golang "net/http"
+  golang "io"
+)
 
-extern "go" "" {
-  go {
-    func httpGetString(url string) string {
-      resp, err := http.Get(url)
-      if err != nil { return "" }
-      defer resp.Body.Close()
-      body, _ := io.ReadAll(resp.Body)
-      return string(body)
-    }
+@golang {
+  func httpGetString(url string) string {
+    resp, err := http.Get(url)
+    if err != nil { return "" }
+    defer resp.Body.Close()
+    body, _ := io.ReadAll(resp.Body)
+    return string(body)
   }
-  val httpGetString : string -> string
 }
+val httpGetString : string -> string
 ```
 
 →
@@ -447,9 +445,7 @@ extern "go" "" {
 ```go
 import (
     "net/http"
-    "encoding/json"
     "io"
-    "strconv"
 )
 
 func httpGetString(url string) string {
@@ -459,20 +455,17 @@ func httpGetString(url string) string {
     body, _ := io.ReadAll(resp.Body)
     return string(body)
 }
-
-func main() {
-    data := httpGetString("https://...")
-    // ...
-}
 ```
 
 Key rules:
 
-1. **Imports**: Declare required Go packages with separate `extern "go" "path" {}` blocks (empty val/go lists). The compiler adds these to the Go import block.
-2. **Same-package helpers**: Use `extern "go" "" { go { ... } }` for helpers that need no extra import. The Go code is emitted directly into the package.
-3. **Names must match**: The Go function name in the `go { ... }` block must match the Goop name declared in `val name : type`. The Goop-to-Go name translation is identity for inline extern (no mangling).
+1. **Imports**: Declare required Go packages with `import golang "path"` (import-only or with `{ val ... }` signatures).
+2. **Same-package helpers**: `@golang { ... }` emits Go code directly into the generated package.
+3. **Names must match**: The Go function name in the `@golang` block must match the Goop `val` binding. Identity mapping for inline Go (no mangling).
 4. **Unit arguments are elided**: Goop `()` calls become zero-argument Go calls (`nowString()` not `nowString(struct{}{})`).
-5. **Any valid Go code works**: Functions, types, constants, variables — the entire `go { ... }` block is emitted verbatim.
+5. **Any valid Go code works**: Functions, types, constants, variables — the entire `@golang { ... }` block is emitted verbatim.
+
+See [`extern_demo.goop`](../examples/extern_demo.goop).
 
 ## Source maps
 

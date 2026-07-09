@@ -41,6 +41,8 @@ Color.Red
 match c with Color.Green -> ...
 ```
 
+Use **PascalCase type names** (`PriceVsMean.FarBelow`, `TradeSide.Buy`, `OrderAck.Filled`). Qualified forms on **lowercase** types (`quote_slot.NoQuote`, `risk_action.ReduceOnly`) typecheck today but codegen may emit invalid Go field access — keep those constructors unqualified until the compiler maps them to `New…` helpers.
+
 ## Codegen fixes (0.8.0)
 
 - Top-level record literals no longer become thunks

@@ -78,7 +78,7 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] Examples (`docs/examples/`; CI checks all files)
 - [x] `goop.toml` project configuration
 - [x] Package manager guide (`docs/design/11-package-manager.md`)
-- [x] Language tutorial — `docs/tutorial/` (6 chapters, CI-linked examples)
+- [x] Language tutorial — `docs/tutorial/` (7 chapters, CI-linked examples)
 - [x] Standard library reference — `docs/stdlib/` (hand-written from prelude.go + std/*)
 - [x] Contributing guide — `CONTRIBUTING.md` (build, editors, documentation accuracy)
 

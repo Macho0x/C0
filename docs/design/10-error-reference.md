@@ -32,7 +32,9 @@ Error messages fall into three severity levels:
 | TYPE | Type errors | `internal/typecheck` |
 | UNIFY | Unification errors | `internal/types/unify` |
 | EXHAUST | Exhaustiveness warnings | `internal/exhaustive` |
-| LINEAR | Linear discharge errors | `internal/linear` |
+| LINEAR | Linear discharge errors | `internal/linear`, `internal/channelrace` |
+| DEADLOCK | Deadlock warnings | `internal/deadlock` |
+| NIL | Nil channel errors | `internal/nilchan` |
 | REFINE | Refinement solver errors/warnings | `internal/refine` |
 | CLI | CLI/file/system errors | `cmd/goop`, `internal/config` |
 
@@ -1273,6 +1275,72 @@ control-flow path. All linear errors stop compilation.
   ```goop
   let mutable counter = 0
   let _ = go (move counter) (fun () -> counter <- counter + 1)
+  ```
+
+### LINEAR008: Channel-mediated data race
+
+- **Error code**: `LINEAR008`
+- **Severity**: Error by default; configurable via `goop.toml` `[check] concurrent` (`warn` | `error` | `off`)
+- **Config key**: `concurrent`
+- **Message**: `potential channel-mediated data race: mutable variable %q sent on channel while still accessible in spawning scope`
+- **Example**: `test.goop:12:3: potential channel-mediated data race: mutable variable "state" sent on channel while still accessible in spawning scope`
+- **Trigger**: A `mutable` variable is sent on a channel inside a `go` closure (`Chan.send ch var`) while the spawning scope can still read or write that variable after the `go` expression. The parent and goroutine may race through the shared mutable binding even though communication goes through a channel.
+- **Fix**: Stop accessing the mutable variable in the parent after handing it off, or copy the value before sending. Use `go (move var)` when transferring ownership of the binding.
+- **Bad**:
+  ```goop
+  let mutable state = 0 in
+  let ch = Chan.make () in
+  let _ = go (fun () -> Chan.send ch state) in
+  state <- state + 1   (* race with goroutine via shared mutable *)
+  ```
+- **Good**: Send a copy, or use `go (move state)` and do not touch `state` in the parent afterward.
+
+---
+
+## DEADLOCK — Deadlock Warnings
+
+Narrow static analysis for circular channel communication between two goroutines.
+
+### DEADLOCK001: Potential channel deadlock
+
+- **Error code**: `DEADLOCK001`
+- **Severity**: Warning by default; configurable via `goop.toml` `[check] deadlock` (`warn` | `error` | `off`)
+- **Config key**: `deadlock`
+- **Message**: `potential channel deadlock between goroutines (circular send/recv on unbuffered channels)`
+- **Example**: `test.goop:8:3: DEADLOCK001: potential channel deadlock between goroutines (circular send/recv on unbuffered channels)`
+- **Trigger**: Two goroutines each perform a straight-line `Chan.send` then `Chan.recv` on different channels in opposite order (classic unbuffered deadlock pattern). Only simple, non-looping goroutine bodies are analyzed.
+- **Fix**: Reorder operations, use buffered channels, or introduce a third goroutine to break the cycle. For complex concurrency, rely on Go's runtime deadlock detector and testing.
+- **Bad**:
+  ```goop
+  (* G1: send ch1, recv ch2; G2: send ch2, recv ch1 — can deadlock *)
+  let _ = go (fun () -> Chan.send ch1 1; Chan.recv ch2) in
+  let _ = go (fun () -> Chan.send ch2 2; Chan.recv ch1) in
+  ```
+- **Good**: Ensure at least one side can complete without blocking, or buffer one channel.
+
+---
+
+## NIL — Nil Channel Errors
+
+Flow-sensitive analysis for channel initialization before use.
+
+### NIL001: Possible nil channel use
+
+- **Error code**: `NIL001`
+- **Severity**: Error
+- **Message**: `possible use of nil channel %q before initialization`
+- **Example**: `test.goop:6:3: NIL001: possible use of nil channel "ch" before initialization`
+- **Trigger**: A channel identifier is used in `Chan.send`, `Chan.recv`, `Chan.close`, `<-` send, or passed to a goroutine before the checker can prove it was initialized via `Chan.make ()` or `OwnedChan.make ()` on all paths.
+- **Fix**: Initialize the channel with `let ch = Chan.make ()` (or `OwnedChan.make ()`) before any send, receive, or close. Ensure initialization happens on every control-flow path.
+- **Bad**:
+  ```goop
+  let ch = () in   (* not a channel *)
+  Chan.send ch 42
+  ```
+- **Good**:
+  ```goop
+  let ch = Chan.make () in
+  Chan.send ch 42
   ```
 
 ---

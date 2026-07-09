@@ -60,6 +60,27 @@ func TestTypeCheckResult(t *testing.T) {
 	}
 }
 
+// Regression: Some must be polymorphic per use site (not one shared type variable).
+func TestNestedOptionSomeRegression(t *testing.T) {
+	src := `module Test
+type quote_params = { bid_offset_bps: int; max_slippage_bps: int option }
+type decision = { quote: quote_params option; tag: string }
+let q0 : quote_params = { bid_offset_bps = 25; max_slippage_bps = Some 40 }
+let override_test : decision = { quote = Some q0; tag = "X" }
+`
+	mod, err := parser.Parse("test.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	mod = desugar.DesugarModule(mod)
+	errs := typecheck.Check(mod)
+	if len(errs) > 0 {
+		for _, e := range errs {
+			t.Errorf("type error: %v", e)
+		}
+	}
+}
+
 func TestTypeCheckOrderbook(t *testing.T) {
 	mod := mustParse(t, "orderbook.goop")
 	errs := typecheck.Check(mod)

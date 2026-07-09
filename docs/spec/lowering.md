@@ -20,6 +20,7 @@ This document describes how Goop constructs are translated into Go. The target i
 | `bytes` | `[]byte` |
 | `unit` | `struct{}` |
 | `'a list` | `[]T` (where T is the lowered element type) |
+| `'a array` | `[]T` (Go slice; OCaml-style `Array.make` / `arr.(i)`) |
 | `'a option` | generated `OptionT` struct |
 | `('ok, 'err) result` | generated `ResultOkErr` struct |
 | tuple | generated struct with positional fields |
@@ -38,6 +39,12 @@ This document describes how Goop constructs are translated into Go. The target i
 | `x :: xs` | `append([]T{x}, xs...)` |
 | `[a; b; c]` | `[]T{a, b, c}` |
 | `{ x = 1; y = 2 }` | `Point{X: 1, Y: 2}` |
+| `Array.make n default` | `make([]T, n)` + init loop |
+| `Array.length arr` | `len(arr)` |
+| `arr.(i)` | `arr[i]` |
+| `arr.(i) <- v` | `arr[i] = v` |
+| `for i = lo to hi do body done` | `for i := lo; i <= hi; i++ { body }` |
+| `begin e1; e2; en end` | block or IIFE (see design doc 04) |
 | `r.x` | `r.X` |
 | `e \|> f` | `f(e)` |
 | `e ?` | `tmp, err := e; if err != nil { return ... }` |

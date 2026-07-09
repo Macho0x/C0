@@ -103,15 +103,15 @@ func (e *Env) InScope() map[int64]bool {
 
 // Checker holds the mutable state during type checking.
 type Checker struct {
-	env              *Env              // current environment
-	sub              types.Subst       // current substitution
-	errs             []error           // accumulated errors
-	types            typeinfo.TypeMap  // maps expression AST nodes to their inferred types
-	privateNames     map[string]bool   // names marked private in the current module
-	blockedNames     map[string]string // private name → defining module path
-	importedModule   string            // module being checked (for error messages)
-	effectInference  bool              // infer effect rows from bodies when true
-	mutableVars      map[string]bool   // bindings that may be assigned via <-
+	env             *Env              // current environment
+	sub             types.Subst       // current substitution
+	errs            []error           // accumulated errors
+	types           typeinfo.TypeMap  // maps expression AST nodes to their inferred types
+	privateNames    map[string]bool   // names marked private in the current module
+	blockedNames    map[string]string // private name → defining module path
+	importedModule  string            // module being checked (for error messages)
+	effectInference bool              // infer effect rows from bodies when true
+	mutableVars     map[string]bool   // bindings that may be assigned via <-
 }
 
 // pkgFromPath extracts a Go package name from an import path (last segment).
@@ -399,14 +399,11 @@ func (c *Checker) initBuiltins() {
 	optType := types.OptionType(a)
 	resType := types.ResultType(ok, err)
 
-	// None: option<'a> (no argument → the type itself is the constructor)
-	c.env.Bind("None", types.Mono(optType))
-	// Some: 'a -> option<'a>
-	c.env.Bind("Some", types.Mono(&types.TFun{From: a, To: optType}))
-	// Ok: 'ok -> result<'ok, 'err>
-	c.env.Bind("Ok", types.Mono(&types.TFun{From: ok, To: resType}))
-	// Error: 'err -> result<'ok, 'err>
-	c.env.Bind("Error", types.Mono(&types.TFun{From: err, To: resType}))
+	// Polymorphic schemes so each Some/None/Ok/Error use gets fresh type variables.
+	c.env.Bind("None", types.Generalize(optType, nil))
+	c.env.Bind("Some", types.Generalize(&types.TFun{From: a, To: optType}, nil))
+	c.env.Bind("Ok", types.Generalize(&types.TFun{From: ok, To: resType}, nil))
+	c.env.Bind("Error", types.Generalize(&types.TFun{From: err, To: resType}, nil))
 
 	// Register built-in ADTs for exhaustiveness checking
 	exhaustive.RegisterADT("result", []string{"Ok", "Error"})

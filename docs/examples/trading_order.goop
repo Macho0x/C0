@@ -7,9 +7,9 @@ type OrderAck =
 
 let handleAck (ack: OrderAck) : string =
   match ack with
-  | Filled { order_id; qty } -> "filled " ^ order_id
-  | Rejected { reason } -> "rejected: " ^ reason
-  | PartialFill { order_id; filled; remaining } ->
+  | OrderAck.Filled { order_id; qty } -> "filled " ^ order_id
+  | OrderAck.Rejected { reason } -> "rejected: " ^ reason
+  | OrderAck.PartialFill { order_id; filled; remaining } ->
       "partial " ^ order_id
 
 let route (ack: OrderAck) : string =

@@ -214,13 +214,22 @@ Arithmetic and comparison operators follow ML precedence. Logical operators: `&&
 
 ## Extern and Go interop
 
-Call into Go directly:
+Call into Go with unified imports and inline embed blocks (legacy `extern "go"` was removed in v0.3):
 
 ```goop
-extern "go" "github.com/example/lib" {
-  val loadConfig : string -> result<config, error>
+import (
+  golang "github.com/example/lib" {
+    val loadConfig : string -> (config, error) result
+  }
+)
+
+@golang {
+  func helper() int { return 42 }
 }
+val helper : unit -> int
 ```
+
+See [05-modules-and-packages.md](05-modules-and-packages.md) and [`extern_demo.goop`](../examples/extern_demo.goop).
 
 ## Computation expressions
 
@@ -305,3 +314,57 @@ let _ = go (move counter) (fun () -> counter <- counter + 1)
 Listed names are treated as moved into the closure: the spawning scope must not use them afterward. This suppresses LINEAR007 (mutable capture race) when the parent no longer accesses the variable. Linear and `owned_chan` values captured by `go` are discharged in the spawning scope (linear handoff).
 
 See `docs/examples/go_move.goop` and `docs/tutorial/05-concurrency.md`.
+
+## Arrays
+
+OCaml-style dynamic arrays use postfix `'a array`:
+
+```goop
+let arr = Array.make 10 0 in
+arr.(0) <- 42
+assert (Array.length arr = 10 && arr.(0) = 42)
+```
+
+| Syntax | Meaning |
+|---|---|
+| `Array.make n default` | Allocate `n` slots initialized to `default` |
+| `Array.length arr` | Element count |
+| `arr.(i)` | Read index `i` |
+| `arr.(i) <- v` | Write index `i` in place |
+
+Element writes do not require `let mutable arr` — only rebinding the array variable does. See [13-ocaml-surface-syntax.md](13-ocaml-surface-syntax.md).
+
+## For loops
+
+```goop
+for i = 0 to n - 1 do
+  arr.(i) <- f i
+done
+```
+
+Inclusive bounds on both ends (`from <= i <= to`). The loop variable is `int` in the body. Expression type is `unit`.
+
+## Sequencing with `begin` / `end`
+
+```goop
+begin
+  print_line "step 1";
+  print_line "step 2";
+  42
+end
+```
+
+Evaluates expressions left-to-right; the last expression is the value.
+
+## Qualified constructors
+
+```goop
+type color = Red | Green | Blue
+
+let c = Color.Red
+match c with
+| Color.Green -> "green"
+| _ -> "other"
+```
+
+Use PascalCase type names (`OrderAck.Filled`, `TradeSide.Buy`). Lowercase-type qualified forms may codegen incorrectly — prefer unqualified constructors on lowercase ADTs.

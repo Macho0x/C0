@@ -1,46 +1,10 @@
 module TradingDecisionLutTest
 
-(* -------------------------------------------------------------------------- *)
-(* Flat-array LUT for trading decisions (OCaml-style populate + overrides)    *)
-(* 375 states: price[5] x momentum[5] x trend[5] x vol[3]                    *)
-(* -------------------------------------------------------------------------- *)
+(* Inventory-aware market-making LUT — port of trading_decision_lut.ml
+ * OCaml surface: Array.make · nested for · arr.(i) <- · set_decision · begin/end
+ * 300 states: inv[5] x sig[5] x vol[4] x liq[3] *)
 
-type symbol = newtype string
-
-type PriceVsMean =
-  | FarAbove
-  | Above
-  | AtMean
-  | Below
-  | FarBelow
-
-type Momentum =
-  | StrongBull
-  | Bull
-  | Flat
-  | Bear
-  | StrongBear
-
-type Trend =
-  | RisingStrong
-  | RisingWeak
-  | FlatTrend
-  | FallingWeak
-  | FallingStrong
-
-type Volatility =
-  | LowVol
-  | NormalVol
-  | HighVol
-
-type SignalKey =
-  { price: PriceVsMean
-  ; momentum: Momentum
-  ; trend: Trend
-  ; vol: Volatility
-  }
-
-type TradeSide = Buy | Sell | Hold
+type side = Buy | Sell
 
 type quote_params =
   { bid_offset_bps: int
@@ -50,629 +14,445 @@ type quote_params =
   ; post_only: bool
   ; cancel_existing: bool
   ; take_liquidity: bool
+  ; max_slippage_bps: int option
   }
-
-type quote_slot = NoQuote | ActiveQuote of quote_params
 
 type risk_action =
   | AllowNewPositions
   | ReduceOnly
+  | ReduceOnlySide of side
   | FlattenAndPause
-  | EmergencyReduce of TradeSide
+  | EmergencyReduce of side
 
 type urgency = Low | Medium | High | Critical
 
 type decision =
-  { directive: TradeSide
-  ; quote_slot: quote_slot
+  { quote: quote_params option
   ; risk_action: risk_action
   ; urgency: urgency
-  ; size_pct: int
   ; size_cap_pct_equity: float
   ; log_tag: string
   ; reason: string
   }
 
-let dim_price = 5
-let dim_momentum = 5
-let dim_trend = 5
-let dim_vol = 3
-let lut_total_size = 375
+let dim_inv = 5
+let dim_sig = 5
+let dim_vol = 4
+let dim_liq = 3
+let lut_total_size = 300
 
-(* ------ Discretization (continuous feeds -> buckets) ------ *)
-
-let classifyPrice (current: float) (mean: float) : PriceVsMean =
-  if mean = 0.0 then PriceVsMean.AtMean
-  else
-    let diff = current -. mean in
-    let pct = diff /. mean in
-    if pct >= 0.03 then PriceVsMean.FarAbove
-    else if pct >= 0.005 then PriceVsMean.Above
-    else if pct <= (0.0 -. 0.03) then PriceVsMean.FarBelow
-    else if pct <= (0.0 -. 0.005) then PriceVsMean.Below
-    else AtMean
-
-let classifyMomentum (roc: float) : Momentum =
-  if roc >= 0.05 then Momentum.StrongBull
-  else if roc >= 0.01 then Momentum.Bull
-  else if roc <= (0.0 -. 0.05) then StrongBear
-  else if roc <= (0.0 -. 0.01) then Momentum.Bear
-  else Momentum.Flat
-
-let classifyTrend (rising: float) (lookback: float) : Trend =
-  if lookback <= 0.0 then FlatTrend
-  else
-    let ratio = rising /. lookback in
-    if ratio >= 0.8 then Trend.RisingStrong
-    else if ratio >= 0.55 then Trend.RisingWeak
-    else if ratio <= 0.2 then Trend.FallingStrong
-    else if ratio <= 0.45 then Trend.FallingWeak
-    else Trend.FlatTrend
-
-let classifyVolatility (ret_std: float) : Volatility =
-  if ret_std >= 0.025 then Volatility.HighVol
-  else if ret_std <= 0.008 then Volatility.LowVol
-  else Volatility.NormalVol
-
-let makeKey (current: float) (mean: float) (roc: float) (rising: float) (lookback: float) (ret_std: float) : SignalKey =
-  { price = classifyPrice current mean
-  ; momentum = classifyMomentum roc
-  ; trend = classifyTrend rising lookback
-  ; vol = classifyVolatility ret_std
-  }
-
-(* ------ LUT indexing (price varies slowest, vol fastest) ------ *)
-
-let priceAt (i: int) : PriceVsMean =
-  if i = 0 then PriceVsMean.FarAbove
-  else if i = 1 then PriceVsMean.Above
-  else if i = 2 then PriceVsMean.AtMean
-  else if i = 3 then PriceVsMean.Below
-  else PriceVsMean.FarBelow
-
-let momentumAt (i: int) : Momentum =
-  if i = 0 then Momentum.StrongBull
-  else if i = 1 then Momentum.Bull
-  else if i = 2 then Flat
-  else if i = 3 then Momentum.Bear
-  else Momentum.StrongBear
-
-let trendAt (i: int) : Trend =
-  if i = 0 then Trend.RisingStrong
-  else if i = 1 then Trend.RisingWeak
-  else if i = 2 then FlatTrend
-  else if i = 3 then Trend.FallingWeak
-  else Trend.FallingStrong
-
-let volAt (i: int) : Volatility =
-  if i = 0 then Volatility.LowVol
-  else if i = 1 then NormalVol
-  else Volatility.HighVol
-
-let priceIndex (p: PriceVsMean) : int =
-  match p with
-  | PriceVsMean.FarAbove -> 0
-  | PriceVsMean.Above -> 1
-  | PriceVsMean.AtMean -> 2
-  | PriceVsMean.Below -> 3
-  | PriceVsMean.FarBelow -> 4
-
-let momentumIndex (m: Momentum) : int =
-  match m with
-  | Momentum.StrongBull -> 0
-  | Momentum.Bull -> 1
-  | Momentum.Flat -> 2
-  | Momentum.Bear -> 3
-  | Momentum.StrongBear -> 4
-
-let trendIndex (t: Trend) : int =
-  match t with
-  | Trend.RisingStrong -> 0
-  | Trend.RisingWeak -> 1
-  | Trend.FlatTrend -> 2
-  | Trend.FallingWeak -> 3
-  | Trend.FallingStrong -> 4
-
-let volIndex (v: Volatility) : int =
-  match v with
-  | Volatility.LowVol -> 0
-  | Volatility.NormalVol -> 1
-  | Volatility.HighVol -> 2
-
-let lutIndex (key: SignalKey) : int =
-  let p = priceIndex key.price in
-  let m = momentumIndex key.momentum in
-  let t = trendIndex key.trend in
-  let v = volIndex key.vol in
-  p * 75 + m * 15 + t * 3 + v
-
-let decodeIndex (idx: int) : SignalKey =
-  let v = idx % 3 in
-  let t = (idx / 3) % 5 in
-  let m = (idx / 15) % 5 in
-  let p = idx / 75 in
-  { price = priceAt p
-  ; momentum = momentumAt m
-  ; trend = trendAt t
-  ; vol = volAt v
-  }
-
-(* ------ LUT storage (OCaml-style flat array) ------ *)
-
-let uninitializedDecision : decision =
-  { directive = TradeSide.Hold
-  ; quote_slot = NoQuote
+let default_decision : decision =
+  { quote = None
   ; risk_action = FlattenAndPause
   ; urgency = Critical
-  ; size_pct = 0
   ; size_cap_pct_equity = 0.0
   ; log_tag = "UNINITIALIZED"
-  ; reason = "LUT cell not populated"
+  ; reason = "LUT not populated yet"
   }
 
-let lookup (lut: decision array) (key: SignalKey) : decision =
-  lut.(lutIndex key)
+let abs_int (x: int) : int =
+  if x < 0 then 0 - x else x
 
-(* ------ Base decision logic (fills every cell before overrides) ------ *)
+let clamp (x: int) (lo: int) (hi: int) : int =
+  if x < lo then lo else if x > hi then hi else x
 
-let volSizePct (key: SignalKey) (low: int) (normal: int) (high: int) : int =
-  match key.vol with
-  | Volatility.LowVol -> low
-  | Volatility.NormalVol -> normal
-  | Volatility.HighVol -> high
+(* inv varies fastest for cache locality *)
+let lut_index (inv: int) (sig_: int) (vol: int) (liq: int) : int =
+  let i_inv = inv + 2 in
+  let i_sig = sig_ + 2 in
+  i_inv + (i_sig * 5) + (vol * 25) + (liq * 100)
 
-let computeBaseDecision (key: SignalKey) : decision =
-  match key.price with
-  | PriceVsMean.FarBelow ->
-    if key.momentum = Momentum.StrongBull && key.trend = Trend.RisingStrong then
-      { directive = TradeSide.Buy
-      ; quote_slot = NoQuote
-      ; risk_action = AllowNewPositions
-      ; urgency = High
-      ; size_pct = volSizePct key 100 75 50
-      ; size_cap_pct_equity = 0.03
-      ; log_tag = "BASE:CAPITULATION_REVERSAL"
-      ; reason = "Far below mean + strong bull momentum + rising trend"
-      }
-    else if key.momentum = Momentum.StrongBear && key.trend = Trend.FallingStrong && key.vol = Volatility.HighVol then
-      { directive = TradeSide.Hold
-      ; quote_slot = NoQuote
-      ; risk_action = ReduceOnly
-      ; urgency = Medium
-      ; size_pct = 0
-      ; size_cap_pct_equity = 0.005
-      ; log_tag = "BASE:CAPITULATION_WAIT"
-      ; reason = "Capitulation washout — wait for stabilization"
-      }
-    else if key.momentum = Momentum.StrongBear then
-      { directive = TradeSide.Sell
-      ; quote_slot = NoQuote
-      ; risk_action = ReduceOnly
-      ; urgency = Medium
-      ; size_pct = 40
-      ; size_cap_pct_equity = 0.012
-      ; log_tag = "BASE:BELOW_STRONG_BEAR"
-      ; reason = "Below mean with strong bear momentum"
-      }
-    else if key.momentum = Momentum.Bull && key.trend = Trend.RisingStrong then
-      { directive = TradeSide.Buy
-      ; quote_slot = NoQuote
-      ; risk_action = AllowNewPositions
-      ; urgency = Medium
-      ; size_pct = volSizePct key 50 40 25
-      ; size_cap_pct_equity = 0.02
-      ; log_tag = "BASE:DISCOUNT_TURN"
-      ; reason = "Below mean, trend turning up"
-      }
-    else
-      { directive = TradeSide.Hold
-      ; quote_slot = NoQuote
-      ; risk_action = ReduceOnly
-      ; urgency = Low
-      ; size_pct = 0
-      ; size_cap_pct_equity = 0.01
-      ; log_tag = "BASE:FAR_BELOW_HOLD"
-      ; reason = "Far below mean without confirmation"
-      }
-  | PriceVsMean.Below ->
-    if key.momentum = Momentum.Bull && key.trend = Trend.RisingStrong then
-      { directive = TradeSide.Buy
-      ; quote_slot = NoQuote
-      ; risk_action = AllowNewPositions
-      ; urgency = Medium
-      ; size_pct = volSizePct key 75 50 30
-      ; size_cap_pct_equity = 0.022
-      ; log_tag = "BASE:DIP_UPTREND"
-      ; reason = "Dip with confirmed uptrend"
-      }
-    else if key.momentum = Momentum.Bull && key.trend = Trend.FallingWeak then
-      { directive = TradeSide.Hold
-      ; quote_slot = NoQuote
-      ; risk_action = ReduceOnly
-      ; urgency = Low
-      ; size_pct = 0
-      ; size_cap_pct_equity = 0.01
-      ; log_tag = "BASE:CONFLICT"
-      ; reason = "Conflicting trend vs momentum below mean"
-      }
-    else if key.momentum = Momentum.StrongBear && key.trend = Trend.FallingStrong then
-      { directive = TradeSide.Sell
-      ; quote_slot = NoQuote
-      ; risk_action = ReduceOnly
-      ; urgency = High
-      ; size_pct = volSizePct key 35 35 50
-      ; size_cap_pct_equity = 0.015
-      ; log_tag = "BASE:BREAKDOWN"
-      ; reason = "Breakdown below mean"
-      }
-    else
-      { directive = TradeSide.Hold
-      ; quote_slot = NoQuote
-      ; risk_action = ReduceOnly
-      ; urgency = Low
-      ; size_pct = 0
-      ; size_cap_pct_equity = 0.01
-      ; log_tag = "BASE:BELOW_HOLD"
-      ; reason = "Below mean, no edge"
-      }
-  | PriceVsMean.AtMean ->
-    if key.momentum = Momentum.Flat && key.trend = Trend.FlatTrend then
-      { directive = TradeSide.Hold
-      ; quote_slot = NoQuote
-      ; risk_action = AllowNewPositions
-      ; urgency = Low
-      ; size_pct = 0
-      ; size_cap_pct_equity = 0.015
-      ; log_tag = "BASE:NEUTRAL"
-      ; reason = "Price at mean, flat momentum and trend"
-      }
-    else if key.momentum = Momentum.Bull && key.trend = Trend.RisingStrong then
-      { directive = TradeSide.Buy
-      ; quote_slot = NoQuote
-      ; risk_action = AllowNewPositions
-      ; urgency = Medium
-      ; size_pct = 50
-      ; size_cap_pct_equity = 0.02
-      ; log_tag = "BASE:MEAN_REVERSION_LONG"
-      ; reason = "Mean reversion long, momentum aligned"
-      }
-    else if key.momentum = Momentum.Bear && key.trend = Trend.FallingStrong then
-      { directive = TradeSide.Sell
-      ; quote_slot = NoQuote
-      ; risk_action = ReduceOnly
-      ; urgency = Medium
-      ; size_pct = 40
-      ; size_cap_pct_equity = 0.015
-      ; log_tag = "BASE:MEAN_CROSS_DOWN"
-      ; reason = "Mean cross down confirmed"
-      }
-    else if key.momentum = Momentum.Flat && key.vol = Volatility.HighVol then
-      { directive = TradeSide.Hold
-      ; quote_slot = NoQuote
-      ; risk_action = ReduceOnly
-      ; urgency = Medium
-      ; size_pct = 0
-      ; size_cap_pct_equity = 0.008
-      ; log_tag = "BASE:HIGH_VOL_CHOP"
-      ; reason = "High vol chop at mean"
-      }
-    else
-      { directive = TradeSide.Hold
-      ; quote_slot = NoQuote
-      ; risk_action = AllowNewPositions
-      ; urgency = Low
-      ; size_pct = 0
-      ; size_cap_pct_equity = 0.012
-      ; log_tag = "BASE:AT_MEAN"
-      ; reason = "At mean, no strong conviction"
-      }
-  | PriceVsMean.Above ->
-    if key.momentum = Momentum.StrongBull && key.trend = Trend.RisingStrong && key.vol = Volatility.LowVol then
-      { directive = TradeSide.Buy
-      ; quote_slot = NoQuote
-      ; risk_action = AllowNewPositions
-      ; urgency = Medium
-      ; size_pct = 60
-      ; size_cap_pct_equity = 0.025
-      ; log_tag = "BASE:BREAKOUT"
-      ; reason = "Breakout continuation above mean, low vol"
-      }
-    else if key.momentum = Momentum.Bull && key.trend = Trend.FallingWeak then
-      { directive = TradeSide.Hold
-      ; quote_slot = NoQuote
-      ; risk_action = ReduceOnly
-      ; urgency = Low
-      ; size_pct = 0
-      ; size_cap_pct_equity = 0.01
-      ; log_tag = "BASE:CONFLICT"
-      ; reason = "Conflicting trend vs momentum above mean"
-      }
-    else if key.momentum = Momentum.StrongBear && key.trend = Trend.FallingStrong then
-      { directive = TradeSide.Sell
-      ; quote_slot = NoQuote
-      ; risk_action = ReduceOnly
-      ; urgency = High
-      ; size_pct = 80
-      ; size_cap_pct_equity = 0.018
-      ; log_tag = "BASE:DISTRIBUTION"
-      ; reason = "Distribution at highs"
-      }
-    else if key.momentum = Momentum.Bear && key.trend = Trend.FallingStrong then
-      { directive = TradeSide.Sell
-      ; quote_slot = NoQuote
-      ; risk_action = ReduceOnly
-      ; urgency = Medium
-      ; size_pct = 60
-      ; size_cap_pct_equity = 0.015
-      ; log_tag = "BASE:MOMENTUM_ROLLOVER"
-      ; reason = "Momentum roll-over at premium"
-      }
-    else
-      { directive = TradeSide.Hold
-      ; quote_slot = NoQuote
-      ; risk_action = AllowNewPositions
-      ; urgency = Low
-      ; size_pct = 0
-      ; size_cap_pct_equity = 0.012
-      ; log_tag = "BASE:ABOVE_HOLD"
-      ; reason = "Above mean, mixed signals"
-      }
-  | PriceVsMean.FarAbove ->
-    if key.momentum = Momentum.StrongBear && key.trend = Trend.FallingStrong && key.vol = Volatility.HighVol then
-      { directive = TradeSide.Sell
-      ; quote_slot = NoQuote
-      ; risk_action = EmergencyReduce TradeSide.Sell
-      ; urgency = Critical
-      ; size_pct = 100
-      ; size_cap_pct_equity = 0.008
-      ; log_tag = "BASE:BLOWOFF_TOP"
-      ; reason = "Blow-off top reversal, high vol"
-      }
-    else if key.momentum = Momentum.StrongBull && key.trend = Trend.RisingStrong && key.vol = Volatility.LowVol then
-      { directive = TradeSide.Buy
-      ; quote_slot = NoQuote
-      ; risk_action = AllowNewPositions
-      ; urgency = Low
-      ; size_pct = 25
-      ; size_cap_pct_equity = 0.01
-      ; log_tag = "BASE:EXTENDED_TREND"
-      ; reason = "Extended but still trending (small size)"
-      }
-    else if key.momentum = Momentum.Bear && key.trend = Trend.FallingStrong then
-      { directive = TradeSide.Sell
-      ; quote_slot = NoQuote
-      ; risk_action = ReduceOnly
-      ; urgency = High
-      ; size_pct = volSizePct key 40 55 75
-      ; size_cap_pct_equity = 0.012
-      ; log_tag = "BASE:OVEREXTENDED_FADE"
-      ; reason = "Overextended fade"
-      }
-    else
-      { directive = TradeSide.Hold
-      ; quote_slot = NoQuote
-      ; risk_action = ReduceOnly
-      ; urgency = Low
-      ; size_pct = 0
-      ; size_cap_pct_equity = 0.008
-      ; log_tag = "BASE:FAR_ABOVE_HOLD"
-      ; reason = "Far above mean, no clear edge"
-      }
+(* ------ Discretization (float feeds -> integer buckets) ------ *)
 
-(* ------ Populate + targeted overrides ------ *)
+let bucket_inventory (current_pos: float) (max_abs_position: float) : int =
+  if max_abs_position <= 0.0 then 0
+  else
+    let ratio = current_pos /. max_abs_position in
+    if ratio >= 0.65 then 2
+    else if ratio >= 0.25 then 1
+    else if ratio <= (0.0 -. 0.65) then -2
+    else if ratio <= (0.0 -. 0.25) then -1
+    else 0
 
-let keyFarBelowCapitulation : SignalKey =
-  { price = PriceVsMean.FarBelow; momentum = Momentum.StrongBull; trend = Trend.RisingStrong; vol = Volatility.LowVol }
+let bucket_signal (raw_score: float) : int =
+  if raw_score >= 1.5 then 2
+  else if raw_score >= 0.5 then 1
+  else if raw_score <= (0.0 -. 1.5) then -2
+  else if raw_score <= (0.0 -. 0.5) then -1
+  else 0
 
-let keyBlowoffTop : SignalKey =
-  { price = PriceVsMean.FarAbove; momentum = Momentum.StrongBear; trend = Trend.FallingStrong; vol = Volatility.HighVol }
+let bucket_volatility (vol_zscore: float) : int =
+  if vol_zscore >= 2.5 then 3
+  else if vol_zscore >= 1.0 then 2
+  else if vol_zscore >= (0.0 -. 0.5) then 1
+  else 0
 
-let keyNeutral : SignalKey =
-  { price = PriceVsMean.AtMean; momentum = Momentum.Flat; trend = Trend.FlatTrend; vol = Volatility.NormalVol }
+let bucket_liquidity (spread_bps: float) (avg_spread_bps: float) (depth_usd: float) : int =
+  let spread_ratio = spread_bps /. avg_spread_bps in
+  if spread_ratio <= 0.7 && depth_usd > 500000.0 then 0
+  else if spread_ratio <= 1.4 && depth_usd > 150000.0 then 1
+  else 2
 
-let keyDipUptrend : SignalKey =
-  { price = PriceVsMean.Below; momentum = Momentum.Bull; trend = Trend.RisingStrong; vol = Volatility.LowVol }
+let no_slippage : int option = None
 
-let keyConflictAbove : SignalKey =
-  { price = PriceVsMean.Above; momentum = Momentum.Bull; trend = Trend.FallingWeak; vol = Volatility.NormalVol }
+let base_offset_bps (vol: int) : int =
+  if vol = 0 then 4
+  else if vol = 1 then 7
+  else if vol = 2 then 14
+  else if vol = 3 then 25
+  else 10
 
-let keyCapitulationWait : SignalKey =
-  { price = PriceVsMean.FarBelow; momentum = Momentum.StrongBear; trend = Trend.FallingStrong; vol = Volatility.HighVol }
+let base_size_mult (vol: int) (liq: int) : float =
+  if vol = 3 then 0.25
+  else if liq = 2 then 0.45
+  else if vol = 2 && liq = 1 then 0.55
+  else 1.0
 
-let keyDistribution : SignalKey =
-  { price = PriceVsMean.Above; momentum = Momentum.StrongBear; trend = Trend.FallingStrong; vol = Volatility.NormalVol }
+let pick_risk_action (inv: int) (extreme_inv: bool) (conflict: bool) : risk_action =
+  if extreme_inv && conflict then ReduceOnly
+  else if extreme_inv then ReduceOnly
+  else if abs_int inv = 1 && conflict then ReduceOnly
+  else AllowNewPositions
 
-let overrideCapitulationBuy : decision =
-  { directive = TradeSide.Buy
-  ; quote_slot =
-      ActiveQuote
-        { bid_offset_bps = -5
-        ; ask_offset_bps = 12
-        ; bid_size_mult = 2.0
-        ; ask_size_mult = 0.5
-        ; post_only = false
-        ; cancel_existing = true
-        ; take_liquidity = true
-        }
-  ; risk_action = AllowNewPositions
-  ; urgency = Critical
-  ; size_pct = 100
-  ; size_cap_pct_equity = 0.03
-  ; log_tag = "OVERRIDE:CAPITULATION_BUY"
-  ; reason = "Override: max conviction dip buy with aggressive bid"
+let pick_urgency (inv: int) (extreme_inv: bool) (conflict: bool) : urgency =
+  if extreme_inv && conflict then High
+  else if extreme_inv then Medium
+  else if abs_int inv = 1 && conflict then Medium
+  else Low
+
+let pick_extra_cap (inv: int) (extreme_inv: bool) (conflict: bool) : float =
+  if extreme_inv && conflict then 0.4
+  else if extreme_inv then 0.6
+  else if abs_int inv = 1 && conflict then 0.7
+  else 1.0
+
+let skew_bid_mult (net_scaled: int) (reduce_long: bool) (reduce_short: bool) : float =
+  if net_scaled > 35 then 1.35
+  else if net_scaled < -35 then 0.55
+  else if reduce_long then 0.70
+  else if reduce_short then 1.40
+  else 1.0
+
+let skew_ask_mult (net_scaled: int) (reduce_long: bool) (reduce_short: bool) : float =
+  if net_scaled > 35 then 0.55
+  else if net_scaled < -35 then 1.35
+  else if reduce_long then 1.40
+  else if reduce_short then 0.70
+  else 1.0
+
+let skew_bid_off_adj (net_scaled: int) (reduce_long: bool) (reduce_short: bool) : int =
+  if net_scaled > 35 then -2
+  else if net_scaled < -35 then 3
+  else if reduce_long then 4
+  else if reduce_short then -3
+  else 0
+
+let skew_ask_off_adj (net_scaled: int) (reduce_long: bool) (reduce_short: bool) : int =
+  if net_scaled > 35 then 3
+  else if net_scaled < -35 then -2
+  else if reduce_long then -3
+  else if reduce_short then 4
+  else 0
+
+let slippage_limit (take: bool) (bps: int) : int option =
+  if take then Some (bps * 3) else no_slippage
+
+let log_tag_for (inv: int) (sig_: int) (vol: int) (extreme_inv: bool) (conflict: bool) : string =
+  if extreme_inv then "EXTREME_INV"
+  else if conflict then "CONFLICT"
+  else if abs_int sig_ = 2 then "STRONG_SIG"
+  else if vol >= 2 then "HIGH_VOL"
+  else "NORMAL"
+
+let size_cap_for (vol: int) (extra_cap: float) : float =
+  if vol = 3 then 0.005
+  else if vol = 2 then 0.012
+  else 0.025 *. extra_cap
+
+(* ------ Core base decision (integer-scaled net_bias: sig*55 - inv*85) ------ *)
+
+let compute_base_decision (inv: int) (sig_: int) (vol: int) (liq: int) : decision =
+  let net_scaled = (sig_ * 55) - (inv * 85) in
+  let long_inv = inv > 0 in
+  let short_inv = inv < 0 in
+  let buy_signal = sig_ > 0 in
+  let sell_signal = sig_ < 0 in
+  let reduce_long_aligned = long_inv && sell_signal in
+  let reduce_short_aligned = short_inv && buy_signal in
+  let conflict = (long_inv && buy_signal) || (short_inv && sell_signal) in
+  let extreme_inv = abs_int inv = 2 in
+  let offset_bps = base_offset_bps vol in
+  let size_mult = base_size_mult vol liq in
+  let risk_action = pick_risk_action inv extreme_inv conflict in
+  let urgency = pick_urgency inv extreme_inv conflict in
+  let extra_cap = pick_extra_cap inv extreme_inv conflict in
+  let take_liq =
+    (extreme_inv && (reduce_long_aligned || reduce_short_aligned)) ||
+    (abs_int sig_ = 2 && abs_int inv <= 1 && liq <= 1)
+  in
+  let bid_mult = skew_bid_mult net_scaled reduce_long_aligned reduce_short_aligned in
+  let ask_mult = skew_ask_mult net_scaled reduce_long_aligned reduce_short_aligned in
+  let bid_off_adj = skew_bid_off_adj net_scaled reduce_long_aligned reduce_short_aligned in
+  let ask_off_adj = skew_ask_off_adj net_scaled reduce_long_aligned reduce_short_aligned in
+  let final_bid_mult = size_mult *. bid_mult in
+  let final_ask_mult = size_mult *. ask_mult in
+  let qparams =
+    { bid_offset_bps = offset_bps + bid_off_adj
+    ; ask_offset_bps = offset_bps + ask_off_adj
+    ; bid_size_mult = final_bid_mult
+    ; ask_size_mult = final_ask_mult
+    ; post_only = not take_liq
+    ; cancel_existing = extreme_inv || (abs_int sig_ = 2)
+    ; take_liquidity = take_liq
+    ; max_slippage_bps = slippage_limit take_liq offset_bps
+    }
+  in
+  let tag = log_tag_for inv sig_ vol extreme_inv conflict in
+  let reason =
+    "inv=" ^ int_to_string inv ^ " sig=" ^ int_to_string sig_ ^
+    " vol=" ^ int_to_string vol ^ " liq=" ^ int_to_string liq ^
+    " net_scaled=" ^ int_to_string net_scaled
+  in
+  { quote = Some qparams
+  ; risk_action = risk_action
+  ; urgency = urgency
+  ; size_cap_pct_equity = size_cap_for vol extra_cap
+  ; log_tag = tag
+  ; reason = reason
   }
 
-let overrideBlowoffTop : decision =
-  { directive = TradeSide.Sell
-  ; quote_slot =
-      ActiveQuote
-        { bid_offset_bps = 25
-        ; ask_offset_bps = -8
-        ; bid_size_mult = 0.2
-        ; ask_size_mult = 2.2
-        ; post_only = false
-        ; cancel_existing = true
-        ; take_liquidity = true
-        }
-  ; risk_action = EmergencyReduce TradeSide.Sell
+(* ------ Overrides ------ *)
+
+let qp_extreme_long_strong_sell : quote_params =
+  { bid_offset_bps = 25; ask_offset_bps = -8
+  ; bid_size_mult = 0.2; ask_size_mult = 2.2
+  ; post_only = false; cancel_existing = true
+  ; take_liquidity = true; max_slippage_bps = Some 40
+  }
+
+let override_extreme_long_strong_sell : decision =
+  { quote = Some qp_extreme_long_strong_sell
+  ; risk_action = EmergencyReduce Sell
   ; urgency = Critical
-  ; size_pct = 100
   ; size_cap_pct_equity = 0.008
-  ; log_tag = "OVERRIDE:BLOWOFF_TOP"
-  ; reason = "Override: blow-off top — take liquidity on ask"
+  ; log_tag = "OVERRIDE:EXTREME_LONG_VS_STRONG_SELL"
+  ; reason = "Extreme long + strong sell → aggressive market reduce"
   }
 
-let overrideNeutral : decision =
-  { directive = TradeSide.Hold
-  ; quote_slot =
-      ActiveQuote
-        { bid_offset_bps = 8
-        ; ask_offset_bps = 8
-        ; bid_size_mult = 0.6
-        ; ask_size_mult = 0.6
-        ; post_only = true
-        ; cancel_existing = false
-        ; take_liquidity = false
-        }
+let qp_extreme_long_adverse : quote_params =
+  { bid_offset_bps = 18; ask_offset_bps = -3
+  ; bid_size_mult = 0.3; ask_size_mult = 1.8
+  ; post_only = false; cancel_existing = true
+  ; take_liquidity = true; max_slippage_bps = Some 30
+  }
+
+let override_extreme_long_adverse : decision =
+  { quote = Some qp_extreme_long_adverse
+  ; risk_action = EmergencyReduce Sell
+  ; urgency = High
+  ; size_cap_pct_equity = 0.01
+  ; log_tag = "OVERRIDE:EXTREME_LONG_ADVERSE_SIG"
+  ; reason = "Extreme long + adverse signal → take liquidity on ask"
+  }
+
+let qp_extreme_long_conflict : quote_params =
+  { bid_offset_bps = 12; ask_offset_bps = 8
+  ; bid_size_mult = 0.4; ask_size_mult = 1.1
+  ; post_only = true; cancel_existing = true
+  ; take_liquidity = false; max_slippage_bps = no_slippage
+  }
+
+let override_extreme_long_conflict : decision =
+  { quote = Some qp_extreme_long_conflict
+  ; risk_action = ReduceOnlySide Sell
+  ; urgency = High
+  ; size_cap_pct_equity = 0.006
+  ; log_tag = "OVERRIDE:EXTREME_LONG_CONFLICT"
+  ; reason = "Extreme long vs bullish signal: reduce-only"
+  }
+
+let qp_extreme_long_hv_conflict : quote_params =
+  { bid_offset_bps = 30; ask_offset_bps = 15
+  ; bid_size_mult = 0.15; ask_size_mult = 0.9
+  ; post_only = true; cancel_existing = true
+  ; take_liquidity = false; max_slippage_bps = no_slippage
+  }
+
+let override_extreme_long_hv_conflict : decision =
+  { quote = Some qp_extreme_long_hv_conflict
+  ; risk_action = ReduceOnlySide Sell
+  ; urgency = Critical
+  ; size_cap_pct_equity = 0.004
+  ; log_tag = "OVERRIDE:EXTREME_LONG_HIGH_VOL_CONFLICT"
+  ; reason = "Extreme long + strong buy in high vol: defensive reduce-only"
+  }
+
+let qp_extreme_short_strong_buy : quote_params =
+  { bid_offset_bps = -8; ask_offset_bps = 25
+  ; bid_size_mult = 2.2; ask_size_mult = 0.2
+  ; post_only = false; cancel_existing = true
+  ; take_liquidity = true; max_slippage_bps = Some 40
+  }
+
+let override_extreme_short_strong_buy : decision =
+  { quote = Some qp_extreme_short_strong_buy
+  ; risk_action = EmergencyReduce Buy
+  ; urgency = Critical
+  ; size_cap_pct_equity = 0.008
+  ; log_tag = "OVERRIDE:EXTREME_SHORT_VS_STRONG_BUY"
+  ; reason = "Extreme short + strong buy → aggressive cover"
+  }
+
+let qp_extreme_short_adverse : quote_params =
+  { bid_offset_bps = -4; ask_offset_bps = 18
+  ; bid_size_mult = 1.8; ask_size_mult = 0.3
+  ; post_only = false; cancel_existing = true
+  ; take_liquidity = true; max_slippage_bps = Some 30
+  }
+
+let override_extreme_short_adverse : decision =
+  { quote = Some qp_extreme_short_adverse
+  ; risk_action = EmergencyReduce Buy
+  ; urgency = High
+  ; size_cap_pct_equity = 0.01
+  ; log_tag = "OVERRIDE:EXTREME_SHORT_ADVERSE_SIG"
+  ; reason = "Extreme short + adverse signal → take liquidity on bid"
+  }
+
+let qp_neutral_strong_buy : quote_params =
+  { bid_offset_bps = -5; ask_offset_bps = 12
+  ; bid_size_mult = 1.6; ask_size_mult = 0.7
+  ; post_only = false; cancel_existing = false
+  ; take_liquidity = true; max_slippage_bps = Some 15
+  }
+
+let override_neutral_strong_buy : decision =
+  { quote = Some qp_neutral_strong_buy
+  ; risk_action = AllowNewPositions
+  ; urgency = Medium
+  ; size_cap_pct_equity = 0.022
+  ; log_tag = "OVERRIDE:NEUTRAL_STRONG_BUY_TIGHT_LIQ"
+  ; reason = "Neutral inv + strong buy + tight liq"
+  }
+
+let qp_neutral_strong_sell : quote_params =
+  { bid_offset_bps = 12; ask_offset_bps = -5
+  ; bid_size_mult = 0.7; ask_size_mult = 1.6
+  ; post_only = false; cancel_existing = false
+  ; take_liquidity = true; max_slippage_bps = Some 15
+  }
+
+let override_neutral_strong_sell : decision =
+  { quote = Some qp_neutral_strong_sell
+  ; risk_action = AllowNewPositions
+  ; urgency = Medium
+  ; size_cap_pct_equity = 0.022
+  ; log_tag = "OVERRIDE:NEUTRAL_STRONG_SELL"
+  ; reason = "Neutral inv + strong sell"
+  }
+
+let qp_high_vol_defensive : quote_params =
+  { bid_offset_bps = 35; ask_offset_bps = 35
+  ; bid_size_mult = 0.35; ask_size_mult = 0.35
+  ; post_only = true; cancel_existing = true
+  ; take_liquidity = false; max_slippage_bps = no_slippage
+  }
+
+let override_high_vol_defensive : decision =
+  { quote = Some qp_high_vol_defensive
+  ; risk_action = ReduceOnly
+  ; urgency = High
+  ; size_cap_pct_equity = 0.005
+  ; log_tag = "OVERRIDE:HIGH_VOL_DEFENSIVE"
+  ; reason = "Longish inventory in extreme vol → defensive quoting"
+  }
+
+let qp_wide_liq_caution : quote_params =
+  { bid_offset_bps = 9; ask_offset_bps = 9
+  ; bid_size_mult = 0.6; ask_size_mult = 0.6
+  ; post_only = true; cancel_existing = false
+  ; take_liquidity = false; max_slippage_bps = no_slippage
+  }
+
+let override_wide_liq_caution : decision =
+  { quote = Some qp_wide_liq_caution
   ; risk_action = AllowNewPositions
   ; urgency = Low
-  ; size_pct = 0
   ; size_cap_pct_equity = 0.015
-  ; log_tag = "OVERRIDE:NEUTRAL_MM"
-  ; reason = "Override: neutral regime — symmetric small quotes"
+  ; log_tag = "OVERRIDE:WIDE_LIQ_CAUTION"
+  ; reason = "Wide spread regime → smaller size, provide only"
   }
 
-let overrideConflict : decision =
-  { directive = TradeSide.Hold
-  ; quote_slot = NoQuote
-  ; risk_action = ReduceOnly
-  ; urgency = Medium
-  ; size_pct = 0
-  ; size_cap_pct_equity = 0.006
-  ; log_tag = "OVERRIDE:CONFLICT"
-  ; reason = "Override: conflicting signals — reduce only"
-  }
+(* ------ LUT API (OCaml-style set_decision + nested for populate) ------ *)
 
-let overrideCapitulationWait : decision =
-  { directive = TradeSide.Hold
-  ; quote_slot = NoQuote
-  ; risk_action = FlattenAndPause
-  ; urgency = High
-  ; size_pct = 0
-  ; size_cap_pct_equity = 0.004
-  ; log_tag = "OVERRIDE:CAPITULATION_WAIT"
-  ; reason = "Override: capitulation — flatten and pause"
-  }
+let set_decision (lut: decision array) (inv: int) (sig_: int) (vol: int) (liq: int) (dec: decision) =
+  lut.(lut_index inv sig_ vol liq) <- dec
 
-let buildLut () : decision array =
-  let lut = Array.make lut_total_size uninitializedDecision in
+let apply_overrides (lut: decision array) : decision array =
   begin
-    for idx = 0 to lut_total_size - 1 do
-      let key = decodeIndex idx in
-      lut.(idx) <- computeBaseDecision key
-    done;
+    lut.(lut_index 2 (-2) 0 0) <- override_extreme_long_strong_sell;
+    lut.(lut_index 2 (-1) 1 1) <- override_extreme_long_adverse;
+    lut.(lut_index 2 1 1 0) <- override_extreme_long_conflict;
+    lut.(lut_index 2 2 2 1) <- override_extreme_long_hv_conflict;
+    lut.(lut_index (-2) 2 0 0) <- override_extreme_short_strong_buy;
+    lut.(lut_index (-2) 1 1 1) <- override_extreme_short_adverse;
+    lut.(lut_index 0 2 1 0) <- override_neutral_strong_buy;
+    lut.(lut_index 0 (-2) 0 1) <- override_neutral_strong_sell;
+    lut.(lut_index 1 0 3 1) <- override_high_vol_defensive;
+    lut.(lut_index 0 1 1 2) <- override_wide_liq_caution;
     lut
   end
 
-let applyOverrides (lut: decision array) : decision array =
+let fill_base_lut (lut: decision array) : decision array =
   begin
-    lut.(lutIndex keyFarBelowCapitulation) <- overrideCapitulationBuy;
-    lut.(lutIndex keyBlowoffTop) <- overrideBlowoffTop;
-    lut.(lutIndex keyNeutral) <- overrideNeutral;
-    lut.(lutIndex keyConflictAbove) <- overrideConflict;
-    lut.(lutIndex keyCapitulationWait) <- overrideCapitulationWait;
-    lut
+    for liq = 0 to 2 do
+      for vol = 0 to 3 do
+        for s = -2 to 2 do
+          for i = -2 to 2 do
+            lut.(lut_index i s vol liq) <- compute_base_decision i s vol liq
+          done
+        done
+      done
+    done;
+    apply_overrides lut
   end
 
 let populate () : decision array =
-  applyOverrides (buildLut ())
+  let lut = Array.make lut_total_size default_decision in
+  fill_base_lut lut
 
-(* ------ Reporting / test helpers ------ *)
+let lookup (lut: decision array) (inv: int) (sig_: int) (vol: int) (liq: int) : decision =
+  let i = clamp inv (-2) 2 in
+  let s = clamp sig_ (-2) 2 in
+  let v = clamp vol 0 3 in
+  let l = clamp liq 0 2 in
+  lut.(lut_index i s v l)
 
-let directiveLabel (d: decision) : string =
-  match d.directive with
-  | TradeSide.Buy -> "BUY"
-  | TradeSide.Sell -> "SELL"
-  | TradeSide.Hold -> "HOLD"
-
-let formatDecision (d: decision) : string =
-  directiveLabel d ^ " (" ^ int_to_string d.size_pct ^ "%) [" ^ d.log_tag ^ "]: " ^ d.reason
-
-let reportDecision (_sym: symbol) (key: SignalKey) (d: decision) : string =
-  "LUT[" ^ int_to_string (lutIndex key) ^ "] -> " ^ formatDecision d
-
-let assertBuy (d: decision) (minSize: int) : bool =
-  d.directive = TradeSide.Buy && d.size_pct >= minSize
-
-let assertSell (d: decision) (minSize: int) : bool =
-  d.directive = TradeSide.Sell && d.size_pct >= minSize
-
-let assertHold (d: decision) : bool =
-  d.directive = TradeSide.Hold && d.size_pct = 0
-
-let rec assertAllInitialized (lut: decision array) (i: int) : bool =
+let rec assert_all_filled (lut: decision array) (i: int) : bool =
   if i >= lut_total_size then true
   else
     let d = lut.(i) in
     if d.log_tag = "UNINITIALIZED" then false
-    else assertAllInitialized lut (i + 1)
-
-let rec assertIndexRoundtrip (i: int) : bool =
-  if i >= lut_total_size then true
-  else
-    let key = decodeIndex i in
-    if lutIndex key = i then assertIndexRoundtrip (i + 1)
-    else false
+    else assert_all_filled lut (i + 1)
 
 let main () =
   begin
     let lut = populate () in
     assert (Array.length lut = lut_total_size);
-    assert (assertAllInitialized lut 0);
-    assert (assertIndexRoundtrip 0);
-    let k1 = makeKey 51600.0 50000.0 0.06 9.0 10.0 0.005 in
-    assert (k1.price = PriceVsMean.FarAbove);
-    assert (k1.momentum = Momentum.StrongBull);
-    assert (k1.trend = Trend.RisingStrong);
-    assert (k1.vol = Volatility.LowVol);
-    let k2 = makeKey 48400.0 50000.0 (0.0 -. 0.06) 1.0 10.0 0.03 in
-    assert (k2.price = PriceVsMean.FarBelow);
-    assert (k2.momentum = Momentum.StrongBear);
-    assert (k2.trend = Trend.FallingStrong);
-    assert (k2.vol = Volatility.HighVol);
-    let idx1 = lutIndex k1 in
-    let idx2 = lutIndex k2 in
-    assert (idx1 = idx2 = false);
-    assert (lutIndex k1 = lutIndex (decodeIndex idx1));
-    let d1 = lookup lut k1 in
-    assert (assertBuy d1 20);
-    let d2 = lookup lut k2 in
-    assert (d2.log_tag = "OVERRIDE:CAPITULATION_WAIT");
-    assert (assertHold d2);
-    let d3 = lookup lut keyBlowoffTop in
-    assert (assertSell d3 100);
-    assert (d3.urgency = Critical);
-    assert (d3.log_tag = "OVERRIDE:BLOWOFF_TOP");
-    let d4 = lookup lut keyNeutral in
-    assert (assertHold d4);
-    assert (d4.log_tag = "OVERRIDE:NEUTRAL_MM");
-    let d5 = lookup lut keyConflictAbove in
-    assert (assertHold d5);
-    assert (d5.log_tag = "OVERRIDE:CONFLICT");
-    let d6 = lookup lut keyDipUptrend in
-    assert (assertBuy d6 75);
-    let d7 = lookup lut keyCapitulationWait in
-    assert (d7.risk_action = FlattenAndPause);
-    let d8 = lookup lut keyFarBelowCapitulation in
-    assert (assertBuy d8 100);
-    assert (d8.log_tag = "OVERRIDE:CAPITULATION_BUY");
-    assert (d8.urgency = Critical);
-    let d9 = lookup lut keyDistribution in
-    assert (assertSell d9 80);
-    let btc = Symbol "BTC-USD" in
-    let report = reportDecision btc keyDipUptrend d6 in
-    assert (report <> "");
-    let e2eKey = makeKey 49200.0 50000.0 0.015 8.0 10.0 0.006 in
-    let e2e = lookup lut e2eKey in
-    assert (assertBuy e2e 25)
+    assert (assert_all_filled lut 0);
+    let d_neutral = lookup lut 0 0 1 1 in
+    assert (d_neutral.log_tag <> "UNINITIALIZED");
+    let d_long_sell = lookup lut 2 (-2) 0 0 in
+    assert (d_long_sell.log_tag = "OVERRIDE:EXTREME_LONG_VS_STRONG_SELL");
+    let d_conflict = lookup lut 2 2 2 1 in
+    assert (d_conflict.log_tag = "OVERRIDE:EXTREME_LONG_HIGH_VOL_CONFLICT");
+    let d_short_buy = lookup lut (-2) 2 0 0 in
+    assert (d_short_buy.log_tag = "OVERRIDE:EXTREME_SHORT_VS_STRONG_BUY");
+    let inv_b = bucket_inventory 18750.0 50000.0 in
+    let sig_b = bucket_signal 1.8 in
+    let vol_b = bucket_volatility 1.7 in
+    let liq_b = bucket_liquidity 9.5 7.0 420000.0 in
+    assert (inv_b = 1);
+    let d_bucket = lookup lut inv_b sig_b vol_b liq_b in
+    assert (d_bucket.log_tag <> "UNINITIALIZED")
   end

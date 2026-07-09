@@ -68,8 +68,25 @@ Configure race severity in `goop.toml`:
 
 ```toml
 [check]
-concurrent = "error"   # warn | error | off
+concurrent = "error"   # LINEAR006/007/008: warn | error | off
 ```
+
+## Channel-mediated races (LINEAR008)
+
+When a `mutable` variable is sent on a channel inside a `go` closure but the parent scope still accesses it afterward, the compiler reports **LINEAR008**. This catches races where shared mutable state is passed through a channel without transferring ownership.
+
+Use `go (move var)` or stop accessing the variable in the parent after the handoff.
+
+## Deadlock lint (DEADLOCK001)
+
+A narrow static check detects the classic two-goroutine circular send/recv pattern on unbuffered channels. Configure severity:
+
+```toml
+[check]
+deadlock = "warn"   # warn | error | off
+```
+
+Complex concurrency (loops, `select`, buffered channels) is not analyzed — Go's runtime deadlock detector remains the fallback.
 
 ## Owned channels
 

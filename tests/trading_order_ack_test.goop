@@ -7,11 +7,13 @@ type OrderAck =
 
 let handleAck (ack: OrderAck) : string =
   match ack with
-  | Filled { order_id; qty } -> "filled " ^ order_id ^ " x" ^ int_to_string qty
-  | Rejected { reason } -> "rejected: " ^ reason
-  | PartialFill { order_id; filled; remaining } ->
+  | OrderAck.Filled { order_id; qty } -> "filled " ^ order_id ^ " x" ^ int_to_string qty
+  | OrderAck.Rejected { reason } -> "rejected: " ^ reason
+  | OrderAck.PartialFill { order_id; filled; remaining } ->
       "partial " ^ order_id ^ " " ^ int_to_string filled ^ "/" ^ int_to_string remaining
 
 let main () : unit with { io } =
-  let a = Filled { order_id = "o1"; qty = 10 } in
-  print_line (handleAck a)
+  begin
+    let a = OrderAck.Filled { order_id = "o1"; qty = 10 } in
+    print_line (handleAck a)
+  end

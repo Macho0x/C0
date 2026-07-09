@@ -25,6 +25,18 @@ Builtins are part of the type system — not modules and not prelude bindings.
 
 Prelude: `list_length`, `list_append`. Higher-order: `std.list.Map`.
 
+## Arrays
+
+| Syntax | Meaning |
+|---|---|
+| `'a array` | OCaml-style dynamic array (lowers to Go slice) |
+| `Array.make n default` | Allocate and initialize (prelude) |
+| `Array.length arr` | Element count (prelude) |
+| `arr.(i)` | Index read |
+| `arr.(i) <- v` | In-place write |
+
+Optional import-style access: [`std.array`](std-array.md).
+
 ## Option
 
 | Constructor | Type |

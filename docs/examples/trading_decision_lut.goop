@@ -1,42 +1,121 @@
 module TradingDecisionLutExample
 
-(* Minimal OCaml-style flat LUT: populate with for, override with <- *)
+(* Inventory-aware MM LUT — condensed teaching version of tests/trading_decision_lut_test.goop
+ * OCaml surface: Array.make · nested for · arr.(i) <- · begin/end · set_decision *)
 
-type side = Buy | Sell | Hold
+type side = Buy | Sell
 
-type decision = { action: side; tag: string }
+type quote_params =
+  { bid_offset_bps: int
+  ; ask_offset_bps: int
+  ; bid_size_mult: float
+  ; ask_size_mult: float
+  ; post_only: bool
+  ; cancel_existing: bool
+  ; take_liquidity: bool
+  ; max_slippage_bps: int option
+  }
 
-let universe = 9
+type risk_action =
+  | AllowNewPositions
+  | ReduceOnly
+  | EmergencyReduce of side
 
-let defaultDecision : decision =
-  { action = side.Hold; tag = "DEFAULT" }
+type urgency = Low | Medium | High
 
-let index (p: int) (m: int) : int =
-  p * 3 + m
+type decision =
+  { quote: quote_params option
+  ; risk_action: risk_action
+  ; urgency: urgency
+  ; log_tag: string
+  }
 
-let base (p: int) (m: int) : decision =
-  if p = 0 && m = 2 then { action = side.Buy; tag = "BASE:BUY" }
-  else if p = 2 && m = 0 then { action = side.Sell; tag = "BASE:SELL" }
-  else defaultDecision
+let no_slippage : int option = None
 
-let buildLut () : decision array =
-  let lut = Array.make universe defaultDecision in
+let default_decision : decision =
+  { quote = None
+  ; risk_action = ReduceOnly
+  ; urgency = High
+  ; log_tag = "DEFAULT"
+  }
+
+(* Mini state space: inv[-1..1] x sig[-1..1] x vol[0..1] x liq[0..1] = 36 cells *)
+let lut_total_size = 36
+
+let lut_index (inv: int) (sig_: int) (vol: int) (liq: int) : int =
+  let i_inv = inv + 1 in
+  let i_sig = sig_ + 1 in
+  i_inv + (i_sig * 3) + (vol * 9) + (liq * 18)
+
+let qp_neutral : quote_params =
+  { bid_offset_bps = 5; ask_offset_bps = 5
+  ; bid_size_mult = 1.0; ask_size_mult = 1.0
+  ; post_only = true; cancel_existing = false
+  ; take_liquidity = false; max_slippage_bps = no_slippage
+  }
+
+let base_decision (inv: int) (sig_: int) : decision =
+  let tag =
+    if inv > 0 && sig_ < 0 then "REDUCE_LONG"
+    else if inv < 0 && sig_ > 0 then "REDUCE_SHORT"
+    else "NEUTRAL"
+  in
+  { quote = Some qp_neutral
+  ; risk_action = AllowNewPositions
+  ; urgency = Low
+  ; log_tag = tag
+  }
+
+let qp_extreme_long : quote_params =
+  { bid_offset_bps = 20; ask_offset_bps = -5
+  ; bid_size_mult = 0.3; ask_size_mult = 1.8
+  ; post_only = false; cancel_existing = true
+  ; take_liquidity = true; max_slippage_bps = Some 30
+  }
+
+let override_extreme_long : decision =
+  { quote = Some qp_extreme_long
+  ; risk_action = EmergencyReduce Sell
+  ; urgency = High
+  ; log_tag = "OVERRIDE:EXTREME_LONG"
+  }
+
+let set_decision (lut: decision array) (inv: int) (sig_: int) (vol: int) (liq: int) (dec: decision) =
+  lut.(lut_index inv sig_ vol liq) <- dec
+
+let apply_overrides (lut: decision array) : decision array =
   begin
-    for i = 0 to universe - 1 do
-      let p = i / 3 in
-      let m = i % 3 in
-      lut.(i) <- base p m
-    done;
-    lut.(index 0 2) <- { action = side.Buy; tag = "OVERRIDE:STRONG" };
+    lut.(lut_index 1 (-1) 0 0) <- override_extreme_long;
     lut
   end
 
-let lookup (lut: decision array) (p: int) (m: int) : decision =
-  lut.(index p m)
+let populate () : decision array =
+  let lut = Array.make lut_total_size default_decision in
+  fill_base_lut lut
+
+let fill_base_lut (lut: decision array) : decision array =
+  begin
+    for liq = 0 to 1 do
+      for vol = 0 to 1 do
+        for s = -1 to 1 do
+          for i = -1 to 1 do
+            lut.(lut_index i s vol liq) <- base_decision i s
+          done
+        done
+      done
+    done;
+    apply_overrides lut
+  end
+
+let lookup (lut: decision array) (inv: int) (sig_: int) (vol: int) (liq: int) : decision =
+  lut.(lut_index inv sig_ vol liq)
 
 let main () =
   begin
-    let lut = buildLut () in
-    let d = lookup lut 0 2 in
-    assert (d.tag = "OVERRIDE:STRONG" && d.action = side.Buy)
+    let lut = populate () in
+    assert (Array.length lut = lut_total_size);
+    let d = lookup lut 1 (-1) 0 0 in
+    assert (d.log_tag = "OVERRIDE:EXTREME_LONG");
+    let d_neutral = lookup lut 0 0 0 0 in
+    assert (d_neutral.log_tag = "NEUTRAL")
   end

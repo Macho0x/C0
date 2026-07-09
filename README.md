@@ -231,6 +231,7 @@ Same file can mix `import golang`, `@golang` blocks, and pure Goop logic. See [`
 | **Types** | ADTs, records, tuples, lists, `option` / `result`, parametric polymorphism |
 | **Control** | Exhaustive `match`, guards, active patterns, `?` propagation, `result { }` / `async { }` |
 | **Safety** | Effect rows, linear resources (`owned_chan`), refinements (`where`), nil-channel analysis |
+| **Arrays & loops** | OCaml-style `'a array`, `Array.make`, `for`/`done`, `begin`/`end`, qualified constructors |
 | **Concurrency** | `go`, `chan`, `select`, compile-time sharing analysis on `mutable` |
 | **Interop** | `import golang`, `import goop`, `@golang` embed blocks |
 
@@ -291,8 +292,9 @@ Configure checks in `goop.toml`:
 exhaust_redundant = "warn"
 exhaust_missing = "error"
 effect_inference = true
-concurrent = "error"          # LINEAR006/007: warn | error | off
+concurrent = "error"          # LINEAR006/007/008: warn | error | off
 refinement_unproven = "warn"  # REFINE002: warn | error | off
+deadlock = "warn"             # DEADLOCK001: warn | error | off
 ```
 
 See [package manager guide](docs/design/11-package-manager.md).
@@ -301,7 +303,7 @@ See [package manager guide](docs/design/11-package-manager.md).
 
 ## FAQ
 
-**Is this production-ready?** Early bootstrap. The compiler, type checker, codegen, LSP, and 28+ e2e tests are real; we are not claiming production load readiness yet.
+**Is this production-ready?** Early bootstrap. The compiler, type checker, codegen, LSP, and 40+ e2e tests are real; we are not claiming production load readiness yet.
 
 **How is this different from Borgo or Dingo?** Goop is a full compiler (lex → parse → infer → safety passes → Go codegen), with ML-family syntax and compile-time safety aimed at gradual migration to Go.
 
@@ -312,6 +314,10 @@ See [package manager guide](docs/design/11-package-manager.md).
 ---
 
 ## Status
+
+**v0.8.2** — Documentation sync: error reference (NIL001, LINEAR008, DEADLOCK001), syntax/stdlib/spec updates, removed stale `extern "go"` examples.
+
+**v0.8.1** — Tutorial ch. 7 (arrays/loops), `std.array` module, semantics and lowering updates.
 
 **v0.8.0** — OCaml-style arrays (`Array.make`, `arr.(i) <-`), `for`/`begin`/`end`, qualified constructors, trading LUT example.
 
@@ -329,7 +335,7 @@ See [package manager guide](docs/design/11-package-manager.md).
 
 | Resource | Link |
 |---|---|
-| [Language tutorial](docs/tutorial/README.md) | 6 chapters, linked examples |
+| [Language tutorial](docs/tutorial/README.md) | 7 chapters, linked examples |
 | [Standard library reference](docs/stdlib/README.md) | Prelude, builtins, `std.*` |
 | [Design docs](docs/design/) | Language design |
 | [Examples](docs/examples/) | Runnable; CI checks all |

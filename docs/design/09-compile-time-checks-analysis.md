@@ -86,7 +86,7 @@ This gradual path means Goop ships compile-time refinement checking for simple c
 
 **Build a built-in constraint solver for simple arithmetic refinements (integer linear arithmetic, comparisons, boolean combinations) first — no external dependency, covers ~80% of practical refinements.** This is ~1000 lines of Go code, no new dependencies, and produces actionable error messages by construction (failures point to the unsatisfiable expression directly). Defer Z3 integration until user demand materializes and the error-message problem is solved. The existing `where` clause infrastructure (parser, AST, codegen) is already in place; this just adds a compile-time proof pass that can skip emitting `panic` guards for proven-safe call sites. Runtime assertions remain the fallback for unproven or complex refinements — gradual, zero-risk adoption.
 
-**Status: Implemented (v0.6.0).** Refinement call-site guards, arithmetic solver, linear go handoff, `go (move ...)`, and `goop.toml` severities are implemented. Z3/SMT integration and static deadlock detection remain deferred. Channel-mediated race tracking is documented as a limitation.
+**Status: Implemented (v0.6.0).** Refinement call-site guards, arithmetic solver, linear go handoff, `go (move ...)`, and `goop.toml` severities are implemented. Z3/SMT integration remains deferred. Channel-mediated race tracking (LINEAR008, v0.7.0) and narrow static deadlock lint (DEADLOCK001, v0.7.0) are implemented for straight-line goroutine patterns.
 
 ---
 
@@ -94,7 +94,7 @@ This gradual path means Goop ships compile-time refinement checking for simple c
 
 ### 2.1 Current state
 
-Goop exposes Go's goroutines via `go` expressions, channels via `chan` types, and multiplexing via `select`. The prelude provides `Chan.make`, `Chan.send`, `Chan.recv`. There is **no concurrency safety analysis**. A Goop program can freely share mutable state between goroutines (e.g., `go (fun () -> counter <- counter + 1)`) without any compiler warning, and the resulting data race will manifest as undefined behavior in the lowered Go.
+Goop exposes Go's goroutines via `go` expressions, channels via `chan` types, and multiplexing via `select`. The prelude provides `Chan.make`, `Chan.send`, `Chan.recv`. **Compile-time concurrency safety** is implemented via the linear checker (LINEAR006/007), channel-mediated race tracking (LINEAR008, v0.7.0), and narrow static deadlock lint (DEADLOCK001, v0.7.0). Severity is configurable in `goop.toml` under `[check] concurrent` and `[check] deadlock`.
 
 ### 2.2 What Rust does (and why Goop can't copy it)
 
@@ -432,6 +432,6 @@ Goop already forbids null — `option` is explicit. Extending this to channels: 
 | Feature | Verdict | Reasoning (one paragraph) | Effort |
 |---|---|---|---|
 | **SMT-based refinement checking** | **Feasible-with-effort** | Build a built-in constraint solver for linear integer arithmetic first (no external dependency, covers 80% of practical refinements). The existing `where` clause infrastructure is complete; this adds a post-inference VC generation pass that skips runtime panic guards for proven-safe call sites. Defer Z3 integration until the error-message quality problem is solved. | ~1000-1500 LoC |
-| **Data race detection** | **Feasible-minimal** | Extend the existing linear checker to track mutable variable captures across goroutine boundaries. Flag any `mutable` variable captured by a `go` closure that remains accessible in the spawning scope. This catches the #1 data race pattern with zero type-system changes, zero runtime cost, and manageable false positives (Goop defaults to immutable bindings). | ~500 LoC |
-| **Deadlock detection** | **Defer-indefinitely** | Go's runtime deadlock detector (inherited for free via Goop→Go lowering) is the practical solution. Static deadlock detection for real-world channel-based programs (loops, `select`, buffered channels) is a research problem. The toy-able subset (straight-line ops between two goroutines) covers near-zero real bugs. Invest in runtime debugging tools instead. | N/A |
+| **Data race detection** | **Implemented** | Linear checker flags mutable captures (LINEAR006/007). Channel-mediated race tracking (LINEAR008, v0.7.0) flags mutable values sent on channels while still accessible in the spawning scope. Configurable via `goop.toml` `[check] concurrent`. | ~500 LoC |
+| **Deadlock detection** | **Implemented (narrow)** | Go's runtime deadlock detector (inherited for free via Goop→Go lowering) catches total deadlocks. Goop adds DEADLOCK001 (v0.7.0): a conservative static lint for the classic two-goroutine circular send/recv pattern on unbuffered channels. Full static deadlock detection for loops, `select`, and buffered channels remains deferred. | ~200 LoC |
 | **Channel misuse** | **Feasible-minimal** | Add `Chan.close` with runtime safety tracking (closed flag checked on send/close). Add flow-sensitive nil channel detection. Do NOT make channels linear — the multi-producer pattern conflicts with linear ownership, and Go channels are shared-memory primitives. If compile-time close-safety is desired, provide an opt-in `OwnedChan` linear wrapper. **Status: `OwnedChan` implemented; `Chan.close` runtime safety implemented.** | ~300 LoC |

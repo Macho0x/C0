@@ -2,7 +2,7 @@
 
 ## Scoping
 
-Goop uses lexical scoping. A `let` binding introduces a name in the body following it (or in the rest of the module for top-level bindings). Modules provide a namespace boundary. `open` imports exported names unqualified.
+Goop uses lexical scoping. A `let` binding introduces a name in the body following it (or in the rest of the module for top-level bindings). Modules provide a namespace boundary. Dot imports (`import goop . "path"`) bring exported names unqualified.
 
 ## Evaluation order
 

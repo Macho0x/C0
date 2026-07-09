@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.2
+
+### Documentation
+- Sync all docs with compiler: version/chapter counts, `goop.toml` `deadlock` key, array/stdlib coverage
+- Add NIL001, LINEAR008, DEADLOCK001 to error reference; fix trading-bot safety matrix (LINEAR001 typo)
+- Replace stale `extern "go"` examples with `import golang` / `@golang` across syntax, lowering, and grammar docs
+- Add arrays/for/begin/qualified constructors to `03-syntax.md`; array lowering to `spec/lowering.md`
+- Update `prelude.md` and `builtins.md` with `Array.*`; rewrite Zed editor README for Goop
+
 ## 0.8.1
 
 ### Documentation & stdlib

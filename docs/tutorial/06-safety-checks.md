@@ -57,8 +57,9 @@ refinement_unproven = "warn"   # warn | error | off
 | `exhaust_redundant` | `warn` | EXHAUST001/002 |
 | `exhaust_missing` | `error` | EXHAUST003 |
 | `effect_inference` | `true` | Infer `with` from bodies |
-| `concurrent` | `error` | LINEAR006/007 race warnings |
+| `concurrent` | `error` | LINEAR006/007/008 race warnings |
 | `refinement_unproven` | `warn` | REFINE002 unproven VCs |
+| `deadlock` | `warn` | DEADLOCK001 channel deadlock lint |
 
 ## Error code reference
 

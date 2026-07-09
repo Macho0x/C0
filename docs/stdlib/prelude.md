@@ -33,6 +33,15 @@ In practice, use the `^` operator for string concatenation.
 
 List syntax (`[]`, `::`, `[a; b]`) is built into the language — see [builtins](builtins.md).
 
+## Arrays
+
+| Name | Type | Effects | Go lowering |
+|---|---|---|---|
+| `Array.make` | `int -> 'a -> 'a array` | `{}` | `make([]T, n)` + fill loop |
+| `Array.length` | `'a array -> int` | `{}` | `len` |
+
+Index read `arr.(i)` and write `arr.(i) <- v` are language syntax — see [std.array](std-array.md).
+
 ## Panic and assertions
 
 | Name | Type | Effects | Go lowering |
