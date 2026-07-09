@@ -1,0 +1,9 @@
+module ParenFloatTest
+
+let pctChange (current: float) (mean: float) : float =
+  let diff = current -. mean in
+  diff /. mean
+
+let main () =
+  let v = pctChange 110.0 100.0 in
+  assert (v >= 0.099 && v <= 0.101)

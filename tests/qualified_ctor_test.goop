@@ -1,0 +1,13 @@
+module QualifiedCtorTest
+
+type Color = Red | Green | Blue
+
+let label (c: Color) : string =
+  match c with
+  | Color.Red -> "red"
+  | Color.Green -> "green"
+  | Color.Blue -> "blue"
+
+let main () =
+  let c = Color.Green in
+  assert (label c = "green")

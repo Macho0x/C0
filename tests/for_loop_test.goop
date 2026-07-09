@@ -1,0 +1,14 @@
+module ForLoopTest
+
+let main () =
+  begin
+    let arr = Array.make 4 0 in
+    for i = 0 to 3 do
+      arr.(i) <- i * 10
+    done;
+    let before = arr.(0) in
+    for i = 5 to 4 do
+      arr.(0) <- 99
+    done;
+    assert (before = 0 && arr.(3) = 30)
+  end

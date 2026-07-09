@@ -1,0 +1,10 @@
+module OptionRecordTest
+
+type cfg =
+  { name: string
+  ; limit: int option
+  }
+
+let main () =
+  let c : cfg = { name = "bot"; limit = Some 42 } in
+  assert (c.name = "bot")

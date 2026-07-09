@@ -569,6 +569,11 @@ func ListType(t Type) Type {
 	return &TCon{Name: "list", Args: []Type{t}}
 }
 
+// ArrayType creates an instantiated array type: array<T>.
+func ArrayType(t Type) Type {
+	return &TCon{Name: "array", Args: []Type{t}}
+}
+
 // ---------------------------------------------------------------------------
 // Conversion from AST types to internal types
 // ---------------------------------------------------------------------------

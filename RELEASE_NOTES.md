@@ -1,14 +1,23 @@
-# Goop 0.7.1
+# Goop 0.8.0
 
-## Parser & LSP
-- **`let _`**: discard bindings are now accepted (e.g. `let _ = go (fun () -> ...)`)
-- **LSP null responses**: hover, definition, and completion no longer emit malformed JSON-RPC when there is nothing to show
-- **LSP I/O**: `readLSPMessage` checks `scanner.Err()` after reading headers
+## OCaml surface syntax
+- **Arrays**: `'a array`, `Array.make`, `Array.length`, `arr.(i)`, `arr.(i) <- v`
+- **For loops**: `for i = lo to hi do ... done`
+- **Sequencing**: `begin e1; e2; ... end`
+- **Qualified constructors**: `Type.Constructor` in expressions and patterns
 
-## Cleanup
-- Removed unused parser and CLI helpers (`parseExternDecl`, `localGoopPathForImport`, `writeOpenDependencies`)
-- Tidied `go.mod` (`golang.org/x/tools` is now a direct dependency)
+## Codegen fixes
+- Top-level record literals emit direct values (not thunks)
+- Parentheses preserve float operator precedence in generated Go
+- `option` types in record fields register `OptionT` structs during prescan
+- Tuple pattern matching on `(a, b)` with literal arms
 
-## Tests
-- `linear_go_handoff_test.goop` uses idiomatic `let _` syntax
-- Full `go test ./...` and 32 `goop test` integration tests passing
+## Tests & examples
+- Rewritten [trading_decision_lut_test.goop](tests/trading_decision_lut_test.goop) using flat-array populate + overrides
+- New integration tests: arrays, for loops, begin/end, qualified ctors, option records, paren floats, tuple match
+- New example: [docs/examples/trading_decision_lut.goop](docs/examples/trading_decision_lut.goop)
+
+## Documentation
+- [docs/design/13-ocaml-surface-syntax.md](docs/design/13-ocaml-surface-syntax.md)
+- [docs/stdlib/std-array.md](docs/stdlib/std-array.md)
+- Updated grammar spec with new keywords and forms

@@ -214,6 +214,9 @@ func (g *Generator) internalTypeToGo(t types.Type) string {
 		if t.Name == "list" && len(t.Args) > 0 {
 			return "[]" + g.internalTypeToGo(t.Args[0])
 		}
+		if t.Name == "array" && len(t.Args) > 0 {
+			return "[]" + g.internalTypeToGo(t.Args[0])
+		}
 		if t.Name == "option" && len(t.Args) > 0 {
 			return "Option" + exported(g.internalTypeToGo(t.Args[0]))
 		}
@@ -222,14 +225,38 @@ func (g *Generator) internalTypeToGo(t types.Type) string {
 			return "Result" + exported(arg)
 		}
 		return "interface{}"
+	case *types.TRecord:
+		return g.internalRecordToGo(t)
+	case *types.TNewtype:
+		return newtypeGoName(t.Name)
 	case *types.TAdt:
 		if t.Name == "owned_chan" {
 			return "*C0Chan"
 		}
-		return "interface{}"
+		return g.goName(t.Name)
 	default:
 		return "interface{}"
 	}
+}
+
+func (g *Generator) internalRecordToGo(t *types.TRecord) string {
+	for name, td := range g.records {
+		if rk, ok := td.Kind.(*ast.RecordTypeKind); ok {
+			if len(rk.Fields) == len(t.Fields) {
+				match := true
+				for i, f := range rk.Fields {
+					if f.Name != t.Fields[i].Name {
+						match = false
+						break
+					}
+				}
+				if match {
+					return g.goName(name)
+				}
+			}
+		}
+	}
+	return "interface{}"
 }
 
 // recordMapping records a Goop→Go position mapping at the current Go output position.
@@ -381,6 +408,26 @@ func (g *Generator) prescan(mod *ast.Module) {
 					}
 				}
 				g.funcParamTypes[b.Name] = paramTypes
+			}
+		}
+	}
+
+	// Scan record and ADT field types for option/result/tuple usage.
+	for _, d := range mod.Decls {
+		td, ok := d.(*ast.TypeDecl)
+		if !ok {
+			continue
+		}
+		switch kind := td.Kind.(type) {
+		case *ast.RecordTypeKind:
+			for _, f := range kind.Fields {
+				g.scanUsedTypes(f.Type)
+			}
+		case *ast.ADTTypeKind:
+			for _, c := range kind.Cases {
+				if c.Arg != nil {
+					g.scanUsedTypes(c.Arg)
+				}
 			}
 		}
 	}
@@ -589,6 +636,8 @@ func (g *Generator) typeToGo(at ast.Type) string {
 		argName := g.typeToGo(t.Arg)
 		switch funcName {
 		case "list":
+			return "[]" + argName
+		case "array":
 			return "[]" + argName
 		case "option":
 			return "Option" + exported(argName)
@@ -1431,7 +1480,8 @@ func (g *Generator) emitLetDecl(d *ast.LetDecl) {
 
 func isCompoundExpr(e ast.Expr) bool {
 	switch e := e.(type) {
-	case *ast.LitExpr, *ast.IdentExpr, *ast.ConstructorExpr:
+	case *ast.LitExpr, *ast.IdentExpr, *ast.ConstructorExpr,
+		*ast.RecordExpr, *ast.ListExpr, *ast.TupleExpr:
 		return false
 	case *ast.AppExpr:
 		if _, ok := e.Func.(*ast.ConstructorExpr); ok {
@@ -1538,7 +1588,17 @@ func (g *Generator) emitExpr(e ast.Expr, isStmt bool) {
 	case *ast.ListExpr:
 		g.emitList(e)
 	case *ast.ParenExpr:
-		g.emitExpr(e.Inner, isStmt)
+		g.buf.WriteString("(")
+		g.emitExpr(e.Inner, false)
+		g.buf.WriteString(")")
+	case *ast.IndexExpr:
+		g.emitIndex(e)
+	case *ast.AssignExpr:
+		g.emitAssign(e, isStmt)
+	case *ast.ForExpr:
+		g.emitFor(e, isStmt)
+	case *ast.BeginExpr:
+		g.emitBegin(e, isStmt)
 	case *ast.IsExpr:
 		g.emitIsExpr(e)
 	case *ast.AsMatchExpr:
@@ -1624,7 +1684,7 @@ func (g *Generator) emitConstructor(e *ast.ConstructorExpr) {
 		}
 	}
 	// Check user-defined ADTs first (they take priority over built-in names)
-	varName := g.findVariantStruct(e.Name)
+	varName := g.findVariantStruct(e.Name, e.TypePrefix)
 	if varName != "" {
 		g.buf.WriteString("New" + varName)
 		g.buf.WriteString("(")
@@ -1647,11 +1707,11 @@ func (g *Generator) emitConstructor(e *ast.ConstructorExpr) {
 
 	switch e.Name {
 	case "None":
-		optType := g.findOptionType()
+		optType := g.resolveOptionGoType(e)
 		g.buf.WriteString("New" + optType + "None()")
 		return
 	case "Some":
-		optType := g.findOptionType()
+		optType := g.resolveOptionGoType(e)
 		g.buf.WriteString("New" + optType + "Some(")
 		g.emitExpr(e.Arg, false)
 		g.buf.WriteString(")")
@@ -1739,6 +1799,89 @@ func (g *Generator) emitListMatch(e *ast.MatchExpr) {
 	// Close the final if/else block and add a fallback panic for Go's exhaustiveness check
 	g.emitf("}\n")
 	g.emitf("panic(\"unreachable: unhandled list pattern\")\n")
+}
+
+func (g *Generator) isTupleMatch(e *ast.MatchExpr) bool {
+	for _, arm := range e.Arms {
+		if _, ok := arm.Pattern.(*ast.TuplePattern); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *Generator) emitTupleMatch(e *ast.MatchExpr) {
+	g.varCounter++
+	tmp := fmt.Sprintf("_t%d", g.varCounter)
+	g.emitf("%s := ", tmp)
+	g.emitExpr(e.Scrutinee, false)
+	g.buf.WriteString("\n")
+
+	for i, arm := range e.Arms {
+		tp, ok := arm.Pattern.(*ast.TuplePattern)
+		if !ok {
+			continue
+		}
+		prefix := "if "
+		if i > 0 {
+			prefix = "} else if "
+		}
+		cond := g.tuplePatternCondition(tmp, tp)
+		if arm.Guard != nil {
+			cond = cond + " && "
+		}
+		if arm.Guard != nil {
+			var gbuf strings.Builder
+			old := g.buf
+			g.buf = gbuf
+			g.emitExpr(arm.Guard, false)
+			guard := g.buf.String()
+			g.buf = old
+			if strings.HasSuffix(cond, " && ") {
+				cond += guard
+			} else if cond == "true" {
+				cond = guard
+			} else {
+				cond = cond + guard
+			}
+		}
+		g.emitf("%s%s {\n", prefix, cond)
+		g.indent++
+		for j, pat := range tp.Elems {
+			if _, ok := pat.(*ast.IdentPattern); ok {
+				g.emitPatternBinding(pat, fmt.Sprintf("%s.F%d", tmp, j))
+			}
+		}
+		g.emitReturnExpr(arm.Body)
+		g.indent--
+	}
+	g.emitf("}\n")
+	g.emitf("panic(\"unreachable: unhandled tuple pattern\")\n")
+}
+
+func (g *Generator) tuplePatternCondition(tmp string, p *ast.TuplePattern) string {
+	var parts []string
+	for j, pat := range p.Elems {
+		field := fmt.Sprintf("%s.F%d", tmp, j)
+		switch pat := pat.(type) {
+		case *ast.LitPattern:
+			var buf strings.Builder
+			old := g.buf
+			g.buf = buf
+			g.emitLit(&ast.LitExpr{Value: pat.Value, Kind: pat.Kind})
+			lit := g.buf.String()
+			g.buf = old
+			parts = append(parts, field+" == "+lit)
+		case *ast.IdentPattern, *ast.WildcardPattern:
+			continue
+		default:
+			continue
+		}
+	}
+	if len(parts) == 0 {
+		return "true"
+	}
+	return strings.Join(parts, " && ")
 }
 
 func (g *Generator) isResultMatch(e *ast.MatchExpr) bool {
@@ -1853,7 +1996,7 @@ func (g *Generator) emitResultNestedArms(arms []ast.MatchArm, prefix string) {
 				innerName = icp.Name
 			}
 		}
-		structName := g.findVariantStruct(innerName)
+		structName := g.findVariantStruct(innerName, "")
 		if structName == "" {
 			structName = g.goName(innerName)
 		}
@@ -1881,6 +2024,18 @@ func (g *Generator) findOptionType() string {
 		return ret
 	}
 	return "OptionT"
+}
+
+func (g *Generator) resolveOptionGoType(e ast.Expr) string {
+	if g.typeMap != nil && e != nil {
+		if t, ok := g.typeMap[e]; ok {
+			goT := g.internalTypeToGo(t)
+			if strings.HasPrefix(goT, "Option") {
+				return goT
+			}
+		}
+	}
+	return g.findOptionType()
 }
 
 func (g *Generator) findResultType() string {
@@ -2229,6 +2384,47 @@ func (g *Generator) emitPreludeCall(b *prelude.Binding, args []ast.Expr, callExp
 		g.buf.WriteString(")")
 		return
 
+	case "array_make":
+		g.varCounter++
+		arrName := fmt.Sprintf("_arr%d", g.varCounter)
+		elemGo := "interface{}"
+		if len(args) >= 2 && g.typeMap != nil {
+			if t, ok := g.typeMap[args[1]]; ok {
+				elemGo = g.internalTypeToGo(t)
+			}
+		}
+		if elemGo == "interface{}" && g.typeMap != nil && callExpr != nil {
+			if retType, ok := g.typeMap[callExpr]; ok {
+				if tc, ok := retType.(*types.TCon); ok && tc.Name == "array" && len(tc.Args) > 0 {
+					elemGo = g.internalTypeToGo(tc.Args[0])
+				}
+			}
+		}
+		g.buf.WriteString("func() []" + elemGo + " {\n")
+		g.indent++
+		g.emitf("%s := make([]%s, ", arrName, elemGo)
+		if len(args) >= 1 {
+			g.emitExpr(args[0], false)
+		} else {
+			g.buf.WriteString("0")
+		}
+		g.buf.WriteString(")\n")
+		g.emitf("for _i := 0; _i < len(%s); _i++ {\n", arrName)
+		g.indent++
+		g.emitf("%s[_i] = ", arrName)
+		if len(args) >= 2 {
+			g.emitExpr(args[1], false)
+		} else {
+			g.buf.WriteString("var zero " + elemGo)
+		}
+		g.buf.WriteString("\n")
+		g.indent--
+		g.emitf("}\n")
+		g.emitf("return %s\n", arrName)
+		g.indent--
+		g.buf.WriteString("}()")
+		return
+
 	case "owned_chan_make":
 		// OwnedChan.make () → C0ChanMake()
 		g.usedChan = true
@@ -2423,6 +2619,12 @@ func (g *Generator) emitMatch(e *ast.MatchExpr) {
 		return
 	}
 
+	// Tuple scrutinee: match (a, b) with | (x, y) -> ...
+	if g.isTupleMatch(e) {
+		g.emitTupleMatch(e)
+		return
+	}
+
 	// Check if this is a result type match (concrete struct, not interface)
 	if g.isResultMatch(e) {
 		g.emitResultMatch(e)
@@ -2534,7 +2736,7 @@ func groupMatchArms(arms []ast.MatchArm, g *Generator) []armGroup {
 	for _, arm := range arms {
 		structName := ""
 		if cp, ok := arm.Pattern.(*ast.ConstructorPattern); ok {
-			structName = g.findVariantStruct(cp.Name)
+			structName = g.findVariantStruct(cp.Name, cp.TypePrefix)
 		}
 		if _, ok := arm.Pattern.(*ast.WildcardPattern); ok {
 			structName = "default"
@@ -2576,6 +2778,16 @@ func (g *Generator) emitReturnExpr(e ast.Expr) {
 	case *ast.IfExpr, *ast.MatchExpr, *ast.LetInExpr, *ast.AsMatchExpr, *ast.GuardExpr:
 		// These emit their own stmt structure
 		g.emitExpr(e, true)
+	case *ast.AssignExpr, *ast.ForExpr:
+		g.emitExpr(e, true)
+	case *ast.BeginExpr:
+		if hasRet {
+			g.emitf("return ")
+			g.emitBegin(e.(*ast.BeginExpr), false)
+			g.buf.WriteString("\n")
+		} else {
+			g.emitBegin(e.(*ast.BeginExpr), true)
+		}
 	default:
 		g.emitf("return ")
 		g.emitExpr(e, false)
@@ -2600,7 +2812,7 @@ func (g *Generator) emitPatternBinding(p ast.Pattern, prefix string) {
 		}
 	case *ast.ConstructorPattern:
 		// For nested constructor patterns in result arms, bind via the struct field
-		structName := g.findVariantStruct(p.Name)
+		structName := g.findVariantStruct(p.Name, p.TypePrefix)
 		if structName != "" {
 			// This is an ADT variant — bind using the struct field name
 			fieldName := g.adtVariantField(p.Name)
@@ -2613,9 +2825,12 @@ func (g *Generator) emitPatternBinding(p ast.Pattern, prefix string) {
 	}
 }
 
-func (g *Generator) findVariantStruct(ctorName string) string {
+func (g *Generator) findVariantStruct(ctorName, typePrefix string) string {
 	// Search through ADTs to find which variant struct contains this constructor
 	for _, td := range g.adts {
+		if typePrefix != "" && td.Name != typePrefix {
+			continue
+		}
 		ak := td.Kind.(*ast.ADTTypeKind)
 		for _, c := range ak.Cases {
 			if c.Name == ctorName {
@@ -2700,6 +2915,87 @@ func isCustomPreludeStmt(e ast.Expr) bool {
 		}
 	}
 	return false
+}
+
+func (g *Generator) emitIndex(e *ast.IndexExpr) {
+	g.emitExpr(e.Target, false)
+	g.buf.WriteString("[")
+	g.emitExpr(e.Index, false)
+	g.buf.WriteString("]")
+}
+
+func (g *Generator) emitAssign(e *ast.AssignExpr, isStmt bool) {
+	g.emitExpr(e.Target, false)
+	g.buf.WriteString(" = ")
+	g.emitExpr(e.Value, false)
+	if isStmt {
+		g.buf.WriteString("\n")
+	}
+}
+
+func (g *Generator) emitFor(e *ast.ForExpr, isStmt bool) {
+	g.emitf("for %s := ", e.Var)
+	g.emitExpr(e.From, false)
+	g.buf.WriteString("; ")
+	g.emitf("%s <= ", e.Var)
+	g.emitExpr(e.To, false)
+	g.buf.WriteString("; ")
+	g.emitf("%s++ {\n", e.Var)
+	g.indent++
+	g.emitExpr(e.Body, true)
+	g.indent--
+	g.emitf("}")
+	if isStmt {
+		g.buf.WriteString("\n")
+	}
+}
+
+func (g *Generator) emitBegin(e *ast.BeginExpr, isStmt bool) {
+	if isStmt {
+		g.buf.WriteString("{\n")
+		g.indent++
+		for _, s := range e.Stmts {
+			g.emitExpr(s, true)
+			g.buf.WriteString("\n")
+		}
+		g.indent--
+		g.emitf("}\n")
+		return
+	}
+	retGo := "struct{}"
+	if g.typeMap != nil {
+		if t, ok := g.typeMap[e]; ok {
+			retGo = g.internalTypeToGo(t)
+		}
+	}
+	g.buf.WriteString("func() " + retGo + " {\n")
+	g.indent++
+	for i, s := range e.Stmts {
+		if i < len(e.Stmts)-1 {
+			switch s.(type) {
+			case *ast.ForExpr, *ast.AssignExpr:
+				g.emitExpr(s, true)
+				g.buf.WriteString("\n")
+			case *ast.BeginExpr:
+				g.emitBegin(s.(*ast.BeginExpr), false)
+				g.buf.WriteString("\n")
+			default:
+				g.emitf("_ = ")
+				g.emitExpr(s, false)
+				g.buf.WriteString("\n")
+			}
+		} else if retGo != "struct{}" {
+			g.emitf("return ")
+			g.emitExpr(s, false)
+			g.buf.WriteString("\n")
+		} else {
+			g.emitExpr(s, true)
+			g.buf.WriteString("\n")
+			g.emitf("return struct{}{}\n")
+		}
+	}
+	g.indent--
+	g.buf.WriteString("}()")
 }
 
 func (g *Generator) emitLetIn(e *ast.LetInExpr) {
@@ -3152,23 +3448,59 @@ func (g *Generator) emitFieldAccess(e *ast.FieldAccessExpr) {
 }
 
 func (g *Generator) emitTuple(e *ast.TupleExpr) {
-	parts := make([]string, len(e.Elems))
-	for i, el := range e.Elems {
-		var buf strings.Builder
-		old := g.buf
-		g.buf = buf
-		g.emitExpr(el, false)
-		parts[i] = g.buf.String()
-		g.buf = old
+	goType := g.tupleGoTypeFromExpr(e)
+	if goType == "" {
+		parts := make([]string, len(e.Elems))
+		for i, el := range e.Elems {
+			var buf strings.Builder
+			old := g.buf
+			g.buf = buf
+			g.emitExpr(el, false)
+			parts[i] = g.buf.String()
+			g.buf = old
+		}
+		goType = "Tuple" + strings.Join(parts, "")
 	}
-	g.buf.WriteString("Tuple" + strings.Join(parts, "") + "{")
-	for i, p := range parts {
+	g.buf.WriteString(goType + "{")
+	for i, el := range e.Elems {
 		if i > 0 {
 			g.buf.WriteString(", ")
 		}
-		g.buf.WriteString("F" + fmt.Sprintf("%d", i) + ": " + p)
+		g.buf.WriteString("F" + fmt.Sprintf("%d", i) + ": ")
+		g.emitExpr(el, false)
 	}
 	g.buf.WriteString("}")
+}
+
+func (g *Generator) tupleGoTypeFromExpr(e *ast.TupleExpr) string {
+	if g.typeMap == nil {
+		return ""
+	}
+	t, ok := g.typeMap[e]
+	if !ok {
+		return ""
+	}
+	if tt, ok := t.(*types.TTuple); ok {
+		parts := make([]string, len(tt.Elems))
+		for i, el := range tt.Elems {
+			parts[i] = g.internalTypeToGo(el)
+		}
+		for name, elems := range g.usedTuple {
+			if len(elems) == len(parts) {
+				match := true
+				for i, p := range parts {
+					if elems[i] != p {
+						match = false
+						break
+					}
+				}
+				if match {
+					return name
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func (g *Generator) emitList(e *ast.ListExpr) {

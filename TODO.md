@@ -28,6 +28,7 @@ This file tracks the remaining work to make Goop a usable language. It is kept i
 - [x] `option` and `result`
 - [x] `?` error propagation
 - [x] Mutable fields and bindings
+- [x] OCaml-style arrays, for loops, begin/end, qualified constructors (v0.8.0)
 - [x] Active patterns
 - [x] Match macros (`is`, `as`, `guard`)
 - [x] F#-style computation expressions (`result { ... }`, `async { ... }`)

@@ -313,6 +313,8 @@ See [package manager guide](docs/design/11-package-manager.md).
 
 ## Status
 
+**v0.8.0** — OCaml-style arrays (`Array.make`, `arr.(i) <-`), `for`/`begin`/`end`, qualified constructors, trading LUT example.
+
 **v0.7.0** — `src/internal/fmt` package, channel-mediated race tracking (LINEAR008), narrow deadlock lint (DEADLOCK001).
 
 - Language comparison table (Go / Rust / OCaml / F# / Goop) on README

@@ -1,0 +1,9 @@
+module ArrayMutationTest
+
+let main () =
+  begin
+    let arr = Array.make 2 "a" in
+    arr.(0) <- "x";
+    arr.(1) <- "y";
+    assert (arr.(0) = "x" && arr.(1) = "y")
+  end

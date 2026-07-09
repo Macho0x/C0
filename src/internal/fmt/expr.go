@@ -10,6 +10,7 @@ import (
 // Precedence mirrors parser.go binding strengths.
 const (
 	precLowest  = 1
+	precAssign  = 1
 	precPipe    = 2
 	precOr      = 3
 	precAnd     = 4
@@ -53,7 +54,16 @@ func formatExprInline(e ast.Expr, minPrec int) string {
 	}
 	switch e := e.(type) {
 	case *ast.LitExpr:
-		return fmt.Sprintf("%v", e.Value)
+		switch e.Kind {
+		case token.STRING:
+			return fmt.Sprintf("%q", e.Value)
+		case token.CHAR:
+			return fmt.Sprintf("'%v'", e.Value)
+		case token.UNIT:
+			return "()"
+		default:
+			return fmt.Sprintf("%v", e.Value)
+		}
 	case *ast.IdentExpr:
 		return e.Name
 	case *ast.ConstructorExpr:
@@ -132,6 +142,25 @@ func formatExprInline(e ast.Expr, minPrec int) string {
 		return "{" + formatExprInline(e.Base, precLowest) + " with " + stringsJoin(fields, "; ") + "}"
 	case *ast.ParenExpr:
 		return "(" + formatExprInline(e.Inner, precLowest) + ")"
+	case *ast.IndexExpr:
+		return formatExprInline(e.Target, precPostfix) + ".(" + formatExprInline(e.Index, precLowest) + ")"
+	case *ast.AssignExpr:
+		s := formatExprInline(e.Target, precAssign) + " <- " + formatExprInline(e.Value, precAssign)
+		if precAssign < minPrec {
+			return "(" + s + ")"
+		}
+		return s
+	case *ast.ForExpr:
+		return fmt.Sprintf("for %s = %s to %s do %s done", e.Var,
+			formatExprInline(e.From, precLowest),
+			formatExprInline(e.To, precLowest),
+			formatExprInline(e.Body, precLowest))
+	case *ast.BeginExpr:
+		parts := make([]string, len(e.Stmts))
+		for i, s := range e.Stmts {
+			parts[i] = formatExprInline(s, precLowest)
+		}
+		return "begin " + stringsJoin(parts, "; ") + " end"
 	case *ast.FunExpr:
 		var ps []string
 		for _, p := range e.Params {

@@ -1,0 +1,40 @@
+module TradingDecisionLutExample
+
+(* Minimal OCaml-style flat LUT: populate with for, override with <- *)
+
+type side = Buy | Sell | Hold
+
+type decision = { action: side; tag: string }
+
+let universe = 9
+
+let defaultDecision : decision =
+  { action = Hold; tag = "DEFAULT" }
+
+let index (p: int) (m: int) : int =
+  p * 3 + m
+
+let base (p: int) (m: int) : decision =
+  if p = 0 && m = 2 then { action = Buy; tag = "BASE:BUY" }
+  else if p = 2 && m = 0 then { action = Sell; tag = "BASE:SELL" }
+  else defaultDecision
+
+let buildLut () : decision array =
+  let lut = Array.make universe defaultDecision in
+  begin
+    for i = 0 to universe - 1 do
+      let p = i / 3 in
+      let m = i % 3 in
+      lut.(i) <- base p m
+    done;
+    lut.(index 0 2) <- { action = Buy; tag = "OVERRIDE:STRONG" };
+    lut
+  end
+
+let lookup (lut: decision array) (p: int) (m: int) : decision =
+  lut.(index p m)
+
+let main () =
+  let lut = buildLut () in
+  let d = lookup lut 0 2 in
+  assert (d.tag = "OVERRIDE:STRONG" && d.action = Buy)

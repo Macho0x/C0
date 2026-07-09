@@ -1,0 +1,6 @@
+module BeginEndTest
+
+let main () =
+  let v = begin 1 + 2 end in
+  let nested = begin 7; 8 end in
+  assert (v = 3 && nested = 8)

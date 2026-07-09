@@ -110,6 +110,14 @@ const (
 	MOVE  // move keyword (go move list)
 	USING // using keyword
 
+	// --- imperative / OCaml surface ---
+	FOR
+	TO
+	DO
+	DONE
+	BEGIN
+	END
+
 	tokenCount // internal count
 )
 
@@ -199,6 +207,12 @@ var tokenNames = [...]string{
 	GO:          "go",
 	MOVE:        "move",
 	USING:       "using",
+	FOR:         "for",
+	TO:          "to",
+	DO:          "do",
+	DONE:        "done",
+	BEGIN:       "begin",
+	END:         "end",
 }
 
 // String returns the human-readable name of the token type.
@@ -214,7 +228,8 @@ func (t TokenType) IsKeyword() bool {
 	switch t {
 	case LET, REC, MUTABLE, TYPE, MATCH, WITH, IF, THEN, ELSE, FUN,
 		MODULE, OPEN, EXTERN, IMPORT, GOLANG, GOOP, AS, WHEN, OF, IN, AND, PANIC,
-		TRUE, FALSE, UNIT, VAL, GUARD, IS, REQUIRES, RETURNS, WHERE, PRIVATE, CHAN, GO, MOVE, USING:
+		TRUE, FALSE, UNIT, VAL, GUARD, IS, REQUIRES, RETURNS, WHERE, PRIVATE, CHAN, GO, MOVE, USING,
+		FOR, TO, DO, DONE, BEGIN, END:
 		return true
 	}
 	return false
@@ -341,6 +356,18 @@ func LookupKeyword(s string) TokenType {
 		return MOVE
 	case "using":
 		return USING
+	case "for":
+		return FOR
+	case "to":
+		return TO
+	case "do":
+		return DO
+	case "done":
+		return DONE
+	case "begin":
+		return BEGIN
+	case "end":
+		return END
 	}
 	return IDENT
 }

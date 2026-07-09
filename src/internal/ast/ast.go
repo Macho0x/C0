@@ -279,9 +279,10 @@ func (*IdentExpr) exprNode() {}
 // ConstructorExpr is a constructor (capitalised) used in expression position.
 // e.g. `None`, `Some 42`.
 type ConstructorExpr struct {
-	Name string
-	Arg  Expr            // nil when no argument
-	Loc  token.SourceLoc // source location
+	Name       string
+	TypePrefix string          // optional ADT qualifier: Type.Ctor
+	Arg        Expr            // nil when no argument
+	Loc        token.SourceLoc // source location
 }
 
 func (*ConstructorExpr) exprNode() {}
@@ -460,6 +461,43 @@ type ParenExpr struct {
 
 func (*ParenExpr) exprNode() {}
 
+// IndexExpr is array (or slice) indexing: `arr.(i)`.
+type IndexExpr struct {
+	Target Expr
+	Index  Expr
+	Loc    token.SourceLoc
+}
+
+func (*IndexExpr) exprNode() {}
+
+// AssignExpr is in-place mutation: `target <- value`.
+type AssignExpr struct {
+	Target Expr
+	Value  Expr
+	Loc    token.SourceLoc
+}
+
+func (*AssignExpr) exprNode() {}
+
+// ForExpr is `for var = from to to do body done`.
+type ForExpr struct {
+	Var  string
+	From Expr
+	To   Expr
+	Body Expr
+	Loc  token.SourceLoc
+}
+
+func (*ForExpr) exprNode() {}
+
+// BeginExpr is `begin e1; e2; ... end`.
+type BeginExpr struct {
+	Stmts []Expr
+	Loc   token.SourceLoc
+}
+
+func (*BeginExpr) exprNode() {}
+
 // CompExpr is a computation expression: `builder { ops }`.
 type CompExpr struct {
 	Builder string // e.g. "result", "async"
@@ -595,8 +633,9 @@ func (*LitPattern) patternNode() {}
 
 // ConstructorPattern matches a constructor: `None`, `Some x`, `Circle { radius }`.
 type ConstructorPattern struct {
-	Name string
-	Arg  Pattern // nil when no payload
+	Name       string
+	TypePrefix string  // optional ADT qualifier: Type.Ctor
+	Arg        Pattern // nil when no payload
 }
 
 func (*ConstructorPattern) patternNode() {}
@@ -716,10 +755,14 @@ func ExprString(e Expr) string {
 	case *IdentExpr:
 		return e.Name
 	case *ConstructorExpr:
-		if e.Arg != nil {
-			return e.Name + "(" + ExprString(e.Arg) + ")"
+		name := e.Name
+		if e.TypePrefix != "" {
+			name = e.TypePrefix + "." + name
 		}
-		return e.Name
+		if e.Arg != nil {
+			return name + " " + ExprString(e.Arg)
+		}
+		return name
 	case *AppExpr:
 		return "App(" + ExprString(e.Func) + ", " + ExprString(e.Arg) + ")"
 	case *IfExpr:
@@ -793,6 +836,18 @@ func ExprString(e Expr) string {
 		return "[" + strings.Join(parts, "; ") + "]"
 	case *ParenExpr:
 		return "(" + ExprString(e.Inner) + ")"
+	case *IndexExpr:
+		return ExprString(e.Target) + ".(" + ExprString(e.Index) + ")"
+	case *AssignExpr:
+		return ExprString(e.Target) + " <- " + ExprString(e.Value)
+	case *ForExpr:
+		return fmt.Sprintf("for %s = %s to %s do %s done", e.Var, ExprString(e.From), ExprString(e.To), ExprString(e.Body))
+	case *BeginExpr:
+		parts := make([]string, len(e.Stmts))
+		for i, s := range e.Stmts {
+			parts[i] = ExprString(s)
+		}
+		return "begin " + strings.Join(parts, "; ") + " end"
 	case *CompExpr:
 		ops := make([]string, len(e.Ops))
 		for i, op := range e.Ops {
@@ -863,10 +918,14 @@ func patternString(p Pattern) string {
 	case *LitPattern:
 		return fmt.Sprintf("%v", p.Value)
 	case *ConstructorPattern:
-		if p.Arg != nil {
-			return p.Name + "(" + patternString(p.Arg) + ")"
+		name := p.Name
+		if p.TypePrefix != "" {
+			name = p.TypePrefix + "." + name
 		}
-		return p.Name
+		if p.Arg != nil {
+			return name + " " + patternString(p.Arg)
+		}
+		return name
 	case *RecordPattern:
 		parts := make([]string, len(p.Fields))
 		for i, f := range p.Fields {

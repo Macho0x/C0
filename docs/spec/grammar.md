@@ -18,9 +18,9 @@ unit     := '()'
 ## Reserved words
 
 ```
-and as goop else false fun golang guard if import in
+and as begin do done end for goop else false fun golang guard if import in
 let match module move mutable of panic private rec
-requires returns then true type unit val when with
+requires returns then to true type unit val when with
 ```
 
 ## Program structure
@@ -61,13 +61,23 @@ app_expr     := primary_expr (primary_expr | '?' qarg?)*
 primary_expr := literal
               | ident
               | constr
+              | qualified_constr
               | '(' expr ')'
               | record_expr
               | list_expr
               | tuple_expr
               | field_expr
+              | index_expr
               | match_macro_expr
               | go_expr
+              | for_expr
+              | begin_expr
+
+for_expr     := 'for' ident '=' expr 'to' expr 'do' expr 'done'
+begin_expr   := 'begin' expr (';' expr)* 'end'
+index_expr   := expr '.(' expr ')'
+assign_expr  := expr '<-' expr
+qualified_constr := constr '.' constr
 
 go_expr      := 'go' ('(' 'move' ident (',' ident)* ')')? expr
 

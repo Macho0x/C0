@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0
+
+### OCaml surface syntax
+- Arrays via `Array.make`, `Array.length`, `arr.(i)`, `arr.(i) <- v`, and `'a array` types
+- `for i = lo to hi do ... done` loops
+- `begin ...; ... end` sequencing blocks
+- Qualified constructors `Type.Ctor`
+
+### Codegen
+- Fix top-level record literal thunks, float paren precedence, option-in-record prescan, tuple match
+
+### Tests & docs
+- OCaml-style trading decision LUT test (375-cell universe)
+- Eight new integration tests; design doc 13 and std-array reference
+
 ## 0.7.1
 
 ### Parser & LSP

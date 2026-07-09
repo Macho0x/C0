@@ -121,6 +121,21 @@ func Default() *Prelude {
 		&pureEff,
 	)
 
+	arrayA := types.ArrayType(a)
+	p.addWithEffects("Array.make",
+		types.Mono(&types.TFun{
+			From: types.Int,
+			To:   &types.TFun{From: a, To: arrayA},
+		}),
+		Lowering{Custom: "array_make"},
+		&pureEff,
+	)
+	p.addWithEffects("Array.length",
+		types.Mono(&types.TFun{From: arrayA, To: types.Int}),
+		Lowering{Func: "len", Pkg: ""},
+		&pureEff,
+	)
+
 	// panic_message : string -> 'a
 	p.addWithEffects("panic_message",
 		types.Mono(&types.TFun{From: types.String, To: b}),

@@ -240,7 +240,7 @@ func (p *Parser) canStartExpr(t token.Token) bool {
 	case token.IDENT, token.CONSTRUCTOR, token.INT, token.FLOAT,
 		token.STRING, token.CHAR, token.TRUE, token.FALSE,
 		token.LPAREN, token.LBRACE, token.LBRACKET,
-		token.IF, token.MATCH, token.FUN, token.GUARD:
+		token.IF, token.MATCH, token.FUN, token.GUARD, token.FOR, token.BEGIN, token.GO, token.USING:
 		return true
 	default:
 		return false
@@ -819,6 +819,7 @@ func (p *Parser) parseExternDeclSkip() ast.TopDecl {
 // Precedence levels (higher = binds tighter).
 const (
 	precLowest  = 1
+	precAssign  = 1 // <- (same level as lowest; right-assoc via parseExpr)
 	precPipe    = 2 // |>
 	precOr      = 3 // ||
 	precAnd     = 4 // &&
@@ -900,6 +901,15 @@ func (p *Parser) parseExpr(minPrec int) ast.Expr {
 				return left
 			}
 			left = p.parseAsMatchExpr(left)
+			continue
+		case token.LARROW:
+			if precAssign < minPrec {
+				return left
+			}
+			assignLoc := cur.Loc
+			p.advance()
+			right := p.parseExpr(precAssign)
+			left = &ast.AssignExpr{Target: left, Value: right, Loc: assignLoc}
 			continue
 		}
 
@@ -1005,11 +1015,37 @@ func (p *Parser) parsePrefix() ast.Expr {
 
 	case token.CONSTRUCTOR:
 		tok := p.advance()
-		ce := &ast.ConstructorExpr{Name: tok.Lexeme, Loc: tok.Loc}
+		typePrefix, name := p.parseQualifiedCtorName(tok)
+		ce := &ast.ConstructorExpr{Name: name, TypePrefix: typePrefix, Loc: tok.Loc}
 		if p.canStartExpr(p.cur()) {
 			ce.Arg = p.parsePrefix()
 		}
 		return p.applyPostfix(ce)
+
+	// --- imperative / OCaml surface ---
+	case token.FOR:
+		forTok := p.advance()
+		varName := p.parseIdentName()
+		p.expect(token.EQUALS)
+		from := p.parseExpr(0)
+		p.expect(token.TO)
+		to := p.parseExpr(0)
+		p.expect(token.DO)
+		body := p.parseExpr(0)
+		p.expect(token.DONE)
+		return &ast.ForExpr{Var: varName, From: from, To: to, Body: body, Loc: forTok.Loc}
+
+	case token.BEGIN:
+		beginTok := p.advance()
+		stmts := []ast.Expr{p.parseExpr(0)}
+		for p.match(token.SEMI) {
+			if p.cur().Type == token.END {
+				break
+			}
+			stmts = append(stmts, p.parseExpr(0))
+		}
+		p.expect(token.END)
+		return &ast.BeginExpr{Stmts: stmts, Loc: beginTok.Loc}
 
 	// --- grouped / tuple / list ---
 	case token.LPAREN:
@@ -1269,13 +1305,31 @@ func (p *Parser) parseQuestionExpr(left ast.Expr) ast.Expr {
 func (p *Parser) parseFieldAccessExpr(left ast.Expr) ast.Expr {
 	dotLoc := p.cur().Loc
 	p.advance() // consume .
+	if p.cur().Type == token.LPAREN {
+		p.advance()
+		idx := p.parseExpr(0)
+		p.expect(token.RPAREN)
+		return &ast.IndexExpr{Target: left, Index: idx, Loc: dotLoc}
+	}
 	tok := p.cur()
 	if tok.Type == token.IDENT || tok.Type == token.CONSTRUCTOR {
 		p.advance()
 		return &ast.FieldAccessExpr{Left: left, Field: tok.Lexeme, Loc: dotLoc}
 	}
-	p.errorf("expected field name after '.', got %s", tok.Type)
+	p.errorf("expected field name or index after '.', got %s", tok.Type)
 	return left
+}
+
+// parseQualifiedCtorName parses Type.Ctor after the first constructor token was consumed.
+func (p *Parser) parseQualifiedCtorName(first token.Token) (typePrefix, name string) {
+	name = first.Lexeme
+	if p.cur().Type == token.DOT && p.peek().Type == token.CONSTRUCTOR {
+		p.advance() // .
+		typePrefix = name
+		ctorTok := p.advance()
+		name = ctorTok.Lexeme
+	}
+	return typePrefix, name
 }
 
 func (p *Parser) parseIsExpr(left ast.Expr) ast.Expr {
@@ -1338,7 +1392,8 @@ func (p *Parser) parseSimplePattern() ast.Pattern {
 
 	case token.CONSTRUCTOR:
 		tok := p.advance()
-		cp := &ast.ConstructorPattern{Name: tok.Lexeme}
+		typePrefix, name := p.parseQualifiedCtorName(tok)
+		cp := &ast.ConstructorPattern{Name: name, TypePrefix: typePrefix}
 		if p.canStartPattern(p.cur()) {
 			cp.Arg = p.parseSimplePattern()
 		}
@@ -1698,12 +1753,16 @@ func (p *Parser) parseCompOp() ast.CompOp {
 		expr := p.parseExpr(0)
 		return &ast.LetOp{Pattern: pat, Expr: expr}
 
-	case p.cur().Type == token.IDENT && p.cur().Lexeme == "do" && p.peek().Type == token.BANG:
-		// do! expr
-		p.advance() // do
-		p.advance() // !
-		expr := p.parseExpr(0)
-		return &ast.DoBangOp{Expr: expr}
+	case (p.cur().Type == token.IDENT && p.cur().Lexeme == "do") || p.cur().Type == token.DO:
+		if p.peek().Type == token.BANG {
+			// do! expr
+			p.advance() // do
+			p.advance() // !
+			expr := p.parseExpr(0)
+			return &ast.DoBangOp{Expr: expr}
+		}
+		p.errorf("unexpected bare 'do' in computation expression; use 'do!'")
+		return &ast.BodyOp{Expr: &ast.LitExpr{Value: nil, Kind: token.UNIT}}
 
 	case p.cur().Type == token.IDENT && p.cur().Lexeme == "return" && p.peek().Type == token.BANG:
 		// return! expr

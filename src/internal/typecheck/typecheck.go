@@ -111,6 +111,7 @@ type Checker struct {
 	blockedNames     map[string]string // private name → defining module path
 	importedModule   string            // module being checked (for error messages)
 	effectInference  bool              // infer effect rows from bodies when true
+	mutableVars      map[string]bool   // bindings that may be assigned via <-
 }
 
 // pkgFromPath extracts a Go package name from an import path (last segment).
@@ -187,6 +188,7 @@ func checkWithDepsAndImports(mod *ast.Module, deps map[string]*ast.Module, resol
 		privateNames:    make(map[string]bool),
 		blockedNames:    make(map[string]string),
 		effectInference: cfg.Check.EffectInference,
+		mutableVars:     make(map[string]bool),
 	}
 	c.initBuiltins()
 	c.importedModule = mod.Name
@@ -349,6 +351,14 @@ func locOf(e ast.Expr) token.SourceLoc {
 	case *ast.ListExpr:
 		return e.Loc
 	case *ast.ParenExpr:
+		return e.Loc
+	case *ast.IndexExpr:
+		return e.Loc
+	case *ast.AssignExpr:
+		return e.Loc
+	case *ast.ForExpr:
+		return e.Loc
+	case *ast.BeginExpr:
 		return e.Loc
 	case *ast.GoExpr:
 		return e.Loc
@@ -565,6 +575,8 @@ func (c *Checker) convertASTType(at ast.Type) types.Type {
 		case "list":
 			// Type constructor — args filled by TApp
 			return &types.TCon{Name: "list"}
+		case "array":
+			return &types.TCon{Name: "array"}
 		case "option":
 			return &types.TCon{Name: "option"}
 		case "result":
@@ -690,6 +702,9 @@ func (c *Checker) checkLetDecl(d *ast.LetDecl) {
 	}
 	for _, b := range d.Bindings {
 		t := c.checkBinding(b)
+		if d.Mutable {
+			c.mutableVars[b.Name] = true
+		}
 		// Generalize and bind
 		inScope := c.env.InScope()
 		scheme := types.Generalize(t, inScope)
@@ -842,6 +857,14 @@ func (c *Checker) infer(e ast.Expr) types.Type {
 		t = c.inferList(e)
 	case *ast.ParenExpr:
 		t = c.infer(e.Inner)
+	case *ast.IndexExpr:
+		t = c.inferIndex(e)
+	case *ast.AssignExpr:
+		t = c.inferAssign(e)
+	case *ast.ForExpr:
+		t = c.inferFor(e)
+	case *ast.BeginExpr:
+		t = c.inferBegin(e)
 	case *ast.GuardExpr:
 		t = c.inferGuard(e)
 	case *ast.IsExpr:
@@ -900,6 +923,12 @@ func (c *Checker) inferIdent(e *ast.IdentExpr) types.Type {
 }
 
 func (c *Checker) inferConstructor(e *ast.ConstructorExpr) types.Type {
+	if e.TypePrefix != "" {
+		if !c.adtHasConstructor(e.TypePrefix, e.Name) {
+			c.errorfAt(e.Loc, "constructor %s.%s is not defined", e.TypePrefix, e.Name)
+			return types.Unit
+		}
+	}
 	s := c.env.Lookup(e.Name)
 	if s == nil {
 		// Capital-letter names used as modules/variables are parsed as
@@ -1030,11 +1059,98 @@ func (c *Checker) inferLetIn(e *ast.LetInExpr) types.Type {
 	// Process as non-recursive let: check bindings, add to env, check body
 	for _, b := range e.Bindings {
 		t := c.checkBinding(b)
+		if e.Mutable {
+			c.mutableVars[b.Name] = true
+		}
 		inScope := c.env.InScope()
 		scheme := types.Generalize(t, inScope)
 		c.env.Bind(b.Name, scheme)
 	}
-	return c.infer(e.Body)
+	body := c.infer(e.Body)
+	if e.Mutable {
+		for _, b := range e.Bindings {
+			delete(c.mutableVars, b.Name)
+		}
+	}
+	return body
+}
+
+func (c *Checker) inferIndex(e *ast.IndexExpr) types.Type {
+	target := c.infer(e.Target)
+	index := c.infer(e.Index)
+	c.unifyAt(e.Loc, index, types.Int)
+	elem := c.unpackArray(e.Loc, target)
+	return elem
+}
+
+func (c *Checker) inferAssign(e *ast.AssignExpr) types.Type {
+	switch target := e.Target.(type) {
+	case *ast.IndexExpr:
+		arrType := c.infer(target.Target)
+		indexType := c.infer(target.Index)
+		c.unifyAt(e.Loc, indexType, types.Int)
+		elemType := c.unpackArray(e.Loc, arrType)
+		valueType := c.infer(e.Value)
+		c.unifyAt(e.Loc, valueType, elemType)
+	case *ast.IdentExpr:
+		if !c.mutableVars[target.Name] {
+			c.errorfAt(e.Loc, "cannot assign to immutable binding %q", target.Name)
+		}
+		bound := c.inferIdent(target)
+		valueType := c.infer(e.Value)
+		c.unifyAt(e.Loc, valueType, bound)
+	default:
+		c.errorfAt(e.Loc, "invalid assignment target")
+	}
+	return types.Unit
+}
+
+func (c *Checker) inferFor(e *ast.ForExpr) types.Type {
+	from := c.infer(e.From)
+	to := c.infer(e.To)
+	c.unifyAt(e.Loc, from, types.Int)
+	c.unifyAt(e.Loc, to, types.Int)
+	saved := c.env
+	c.env = NewEnv(c.env)
+	c.env.Bind(e.Var, types.Mono(types.Int))
+	c.infer(e.Body)
+	c.env = saved
+	return types.Unit
+}
+
+func (c *Checker) inferBegin(e *ast.BeginExpr) types.Type {
+	var result types.Type = types.Unit
+	for _, stmt := range e.Stmts {
+		result = c.infer(stmt)
+	}
+	return result
+}
+
+func (c *Checker) unpackArray(loc token.SourceLoc, t types.Type) types.Type {
+	if tc, ok := t.(*types.TCon); ok && tc.Name == "array" && len(tc.Args) > 0 {
+		return tc.Args[0]
+	}
+	elem := c.fresh("elem")
+	c.unifyAt(loc, t, types.ArrayType(elem))
+	return elem
+}
+
+func (c *Checker) adtHasConstructor(typeName, ctorName string) bool {
+	s := c.env.Lookup(typeName)
+	if s == nil {
+		return false
+	}
+	t := types.Apply(c.sub, s.Instantiate())
+	adt, ok := t.(*types.TAdt)
+	if !ok {
+		return false
+	}
+	for _, v := range adt.Variants {
+		if v.Name == ctorName {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Checker) inferFun(e *ast.FunExpr) types.Type {
@@ -1388,6 +1504,10 @@ func (c *Checker) checkPattern(loc token.SourceLoc, p ast.Pattern, scrutType typ
 		}
 
 		// Find the constructor type and match
+		if p.TypePrefix != "" && !c.adtHasConstructor(p.TypePrefix, p.Name) {
+			c.errorfAt(loc, "constructor %s.%s is not defined", p.TypePrefix, p.Name)
+			return
+		}
 		s := c.env.Lookup(p.Name)
 		if s == nil {
 			c.errorfAt(loc, "undefined constructor pattern: %s", p.Name)

@@ -36,6 +36,8 @@ editors/zed/Cargo.lock
 /tmp/
 tests/*.go
 tests/*.map.json
+src/cmd/goop/luttest.go
+src/cmd/goop/*_gen.go
 .cortexkit/
 
 # Project-specific

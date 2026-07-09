@@ -1,0 +1,9 @@
+module NestedMatchTest
+
+let classify (pair: int * bool) : string =
+  match pair with
+  | (3, true) -> "pos-true"
+  | (0, false) -> "zero-false"
+
+let main () =
+  assert (classify (3, true) = "pos-true" && classify (0, false) = "zero-false")

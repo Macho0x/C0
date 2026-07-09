@@ -597,3 +597,114 @@ func TestRefinementCallSiteGuards(t *testing.T) {
 	}
 	_ = funcProven
 }
+
+func TestTopLevelRecordLiteralNotThunk(t *testing.T) {
+	src := `module T
+type cfg = { x: int; y: string }
+let cfg = { x = 1; y = "a" }
+`
+	mod, err := parser.Parse("t.goop", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod = desugar.DesugarModule(mod)
+	tm, vtm, errs := typecheck.CheckWithTypes(mod)
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	gen := codegen.NewGenerator("t.goop", config.DefaultConfig())
+	gen.SetTypeMap(tm, vtm)
+	goSrc, err := gen.Generate(mod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(goSrc, "func cfg()") {
+		t.Fatalf("record literal should not become thunk:\n%s", goSrc)
+	}
+	if !strings.Contains(goSrc, "var cfg = cfg{") {
+		t.Fatalf("expected direct record var, got:\n%s", goSrc)
+	}
+}
+
+func TestParenExprFloatPrecedence(t *testing.T) {
+	src := `module T
+let pct (current: float) (mean: float) : float =
+  (current -. mean) /. mean
+`
+	mod, err := parser.Parse("t.goop", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod = desugar.DesugarModule(mod)
+	gen := codegen.NewGenerator("t.goop", config.DefaultConfig())
+	goSrc, err := gen.Generate(mod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(goSrc, "current - mean / mean") {
+		t.Fatalf("parens must preserve float precedence:\n%s", goSrc)
+	}
+	if !strings.Contains(goSrc, "(current - mean)") {
+		t.Fatalf("expected parenthesized subtraction:\n%s", goSrc)
+	}
+}
+
+func TestOptionInRecordFieldCodegen(t *testing.T) {
+	src := `module T
+type cfg = { name: string; limit: int option }
+let c = { name = "x"; limit = Some 1 }
+`
+	mod, err := parser.Parse("t.goop", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod = desugar.DesugarModule(mod)
+	tm, vtm, errs := typecheck.CheckWithTypes(mod)
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	gen := codegen.NewGenerator("t.goop", config.DefaultConfig())
+	gen.SetTypeMap(tm, vtm)
+	goSrc, err := gen.Generate(mod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(goSrc, "type OptionInt struct") {
+		t.Fatalf("missing OptionInt struct:\n%s", goSrc)
+	}
+	if !strings.Contains(goSrc, "NewOptionIntSome(1)") {
+		t.Fatalf("expected NewOptionIntSome, got:\n%s", goSrc)
+	}
+}
+
+func TestArrayMakeAndIndexCodegen(t *testing.T) {
+	src := `module T
+let main () =
+  begin
+    let arr = Array.make 2 0 in
+    arr.(0) <- 7;
+    arr.(1)
+  end
+`
+	mod, err := parser.Parse("t.goop", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod = desugar.DesugarModule(mod)
+	tm, vtm, errs := typecheck.CheckWithTypes(mod)
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	gen := codegen.NewGenerator("t.goop", config.DefaultConfig())
+	gen.SetTypeMap(tm, vtm)
+	goSrc, err := gen.Generate(mod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(goSrc, "make([]int, 2)") {
+		t.Fatalf("expected make([]int, 2), got:\n%s", goSrc)
+	}
+	if !strings.Contains(goSrc, "arr[0] = 7") {
+		t.Fatalf("expected array index assignment:\n%s", goSrc)
+	}
+}

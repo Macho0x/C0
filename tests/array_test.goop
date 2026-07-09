@@ -1,0 +1,5 @@
+module ArrayTest
+
+let main () =
+  let arr = Array.make 3 0 in
+  assert (Array.length arr = 3 && arr.(0) = 0 && arr.(2) = 0)
