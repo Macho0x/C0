@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"c0.dev/compiler/internal/codegen"
-	"c0.dev/compiler/internal/config"
-	"c0.dev/compiler/internal/desugar"
-	"c0.dev/compiler/internal/parser"
-	"c0.dev/compiler/internal/typecheck"
+	"goop.dev/compiler/internal/codegen"
+	"goop.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/desugar"
+	"goop.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/typecheck"
 )
 
 // TestChanMakeInt verifies that Chan.make () used with a let‑binding
@@ -23,7 +23,7 @@ let main () =
   let v = Chan.recv ch in
   print_line (int_to_string v)
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -38,7 +38,7 @@ let main () =
 		t.Fatalf("typecheck failed")
 	}
 
-	gen := codegen.NewGenerator("test.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("test.goop", config.DefaultConfig())
 	gen.SetTypeMap(tm, vtm)
 	goSrc, err := gen.Generate(mod)
 	if err != nil {

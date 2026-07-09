@@ -1,6 +1,0 @@
-module main
-
-import c0 . "std.io"
-
-let main () =
-  PrintLine "import c0 dot OK"

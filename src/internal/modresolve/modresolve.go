@@ -1,4 +1,4 @@
-// Package modresolve resolves C0 import paths and loads transitive module graphs.
+// Package modresolve resolves Goop import paths and loads transitive module graphs.
 package modresolve
 
 import (
@@ -7,15 +7,19 @@ import (
 	"path/filepath"
 	"strings"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/config"
-	"c0.dev/compiler/internal/desugar"
-	"c0.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/desugar"
+	"goop.dev/compiler/internal/parser"
 )
 
-const c0ProjectImportPrefix = "github.com/Macho0x/C0/"
+const (
+	goopProjectImportPrefix = "github.com/Macho0x/Goop/"
+	SourceExt               = ".goop"
+	TestGlob                = "*_test.goop"
+)
 
-// Resolver resolves import paths and loads C0 modules from disk or cache.
+// Resolver resolves import paths and loads Goop modules from disk or cache.
 type Resolver struct {
 	Cfg         *config.Config
 	Lock        *config.Lockfile
@@ -25,10 +29,10 @@ type Resolver struct {
 
 // New creates a module resolver.
 func New(cfg *config.Config, lock *config.Lockfile, projectRoot string) *Resolver {
-	cache := os.Getenv("C0_HOME")
+	cache := os.Getenv("GOOP_HOME")
 	if cache == "" {
 		home, _ := os.UserHomeDir()
-		cache = filepath.Join(home, ".cache", "c0")
+		cache = filepath.Join(home, ".cache", "goop")
 	}
 	return &Resolver{
 		Cfg:         cfg,
@@ -38,14 +42,14 @@ func New(cfg *config.Config, lock *config.Lockfile, projectRoot string) *Resolve
 	}
 }
 
-// FindProjectRoot walks upward from srcFile looking for c0.toml or std/.
+// FindProjectRoot walks upward from srcFile looking for goop.toml or std/.
 func FindProjectRoot(srcFile string) string {
 	dir, err := filepath.Abs(filepath.Dir(srcFile))
 	if err != nil {
 		return ""
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "c0.toml")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "goop.toml")); err == nil {
 			return dir
 		}
 		if _, err := os.Stat(filepath.Join(dir, "std")); err == nil {
@@ -59,16 +63,16 @@ func FindProjectRoot(srcFile string) string {
 	}
 }
 
-// ResolvedPath holds the result of resolving a C0 import path string.
+// ResolvedPath holds the result of resolving a Goop import path string.
 type ResolvedPath struct {
 	LogicalPath  string
 	GoImportPath string
 	PkgName      string
-	SourceFile   string // path to .c0 entry file
+	SourceFile   string // path to .goop entry file
 }
 
-// ResolveC0Path maps a logical or canonical C0 path to Go import path and source file.
-func (r *Resolver) ResolveC0Path(logicalPath string) (ResolvedPath, error) {
+// ResolveGoopPath maps a logical or canonical Goop path to Go import path and source file.
+func (r *Resolver) ResolveGoopPath(logicalPath string) (ResolvedPath, error) {
 	var res ResolvedPath
 	res.LogicalPath = logicalPath
 
@@ -111,7 +115,7 @@ func packageNameFromPath(path string) string {
 
 func (r *Resolver) locateSourceFile(goImport string) string {
 	if r.ProjectRoot != "" {
-		if local := localC0PathForImport(r.ProjectRoot, goImport); local != "" {
+		if local := localGoopPathForImport(r.ProjectRoot, goImport); local != "" {
 			if _, err := os.Stat(local); err == nil {
 				return local
 			}
@@ -120,7 +124,7 @@ func (r *Resolver) locateSourceFile(goImport string) string {
 			rel := strings.TrimPrefix(goImport, r.Cfg.ModuleRoot)
 			rel = strings.TrimPrefix(rel, "/")
 			pkg := filepath.Base(rel)
-			p := filepath.Join(r.ProjectRoot, filepath.FromSlash(rel), pkg+".c0")
+			p := filepath.Join(r.ProjectRoot, filepath.FromSlash(rel), pkg+SourceExt)
 			if _, err := os.Stat(p); err == nil {
 				return p
 			}
@@ -128,29 +132,29 @@ func (r *Resolver) locateSourceFile(goImport string) string {
 	}
 	if r.Lock != nil {
 		if m, ok := r.Lock.Lookup(goImport); ok {
-			cached := filepath.Join(r.CacheDir, filepath.FromSlash(m.Source), packageNameFromPath(m.Source)+".c0")
+			cached := filepath.Join(r.CacheDir, filepath.FromSlash(m.Source), packageNameFromPath(m.Source)+".goop")
 			if _, err := os.Stat(cached); err == nil {
 				return cached
 			}
 		}
 	}
-	cached := filepath.Join(r.CacheDir, filepath.FromSlash(goImport), packageNameFromPath(goImport)+".c0")
+	cached := filepath.Join(r.CacheDir, filepath.FromSlash(goImport), packageNameFromPath(goImport)+".goop")
 	if _, err := os.Stat(cached); err == nil {
 		return cached
 	}
 	return ""
 }
 
-func localC0PathForImport(projectRoot, goImport string) string {
-	if !strings.HasPrefix(goImport, c0ProjectImportPrefix) {
+func localGoopPathForImport(projectRoot, goImport string) string {
+	if !strings.HasPrefix(goImport, goopProjectImportPrefix) {
 		return ""
 	}
-	rel := strings.TrimPrefix(goImport, c0ProjectImportPrefix)
+	rel := strings.TrimPrefix(goImport, goopProjectImportPrefix)
 	pkg := filepath.Base(rel)
-	return filepath.Join(projectRoot, filepath.FromSlash(rel), pkg+".c0")
+	return filepath.Join(projectRoot, filepath.FromSlash(rel), pkg+SourceExt)
 }
 
-// LoadModuleGraph loads the entry module and all transitive import c0 dependencies.
+// LoadModuleGraph loads the entry module and all transitive import goop dependencies.
 // Returns map keyed by canonical Go import path.
 func (r *Resolver) LoadModuleGraph(entryFile string, entry *ast.Module) (map[string]*ast.Module, error) {
 	graph := make(map[string]*ast.Module)
@@ -174,10 +178,10 @@ func (r *Resolver) LoadModuleGraph(entryFile string, entry *ast.Module) (map[str
 			graph[goKey] = mod
 		}
 		for _, spec := range mod.Imports {
-			if spec.Kind != ast.ImportC0 {
+			if spec.Kind != ast.ImportGoop {
 				continue
 			}
-			resolved, err := r.ResolveC0Path(spec.Path)
+			resolved, err := r.ResolveGoopPath(spec.Path)
 			if err != nil {
 				return err
 			}

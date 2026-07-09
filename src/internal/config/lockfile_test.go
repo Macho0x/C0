@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"c0.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/config"
 )
 
 func TestLoadLockfile(t *testing.T) {
@@ -15,7 +15,7 @@ path = "github.com/acme/lib"
 version = "v1.2.3"
 source = "github.com/acme/lib"
 `
-	path := filepath.Join(t.TempDir(), "c0.lock")
+	path := filepath.Join(t.TempDir(), "goop.lock")
 	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
 		t.Fatal(err)
 	}

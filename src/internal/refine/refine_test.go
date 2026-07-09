@@ -3,8 +3,8 @@ package refine
 import (
 	"testing"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/token"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/token"
 )
 
 // Helper functions to build AST expressions for testing.
@@ -22,7 +22,7 @@ func binOp(left ast.Expr, op token.TokenType, right ast.Expr) ast.Expr {
 
 func notExpr(e ast.Expr) ast.Expr {
 	// not e is not a separate AST node — it's a BinaryExpr with OP as NOT?
-	// In C0, `not` is a keyword but in AST it may be represented differently.
+	// In Goop, `not` is a keyword but in AST it may be represented differently.
 	// For now, skip `not` tests and focus on directly checkable comparisons.
 	return e
 }

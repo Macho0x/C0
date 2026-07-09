@@ -1,8 +1,8 @@
-// Package color provides ANSI terminal colorization for C0 tokens
+// Package color provides ANSI terminal colorization for Goop tokens
 package color
 
 import (
-	"c0.dev/compiler/internal/token"
+	"goop.dev/compiler/internal/token"
 )
 
 // ANSI color codes

@@ -1,4 +1,4 @@
-# C0 Roadmap
+# Goop Roadmap
 
 This file presents the same task list as `TODO.md`, organized by development phase.
 
@@ -11,7 +11,7 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] Tokenizer and lexer.
 - [x] Parser producing an AST.
 - [x] Pretty-printer for the AST.
-- [x] CLI: `c0 lex`, `c0 parse`, `c0 check`, `c0 compile`, `c0 build`, `c0 resolve`, `c0 test`.
+- [x] CLI: `goop lex`, `goop parse`, `goop check`, `goop compile`, `goop build`, `goop test`, `goop get`, `goop resolve`, `goop fmt`, `goop lsp`.
 
 ## Phase 1: Minimal viable compiler
 
@@ -20,7 +20,7 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] `option` and `result` built-ins.
 - [x] `?` error propagation.
 - [x] Basic Go code generation.
-- [x] End-to-end compile of `hello.c0` to runnable Go binary.
+- [x] End-to-end compile of `hello.goop` to runnable Go binary.
 - [x] Source map generation.
 - [x] Exhaustive pattern-match checking.
 
@@ -30,10 +30,10 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] Records and tuples.
 - [x] Lists.
 - [x] Standard library prelude.
-- [x] `extern` Go interop.
+- [x] Go interop (`import golang`, `@golang` embed blocks).
 - [x] Active patterns.
 - [x] Match macros (`is`, `as`, `guard`).
-- [x] Feature flags via `c0.toml`.
+- [x] Feature flags via `goop.toml`.
 - [x] Test runner.
 - [x] Mutable fields and bindings.
 
@@ -43,7 +43,7 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] Concurrency primitives (goroutines, channels, select).
 - [x] `using` for resource cleanup.
 - [x] Row polymorphism.
-- [x] F#-style computation expressions (`result { ... }`; `async` reserved).
+- [x] F#-style computation expressions (`result { ... }`, `async { ... }`).
 - [x] Layered lambda type inference (bidirectional inference + optional `go/types` fallback).
 - [x] Effect rows (erased, row-polymorphic effect tracking in types).
 - [x] Linear resource types (modal linearity, opt-in for resource-kinded types).
@@ -55,14 +55,14 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] `OwnedChan` linear channel wrapper (compile-time close safety via linear discharge checking).
 - [x] Built-in refinement solver (compile-time VC checking for integer arithmetic).
 - [x] Nil channel detection (flow-sensitive initialization checking).
-- [x] Unified import syntax (`import golang` / `import c0`).
-- [x] Package manager (`c0 get`, `c0.lock`).
+- [x] Unified import syntax (`import golang` / `import goop`).
+- [x] Package manager (`goop get`, `goop.lock`).
 
 ## Phase 4: Maturity
 
-- [ ] Self-hosting compiler in C0.
+- [ ] Self-hosting compiler in Goop.
 - [x] IDE support (LSP) - full implementation with diagnostics, hover, definition, completion
-- [x] Formatter (`c0 fmt` command)
+- [x] Formatter (`goop fmt` command)
 - [ ] Comprehensive standard library.
 - [ ] Documentation generator.
 - [ ] Stable 1.0 release.
@@ -73,7 +73,8 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] Design documents
 - [x] Specification drafts
 - [x] Examples
-- [x] `c0.toml` project configuration
+- [x] `goop.toml` project configuration
+- [x] Package manager guide (`docs/design/11-package-manager.md`)
 - [ ] Language tutorial
 - [ ] Standard library reference
 - [ ] Contributing guide

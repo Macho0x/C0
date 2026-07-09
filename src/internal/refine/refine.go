@@ -7,8 +7,8 @@
 package refine
 
 import (
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/token"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/token"
 	"fmt"
 	"math"
 )

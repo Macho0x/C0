@@ -1,10 +1,10 @@
-// Command c0 is the C0 language compiler CLI.
+// Command goop is the Goop language compiler CLI.
 //
 // Usage:
 //
-//	c0 lex  <file.c0>    lexical analysis — print token stream
-//	c0 parse <file.c0>    parse — pretty-print AST
-//	c0 check <file.c0>    parse and report success/failure
+//	goop lex  <file.goop>    lexical analysis — print token stream
+//	goop parse <file.goop>    parse — pretty-print AST
+//	goop check <file.goop>    parse and report success/failure
 package main
 
 import (
@@ -19,21 +19,21 @@ import (
 	"strconv"
 	"strings"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/codegen"
-	"c0.dev/compiler/internal/color"
-	"c0.dev/compiler/internal/config"
-	"c0.dev/compiler/internal/desugar"
-	"c0.dev/compiler/internal/exhaustive"
-	lc0 "c0.dev/compiler/internal/lexer"
-	"c0.dev/compiler/internal/linear"
-	"c0.dev/compiler/internal/modresolve"
-	"c0.dev/compiler/internal/parser"
-	"c0.dev/compiler/internal/refine"
-	"c0.dev/compiler/internal/report"
-	"c0.dev/compiler/internal/token"
-	"c0.dev/compiler/internal/typecheck"
-	"c0.dev/compiler/internal/typeinfo"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/codegen"
+	"goop.dev/compiler/internal/color"
+	"goop.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/desugar"
+	"goop.dev/compiler/internal/exhaustive"
+	lc0 "goop.dev/compiler/internal/lexer"
+	"goop.dev/compiler/internal/linear"
+	"goop.dev/compiler/internal/modresolve"
+	"goop.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/refine"
+	"goop.dev/compiler/internal/report"
+	"goop.dev/compiler/internal/token"
+	"goop.dev/compiler/internal/typecheck"
+	"goop.dev/compiler/internal/typeinfo"
 )
 
 // LSP types for protocol messages
@@ -111,14 +111,14 @@ func main() {
 	}
 
 	if len(filtered) < 2 && (len(filtered) == 0 || filtered[0] != "test") && filtered[0] != "lsp" && filtered[0] != "fmt" {
-		fmt.Fprintf(os.Stderr, "Usage: c0 [--no-source-map] [--color] [-i] <command> <file.c0>\n")
+		fmt.Fprintf(os.Stderr, "Usage: goop [--no-source-map] [--color] [-i] <command> <file.goop>\n")
 		fmt.Fprintf(os.Stderr, "Commands: lex, parse, check, compile, build, test, get, resolve, lsp, fmt (format)\n")
 		os.Exit(1)
 	}
 
 	cmd := filtered[0]
 
-	// `c0 test` and `c0 lsp` are special: they don't need a file argument
+	// `goop test` and `goop lsp` are special: they don't need a file argument
 	if cmd == "test" {
 		dir := "."
 		if len(filtered) >= 2 {
@@ -136,7 +136,7 @@ func main() {
 
 	file := filtered[1]
 
-	// Load project config (look for c0.toml near the source file or CWD)
+	// Load project config (look for goop.toml near the source file or CWD)
 	cfg := loadProjectConfig(file)
 
 	src, err := os.ReadFile(file)
@@ -394,7 +394,7 @@ func main() {
 		buildDir := srcDir
 		if !hasGoMod {
 			// Create minimal go.mod for mixed build
-			modContent := "module c0build\n\ngo 1.22\n"
+			modContent := "module goopbuild\n\ngo 1.22\n"
 			os.WriteFile(goModPath, []byte(modContent), 0644)
 			fmt.Printf("created %s (temporary)\n", goModPath)
 		}
@@ -404,7 +404,7 @@ func main() {
 			// Build the whole package (includes hand-written .go files)
 			cmd = exec.Command("go", "build", ".")
 		} else {
-			cmd = exec.Command("go", "build", "-o", "c0-out", genFile)
+			cmd = exec.Command("go", "build", "-o", "goop-out", genFile)
 		}
 		cmd.Dir = buildDir
 		output, err := cmd.CombinedOutput()
@@ -438,14 +438,14 @@ func main() {
 					fmt.Printf(" (%d val bindings)", len(spec.Vals))
 				}
 				fmt.Println()
-			case ast.ImportC0:
-				resolved, err := r.ResolveC0Path(spec.Path)
+			case ast.ImportGoop:
+				resolved, err := r.ResolveGoopPath(spec.Path)
 				if err != nil {
-					fmt.Printf("import c0 %q → ERROR: %v\n", spec.Path, err)
+					fmt.Printf("import goop %q → ERROR: %v\n", spec.Path, err)
 					continue
 				}
 				alias := modresolve.ImportAlias(spec, resolved)
-				fmt.Printf("import c0 %-12s %q → %s (package %s)\n", alias, spec.Path, resolved.GoImportPath, resolved.PkgName)
+				fmt.Printf("import goop %-12s %q → %s (package %s)\n", alias, spec.Path, resolved.GoImportPath, resolved.PkgName)
 				if resolved.SourceFile != "" {
 					fmt.Printf("  source: %s\n", resolved.SourceFile)
 				}
@@ -1049,7 +1049,7 @@ func uriToPath(uri string) string {
 // Test runner
 // ---------------------------------------------------------------------------
 
-const c0ProjectImportPrefix = "github.com/Macho0x/C0/"
+const goopProjectImportPrefix = "github.com/Macho0x/Goop/"
 
 func findProjectRoot(start string) string {
 	dir, err := filepath.Abs(start)
@@ -1057,7 +1057,7 @@ func findProjectRoot(start string) string {
 		return ""
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "c0.toml")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "goop.toml")); err == nil {
 			return dir
 		}
 		if _, err := os.Stat(filepath.Join(dir, "std")); err == nil {
@@ -1071,30 +1071,30 @@ func findProjectRoot(start string) string {
 	}
 }
 
-func localC0PathForImport(projectRoot, goImport string) string {
-	if !strings.HasPrefix(goImport, c0ProjectImportPrefix) {
+func localGoopPathForImport(projectRoot, goImport string) string {
+	if !strings.HasPrefix(goImport, goopProjectImportPrefix) {
 		return ""
 	}
-	rel := strings.TrimPrefix(goImport, c0ProjectImportPrefix)
+	rel := strings.TrimPrefix(goImport, goopProjectImportPrefix)
 	pkg := filepath.Base(rel)
-	return filepath.Join(projectRoot, filepath.FromSlash(rel), pkg+".c0")
+	return filepath.Join(projectRoot, filepath.FromSlash(rel), pkg+modresolve.SourceExt)
 }
 
-func compileC0ModuleToGo(c0Path string, cfg *config.Config) (string, string, error) {
-	src, err := os.ReadFile(c0Path)
+func compileGoopModuleToGo(goopPath string, cfg *config.Config) (string, string, error) {
+	src, err := os.ReadFile(goopPath)
 	if err != nil {
 		return "", "", err
 	}
-	mod, err := parser.Parse(c0Path, src)
+	mod, err := parser.Parse(goopPath, src)
 	if err != nil {
 		return "", "", err
 	}
 	mod = desugar.DesugarModule(mod)
-	tm, vtm, typeErrs := typecheckModule(mod, c0Path, cfg)
+	tm, vtm, typeErrs := typecheckModule(mod, goopPath, cfg)
 	if len(typeErrs) > 0 {
-		return "", "", fmt.Errorf("type errors in %s: %v", c0Path, typeErrs[0])
+		return "", "", fmt.Errorf("type errors in %s: %v", goopPath, typeErrs[0])
 	}
-	gen := codegen.NewGenerator(c0Path, cfg)
+	gen := codegen.NewGenerator(goopPath, cfg)
 	gen.SetTypeMap(tm, vtm)
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
@@ -1107,17 +1107,17 @@ func writeImportDependencies(mod *ast.Module, cfg *config.Config, projectRoot, t
 	if projectRoot == "" {
 		return "module test\n\ngo 1.22\n", nil
 	}
-	lock, _ := config.LoadLockfile(filepath.Join(projectRoot, "c0.lock"))
+	lock, _ := config.LoadLockfile(filepath.Join(projectRoot, "goop.lock"))
 	r := modresolve.New(cfg, lock, projectRoot)
 	sources := make(map[string]string)
 
 	var collect func(*ast.Module) error
 	collect = func(m *ast.Module) error {
 		for _, spec := range m.Imports {
-			if spec.Kind != ast.ImportC0 {
+			if spec.Kind != ast.ImportGoop {
 				continue
 			}
-			resolved, err := r.ResolveC0Path(spec.Path)
+			resolved, err := r.ResolveGoopPath(spec.Path)
 			if err != nil {
 				return err
 			}
@@ -1152,12 +1152,12 @@ func writeImportDependencies(mod *ast.Module, cfg *config.Config, projectRoot, t
 
 	var replaces []string
 	var requires []string
-	for c0Path, goPath := range sources {
-		goSrc, goFile, err := compileC0ModuleToGo(c0Path, cfg)
+	for goopPath, goPath := range sources {
+		goSrc, goFile, err := compileGoopModuleToGo(goopPath, cfg)
 		if err != nil {
 			return "", err
 		}
-		rel := strings.TrimPrefix(goPath, c0ProjectImportPrefix)
+		rel := strings.TrimPrefix(goPath, goopProjectImportPrefix)
 		depDir := filepath.Join(tmpDir, "deps", filepath.FromSlash(rel))
 		if err := os.MkdirAll(depDir, 0755); err != nil {
 			return "", err
@@ -1188,14 +1188,14 @@ func writeOpenDependencies(mod *ast.Module, cfg *config.Config, projectRoot, tmp
 }
 
 func runTests(dir string) int {
-	pattern := filepath.Join(dir, "*_test.c0")
+	pattern := filepath.Join(dir, "*_test.goop")
 	files, err := filepath.Glob(pattern)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
 	if len(files) == 0 {
-		fmt.Fprintf(os.Stderr, "no test files found in %s (matching *_test.c0)\n", dir)
+		fmt.Fprintf(os.Stderr, "no test files found in %s (matching *_test.goop)\n", dir)
 		return 1
 	}
 
@@ -1246,9 +1246,9 @@ func runTests(dir string) int {
 		if cacheDir == "" {
 			cacheDir = os.TempDir()
 		}
-		tmpDir, err := os.MkdirTemp(cacheDir, "c0-test-*")
+		tmpDir, err := os.MkdirTemp(cacheDir, "goop-test-*")
 		if err != nil {
-			tmpDir, err = os.MkdirTemp("", "c0-test-*")
+			tmpDir, err = os.MkdirTemp("", "goop-test-*")
 			if err != nil {
 				fmt.Printf("--- FAIL: %s (temp dir: %v)\n", name, err)
 				failed++
@@ -1301,18 +1301,18 @@ func runTests(dir string) int {
 	return 0
 }
 
-// loadProjectConfig finds and loads the c0.toml for the given source file.
+// loadProjectConfig finds and loads the goop.toml for the given source file.
 func loadProjectConfig(srcFile string) *config.Config {
 	// Look in the directory containing the source file
 	dir := filepath.Dir(srcFile)
-	cfgPath := filepath.Join(dir, "c0.toml")
+	cfgPath := filepath.Join(dir, "goop.toml")
 	cfg, err := config.LoadConfig(cfgPath)
 	if err == nil && cfg != nil {
 		return cfg
 	}
 	// Fallback: look in the current working directory
 	cwd, _ := os.Getwd()
-	cfgPath = filepath.Join(cwd, "c0.toml")
+	cfgPath = filepath.Join(cwd, "goop.toml")
 	cfg, err = config.LoadConfig(cfgPath)
 	if err == nil && cfg != nil {
 		return cfg
@@ -1329,7 +1329,7 @@ func printModule(mod *ast.Module) string {
 	return FormatModule(mod)
 }
 
-// FormatModule returns a properly formatted C0 source from an AST.
+// FormatModule returns a properly formatted Goop source from an AST.
 func FormatModule(mod *ast.Module) string {
 	var buf strings.Builder
 
@@ -1362,8 +1362,8 @@ func formatImportSpec(buf *strings.Builder, spec ast.ImportSpec) {
 	switch spec.Kind {
 	case ast.ImportGolang:
 		buf.WriteString("golang ")
-	case ast.ImportC0:
-		buf.WriteString("c0 ")
+	case ast.ImportGoop:
+		buf.WriteString("goop ")
 		if spec.Alias == "." {
 			buf.WriteString(". ")
 		}
@@ -1382,10 +1382,10 @@ func formatImportSpec(buf *strings.Builder, spec ast.ImportSpec) {
 func loadProjectLock(file string) *config.Lockfile {
 	root := modresolve.FindProjectRoot(file)
 	if root == "" {
-		lf, _ := config.LoadLockfile("c0.lock")
+		lf, _ := config.LoadLockfile("goop.lock")
 		return lf
 	}
-	lf, _ := config.LoadLockfile(filepath.Join(root, "c0.lock"))
+	lf, _ := config.LoadLockfile(filepath.Join(root, "goop.lock"))
 	return lf
 }
 
@@ -1484,7 +1484,7 @@ func formatTypeDecl(buf *strings.Builder, d *ast.TypeDecl, indent string) {
 	}
 }
 
-// formatType returns a formatted type string with proper C0 syntax
+// formatType returns a formatted type string with proper Goop syntax
 func formatType(t ast.Type) string {
 	if t == nil {
 		return ""

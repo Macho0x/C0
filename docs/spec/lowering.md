@@ -1,16 +1,16 @@
-# C0 Lowering to Go
+# Goop Lowering to Go
 
-This document describes how C0 constructs are translated into Go. The target is Go 1.22 or later.
+This document describes how Goop constructs are translated into Go. The target is Go 1.22 or later.
 
 ## Identifiers
 
-- C0 identifiers become title-cased for exported Go identifiers.
+- Goop identifiers become title-cased for exported Go identifiers.
 - Type variables are erased; generic functions are monomorphized or use Go generics where applicable.
-- C0 keywords that conflict with Go keywords are escaped with a trailing underscore.
+- Goop keywords that conflict with Go keywords are escaped with a trailing underscore.
 
 ## Types
 
-| C0 | Go |
+| Goop | Go |
 |---|---|
 | `int` | `int` |
 | `int64` | `int64` |
@@ -28,7 +28,7 @@ This document describes how C0 constructs are translated into Go. The target is 
 
 ## Expressions
 
-| C0 | Go |
+| Goop | Go |
 |---|---|
 | `let x = e1 in e2` | `x := e1; e2` or `const x = e1; e2` |
 | `if c then t else f` | `if c { t } else { f }` |
@@ -48,7 +48,7 @@ Guards lower to `if` statements inside the corresponding type-switch case.
 
 ## Option and Result
 
-```c0
+```goop
 type 'a option = None | Some of 'a
 ```
 
@@ -71,11 +71,11 @@ Result follows the same pattern with `Ok` and `Error` constructors.
 
 ## Modules
 
-A C0 module `Foo.Bar` lowers to Go package `bar` in directory `foo/bar`. Exported values are title-cased.
+A Goop module `Foo.Bar` lowers to Go package `bar` in directory `foo/bar`. Exported values are title-cased.
 
 ## Match exhaustiveness
 
-The compiler proves exhaustiveness. The lowered Go type switch includes a `default` case that panics. This panic is unreachable for well-typed C0 programs but satisfies Go's requirement that a switch over an interface type be complete.
+The compiler proves exhaustiveness. The lowered Go type switch includes a `default` case that panics. This panic is unreachable for well-typed Goop programs but satisfies Go's requirement that a switch over an interface type be complete.
 
 ## Partial application
 
@@ -85,7 +85,7 @@ Partially applied functions lower to Go closures. Fully applied multi-parameter 
 
 Effect rows are **erased** entirely. The `with { ... }` clause on a function type produces no Go code.
 
-| C0 | Go |
+| Goop | Go |
 |---|---|
 | `f : T with { io }` | `func F(...) T` (no change) |
 | `f : T with {}` | `func F(...) T` (no change) |
@@ -97,14 +97,14 @@ Effect row unification is a compile-time-only check.
 
 `where` clauses lower to runtime `panic` guards.
 
-| C0 | Go |
+| Goop | Go |
 |---|---|
 | `(x: T where P)` parameter | `if !(P) { panic("f: precondition violated: P") }` at function entry |
 | `: U where Q` return type | `defer func() { if !(Q) { panic("f: postcondition violated: Q") } }()` with named return |
 
 `it` in `P` is replaced with the parameter name. `result` in `Q` refers to the Go named return value.
 
-```c0
+```goop
 let safeDiv (a: int) (b: int where b <> 0) : int = a / b
 ```
 
@@ -117,7 +117,7 @@ func SafeDiv(a, b int) int {
 }
 ```
 
-```c0
+```goop
 let clamp (x: int) (lo: int) (hi: int where hi >= lo) : int where result >= lo && result <= hi = ...
 ```
 
@@ -140,7 +140,7 @@ func Clamp(x, lo, hi int) (ret0 int) {
 
 Linear types are **erased** in Go output.
 
-| C0 | Go |
+| Goop | Go |
 |---|---|
 | `type handle : 1` | `type Handle = interface{}` or extern Go type |
 | `f (h: handle) : unit` | `func F(h Handle) { ... }` |
@@ -151,7 +151,7 @@ Linear discharge checking is compile-time only. The emitted Go has no runtime li
 
 `region { ... }` computation expressions lower to inline Go with `defer Close(varName)` for each `let!`:
 
-```c0
+```goop
 region {
     let! x = h
     do! useHandle x
@@ -176,4 +176,4 @@ Each `let!` binding:
 
 ## Source locations
 
-Each generated Go construct is annotated with a comment or source-map entry mapping it back to the originating C0 source location.
+Each generated Go construct is annotated with a comment or source-map entry mapping it back to the originating Goop source location.

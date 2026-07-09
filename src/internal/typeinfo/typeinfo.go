@@ -3,8 +3,8 @@
 package typeinfo
 
 import (
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/types"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/types"
 )
 
 // TypeMap maps expression AST nodes to their inferred types.
@@ -12,7 +12,7 @@ import (
 // is complete.
 type TypeMap map[ast.Expr]types.Type
 
-// VarTypeMap maps C0 variable names to their fully resolved types.
+// VarTypeMap maps Goop variable names to their fully resolved types.
 // This is used for polymorphic prelude calls like Chan.make where the
 // let-binding's scheme must be resolved to get the concrete type.
 type VarTypeMap map[string]types.Type

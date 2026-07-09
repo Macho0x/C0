@@ -1,9 +1,9 @@
 # Binaries
-/c0
-/c0.exe
+/goop
+/goop.exe
 /main
-src/c0
-tests/c0-out
+src/goop
+tests/goop-out
 *.o
 *.test
 *.out

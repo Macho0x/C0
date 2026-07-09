@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/codegen"
-	"c0.dev/compiler/internal/config"
-	"c0.dev/compiler/internal/parser"
-	"c0.dev/compiler/internal/prelude"
-	"c0.dev/compiler/internal/typecheck"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/codegen"
+	"goop.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/prelude"
+	"goop.dev/compiler/internal/typecheck"
 )
 
 func TestPreludeBindings(t *testing.T) {
@@ -59,7 +59,7 @@ let main () =
   print_line "hello"
 `
 	mod := parseString(t, src)
-	gen := codegen.NewGenerator("test.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("test.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -91,7 +91,7 @@ let main () =
   print_line (int_to_string 42)
 `
 	mod := parseString(t, src)
-	gen := codegen.NewGenerator("test.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("test.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -108,7 +108,7 @@ let main () =
   print_line (string_concat "Hello, " "World!")
 `
 	mod := parseString(t, src)
-	gen := codegen.NewGenerator("test.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("test.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -126,7 +126,7 @@ let main () =
   Console.print_line "hello"
 `
 	mod := parseString(t, src)
-	gen := codegen.NewGenerator("test.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("test.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -155,7 +155,7 @@ let main () =
 
 func parseString(t *testing.T, src string) *ast.Module {
 	t.Helper()
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

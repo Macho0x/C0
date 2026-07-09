@@ -1,6 +1,6 @@
-# C0 Compile-Time Error Reference
+# Goop Compile-Time Error Reference
 
-This document catalogs every compile-time error and warning the C0 compiler
+This document catalogs every compile-time error and warning the Goop compiler
 can produce. It is designed for LLM-assisted debugging: given an error
 message, an LLM can look up the error code, understand the cause, and
 suggest a fix.
@@ -9,7 +9,7 @@ suggest a fix.
 
 ## How errors are reported
 
-C0 errors include source locations in the format `file:line:col: message`.
+Goop errors include source locations in the format `file:line:col: message`.
 Warnings are reported on stderr but do not stop compilation. Errors stop
 compilation and return exit code 1.
 
@@ -34,7 +34,7 @@ Error messages fall into three severity levels:
 | EXHAUST | Exhaustiveness warnings | `internal/exhaustive` |
 | LINEAR | Linear discharge errors | `internal/linear` |
 | REFINE | Refinement solver errors/warnings | `internal/refine` |
-| CLI | CLI/file/system errors | `cmd/c0`, `internal/config` |
+| CLI | CLI/file/system errors | `cmd/goop`, `internal/config` |
 
 ---
 
@@ -48,13 +48,13 @@ the parser cannot proceed.
 - **Error code**: `LEX001`
 - **Severity**: Error
 - **Message**: `unexpected character %q`
-- **Example**: `test.c0:5:3: unexpected character '@'`
-- **Trigger**: The lexer encounters a character that is not a valid C0 token
-  start. C0 recognizes letters, digits, underscores, operators (`+`, `-`,
+- **Example**: `test.goop:5:3: unexpected character '@'`
+- **Trigger**: The lexer encounters a character that is not a valid Goop token
+  start. Goop recognizes letters, digits, underscores, operators (`+`, `-`,
   `*`, `/`, `=`, `<`, `>`, `!`, `|`, `&`, `.`, `^`, `~`, `:`, `;`, `,`,
   `?`, `%`), and delimiters (`(`, `)`, `[`, `]`, `{`, `}`, `"`, `'`).
   Characters like `@`, `#`, `` ` `` produce this error.
-- **Fix**: Remove or replace the invalid character with valid C0 syntax.
+- **Fix**: Remove or replace the invalid character with valid Goop syntax.
 - **Bad**: `let x = @ 1`
 - **Good**: `let x = 1`
 
@@ -63,18 +63,18 @@ the parser cannot proceed.
 - **Error code**: `LEX002`
 - **Severity**: Error
 - **Message**: `unterminated block comment (depth %d)`
-- **Example**: `test.c0:1:1: unterminated block comment (depth 1)`
+- **Example**: `test.goop:1:1: unterminated block comment (depth 1)`
 - **Trigger**: A block comment `(* ... *)` is opened but never closed before
   end of file. The `depth` indicates the nesting level — a value > 1 means
   you opened more `(*` than you closed `*)`.
 - **Fix**: Add the missing `*)` to close the block comment.
 - **Bad**:
-  ```c0
+  ```goop
   (* This is a comment that never ends
   let x = 1
   ```
 - **Good**:
-  ```c0
+  ```goop
   (* This is a comment *)
   let x = 1
   ```
@@ -84,17 +84,17 @@ the parser cannot proceed.
 - **Error code**: `LEX003`
 - **Severity**: Error
 - **Message**: `unterminated string literal`
-- **Example**: `test.c0:3:10: unterminated string literal`
+- **Example**: `test.goop:3:10: unterminated string literal`
 - **Trigger**: A string literal `"..."` contains a newline before the closing
-  `"`. C0 does not support multi-line string literals.
+  `"`. Goop does not support multi-line string literals.
 - **Fix**: Close the string on the same line, or use `\n` for newlines.
 - **Bad**:
-  ```c0
+  ```goop
   let s = "hello
   world"
   ```
 - **Good**:
-  ```c0
+  ```goop
   let s = "hello\nworld"
   ```
 
@@ -103,7 +103,7 @@ the parser cannot proceed.
 - **Error code**: `LEX004`
 - **Severity**: Error
 - **Message**: `unterminated string escape`
-- **Example**: `test.c0:2:15: unterminated string escape`
+- **Example**: `test.goop:2:15: unterminated string escape`
 - **Trigger**: A backslash `\` appears at the end of a string literal or
   immediately before EOF with no following character to escape.
 - **Fix**: Add the escaped character after the backslash, or remove the
@@ -116,17 +116,17 @@ the parser cannot proceed.
 - **Error code**: `LEX005`
 - **Severity**: Error
 - **Message**: `unterminated string literal starting at %d:%d`
-- **Example**: `test.c0:5:1: unterminated string literal starting at 5:1`
+- **Example**: `test.goop:5:1: unterminated string literal starting at 5:1`
 - **Trigger**: A string literal reaches EOF without a closing `"` (and no
   newline was encountered — see LEX003).
 - **Fix**: Add the closing `"` at the end of the string.
 - **Bad**:
-  ```c0
+  ```goop
   let s = "hello
   ```
   (file ends without closing quote or newline)
 - **Good**:
-  ```c0
+  ```goop
   let s = "hello"
   ```
 
@@ -135,13 +135,13 @@ the parser cannot proceed.
 - **Error code**: `LEX006`
 - **Severity**: Error
 - **Message**: `unexpected end of file after single quote`
-- **Example**: `test.c0:3:7: unexpected end of file after single quote`
+- **Example**: `test.goop:3:7: unexpected end of file after single quote`
 - **Trigger**: A single quote `'` is followed immediately by EOF. It could be
   the start of a character literal `'x'` or a type variable `'a`, but the
   file ends before the lexer can determine which.
 - **Fix**: Complete the character literal or type variable.
 - **Bad**:
-  ```c0
+  ```goop
   let x = '
   ```
 - **Good**: `let x = 'a'` or `let f (x : 'a) = x`
@@ -151,7 +151,7 @@ the parser cannot proceed.
 - **Error code**: `LEX007`
 - **Severity**: Error
 - **Message**: `unterminated character literal`
-- **Example**: `test.c0:2:10: unterminated character literal`
+- **Example**: `test.goop:2:10: unterminated character literal`
 - **Trigger**: A single quote starts a character literal but the closing `'`
   is missing. This happens when the content between quotes is not followed
   by another single quote (e.g., due to a newline or unexpected character).
@@ -164,7 +164,7 @@ the parser cannot proceed.
 - **Error code**: `LEX008`
 - **Severity**: Error
 - **Message**: `invalid float literal %q`
-- **Example**: `test.c0:1:5: invalid float literal "1.2e999999"`
+- **Example**: `test.goop:1:5: invalid float literal "1.2e999999"`
 - **Trigger**: A token that looks like a floating-point number (digits `.`
   digits) cannot be parsed as a valid 64-bit float. This can happen with
   extreme exponents that overflow `float64`.
@@ -178,7 +178,7 @@ the parser cannot proceed.
 - **Error code**: `LEX009`
 - **Severity**: Error
 - **Message**: `invalid integer literal %q`
-- **Example**: `test.c0:1:5: invalid integer literal "99999999999999999999"`
+- **Example**: `test.goop:1:5: invalid integer literal "99999999999999999999"`
 - **Trigger**: A token that looks like an integer cannot be parsed as a
   valid 64-bit signed integer. This happens when the value exceeds
   `9223372036854775807` (max int64).
@@ -191,13 +191,13 @@ the parser cannot proceed.
 
 ## PARSE — Parser Errors
 
-Parser errors indicate that the token stream does not conform to C0's
+Parser errors indicate that the token stream does not conform to Goop's
 grammar. The parser attempts error recovery to report multiple errors.
 
 ### PARSE-MIG001: `open` removed (v0.3)
 
-- **Message**: `'open' is removed; use import c0 "path" or import c0 . "path"`
-- **Fix**: Replace `open std.io` with `import c0 . "std.io"`.
+- **Message**: `'open' is removed; use import goop "path" or import goop . "path"`
+- **Fix**: Replace `open std.io` with `import goop . "std.io"`.
 
 ### PARSE-MIG002: `extern "go"` removed (v0.3)
 
@@ -209,7 +209,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE001`
 - **Severity**: Error
 - **Message**: `expected %s, got %s`
-- **Example**: `test.c0:3:10: expected EQUALS, got SEMI`
+- **Example**: `test.goop:3:10: expected EQUALS, got SEMI`
 - **Trigger**: The parser expects a specific token at the current position
   but finds something else. This is the most common parser error, generated
   by `p.expect(...)` at over 40 call sites throughout the parser. Common
@@ -234,18 +234,18 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE002`
 - **Severity**: Error
 - **Message**: `unexpected 'module' after first declaration`
-- **Example**: `test.c0:5:1: unexpected 'module' after first declaration`
+- **Example**: `test.goop:5:1: unexpected 'module' after first declaration`
 - **Trigger**: A `module` keyword appears after a `let`, `type`, or `extern`
   declaration. The `module` declaration must be the first statement in the
   file.
 - **Fix**: Move the `module` declaration to the top of the file.
 - **Bad**:
-  ```c0
+  ```goop
   let x = 1
   module MyApp
   ```
 - **Good**:
-  ```c0
+  ```goop
   module MyApp
   let x = 1
   ```
@@ -255,19 +255,19 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE003`
 - **Severity**: Error
 - **Message**: `'open' must appear before any declarations`
-- **Example**: `test.c0:5:1: 'open' must appear before any declarations`
+- **Example**: `test.goop:5:1: 'open' must appear before any declarations`
 - **Trigger**: An `open` statement appears after a `let`, `type`, or `extern`
   declaration. All `open` statements must appear immediately after `module`
   and before any declarations.
 - **Fix**: Move all `open` statements to the top of the file, after `module`
   but before any `let`/`type`/`extern`.
 - **Bad**:
-  ```c0
+  ```goop
   let x = 1
   open Std.IO
   ```
 - **Good**:
-  ```c0
+  ```goop
   open Std.IO
   let x = 1
   ```
@@ -277,18 +277,18 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE004`
 - **Severity**: Error
 - **Message**: `unexpected token %s at top level`
-- **Example**: `test.c0:10:1: unexpected token IDENT at top level`
+- **Example**: `test.goop:10:1: unexpected token IDENT at top level`
 - **Trigger**: A token appears at the top level of a module that is not the
   start of a valid top-level declaration. Top level declarations must begin
   with `let`, `type`, or `extern`.
 - **Fix**: Wrap the expression in a `let` binding.
 - **Bad**:
-  ```c0
+  ```goop
   module MyApp
   f x = x + 1
   ```
 - **Good**:
-  ```c0
+  ```goop
   module MyApp
   let f x = x + 1
   ```
@@ -298,7 +298,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE005`
 - **Severity**: Error
 - **Message**: `expected active pattern name, got %s`
-- **Example**: `test.c0:3:3: expected active pattern name, got INT`
+- **Example**: `test.goop:3:3: expected active pattern name, got INT`
 - **Trigger**: Inside an active pattern definition `let (|...|_|)`, the name
   between the pipes is not an identifier or constructor.
 - **Fix**: Use a valid identifier between the pipes.
@@ -310,7 +310,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE006`
 - **Severity**: Error
 - **Message**: `expected binding name, got %s`
-- **Example**: `test.c0:3:5: expected binding name, got INT`
+- **Example**: `test.goop:3:5: expected binding name, got INT`
 - **Trigger**: A `let` binding is followed by something that is not a
   valid identifier or constructor name.
 - **Fix**: Provide a valid binding name after `let`.
@@ -322,7 +322,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE007`
 - **Severity**: Error
 - **Message**: `expected type name, got %s`
-- **Example**: `test.c0:5:6: expected type name, got EQUALS`
+- **Example**: `test.goop:5:6: expected type name, got EQUALS`
 - **Trigger**: The `type` keyword is followed by something that is not a
   valid type name (identifier or constructor token).
 - **Fix**: Provide a valid type name.
@@ -334,7 +334,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE008`
 - **Severity**: Error
 - **Message**: `expected '1' for linear quantity, got %v`
-- **Example**: `test.c0:3:12: expected '1' for linear quantity, got 2`
+- **Example**: `test.goop:3:12: expected '1' for linear quantity, got 2`
 - **Trigger**: A type declaration has `: N` where N is not `1`. Only
   `: 1` is valid for declaring a linear type.
 - **Fix**: Use `: 1` for linear types, or remove the quantity annotation.
@@ -346,7 +346,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE009`
 - **Severity**: Error
 - **Message**: `expected string literal for extern language, got %s`
-- **Example**: `test.c0:5:8: expected string literal for extern language, got IDENT`
+- **Example**: `test.goop:5:8: expected string literal for extern language, got IDENT`
 - **Trigger**: The `extern` keyword is not followed by a string literal for
   the language name.
 - **Fix**: Wrap the language name in quotes.
@@ -358,7 +358,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE010`
 - **Severity**: Error
 - **Message**: `expected string literal for extern path, got %s`
-- **Example**: `test.c0:5:13: expected string literal for extern path, got IDENT`
+- **Example**: `test.goop:5:13: expected string literal for extern path, got IDENT`
 - **Trigger**: After the language string in an `extern` declaration, the Go
   import path is not a string literal.
 - **Fix**: Wrap the import path in quotes.
@@ -370,7 +370,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE011`
 - **Severity**: Error
 - **Message**: `expected extern binding name, got %s`
-- **Example**: `test.c0:6:6: expected extern binding name, got INT`
+- **Example**: `test.goop:6:6: expected extern binding name, got INT`
 - **Trigger**: Inside an `extern` block, a `val` is followed by something
   that is not an identifier.
 - **Fix**: Provide a valid identifier name for the extern binding.
@@ -382,7 +382,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE012`
 - **Severity**: Error
 - **Message**: `expected 'val' inside extern block, got %s`
-- **Example**: `test.c0:6:3: expected 'val' inside extern block, got IDENT`
+- **Example**: `test.goop:6:3: expected 'val' inside extern block, got IDENT`
 - **Trigger**: Inside an `extern` block, something other than `val` appears
   at the start of a binding.
 - **Fix**: Use `val` to declare each extern binding.
@@ -394,7 +394,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE013`
 - **Severity**: Error
 - **Message**: `unexpected token %s in expression`
-- **Example**: `test.c0:4:10: unexpected token RBRACE in expression`
+- **Example**: `test.goop:4:10: unexpected token RBRACE in expression`
 - **Trigger**: A token appears in an expression position that cannot start
   any valid expression. This is the catch-all for expression parsing
   failures.
@@ -410,7 +410,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE014`
 - **Severity**: Error
 - **Message**: `expected field name, got %s`
-- **Example**: `test.c0:3:5: expected field name, got INT`
+- **Example**: `test.goop:3:5: expected field name, got INT`
 - **Trigger**: Inside a record literal or record pattern, something that is
   not an identifier appears where a field name is expected.
 - **Fix**: Use an identifier for the field name.
@@ -422,7 +422,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE015`
 - **Severity**: Error
 - **Message**: `expected field name after '.', got %s`
-- **Example**: `test.c0:3:7: expected field name after '.', got INT`
+- **Example**: `test.goop:3:7: expected field name after '.', got INT`
 - **Trigger**: A `.` is followed by a token that is not an identifier or
   constructor.
 - **Fix**: Follow `.` with a valid field name.
@@ -434,7 +434,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE016`
 - **Severity**: Error
 - **Message**: `expected identifier after 'as', got %s`
-- **Example**: `test.c0:5:15: expected identifier after 'as', got INT`
+- **Example**: `test.goop:5:15: expected identifier after 'as', got INT`
 - **Trigger**: In a pattern alias (`pattern as name`), the token after `as`
   is not an identifier.
 - **Fix**: Follow `as` with a variable name to bind the matched value.
@@ -446,7 +446,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE017`
 - **Severity**: Error
 - **Message**: `unexpected token %s in pattern`
-- **Example**: `test.c0:5:15: unexpected token EQUALS in pattern`
+- **Example**: `test.goop:5:15: unexpected token EQUALS in pattern`
 - **Trigger**: A token appears in a pattern position that cannot start any
   valid pattern. Valid pattern starts are: `_`, identifiers, constructors,
   literals, `(`, `{`, `[`.
@@ -459,7 +459,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE018`
 - **Severity**: Error
 - **Message**: `expected field name in record pattern, got %s`
-- **Example**: `test.c0:5:7: expected field name in record pattern, got INT`
+- **Example**: `test.goop:5:7: expected field name in record pattern, got INT`
 - **Trigger**: Inside a record pattern, something other than an identifier
   appears where a field name is expected.
 - **Fix**: Use an identifier for the field name.
@@ -471,7 +471,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE019`
 - **Severity**: Error
 - **Message**: `expected '..' after '|' in effect row`
-- **Example**: `test.c0:3:20: expected '..' after '|' in effect row`
+- **Example**: `test.goop:3:20: expected '..' after '|' in effect row`
 - **Trigger**: In an effect row annotation `with { ... }`, the `|` pipe
   character is not followed by `..` to indicate an open row.
 - **Fix**: Use `| ..` to indicate an open (extensible) effect row.
@@ -483,7 +483,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE020`
 - **Severity**: Error
 - **Message**: `expected effect name or type variable in effect row, got %s`
-- **Example**: `test.c0:3:12: expected effect name or type variable in effect row, got INT`
+- **Example**: `test.goop:3:12: expected effect name or type variable in effect row, got INT`
 - **Trigger**: Inside an effect row, a token appears that is neither an
   identifier (effect name) nor a type variable (`'a`).
 - **Fix**: Use a valid effect name (identifier) or type variable.
@@ -495,7 +495,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE021`
 - **Severity**: Error
 - **Message**: `expected '..' after '|' in record type`
-- **Example**: `test.c0:5:15: expected '..' after '|' in record type`
+- **Example**: `test.goop:5:15: expected '..' after '|' in record type`
 - **Trigger**: In a record type `{ ... }`, the `|` pipe character is not
   followed by `..`. This can happen both in the middle of the record type
   and at the end.
@@ -509,7 +509,7 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Error code**: `PARSE022`
 - **Severity**: Error
 - **Message**: `unexpected token %s in type`
-- **Example**: `test.c0:4:15: unexpected token EQUALS in type`
+- **Example**: `test.goop:4:15: unexpected token EQUALS in type`
 - **Trigger**: A token appears in a type position that cannot start any
   valid type expression.
 - **Fix**: Check the type syntax.
@@ -528,7 +528,7 @@ cannot be resolved. All type errors stop compilation.
 - **Error code**: `TYPE001`
 - **Severity**: Error
 - **Message**: `only 'go' extern is supported, got %q`
-- **Example**: `test.c0:2:1: only 'go' extern is supported, got "c"`
+- **Example**: `test.goop:2:1: only 'go' extern is supported, got "c"`
 - **Trigger**: An `extern` declaration uses a language other than `"go"`.
   Currently only Go FFI is implemented.
 - **Fix**: Change the language to `"go"`.
@@ -540,18 +540,18 @@ cannot be resolved. All type errors stop compilation.
 - **Error code**: `TYPE002`
 - **Severity**: Error
 - **Message**: `extern binding %q conflicts with existing name`
-- **Example**: `test.c0:3:3: extern binding "Println" conflicts with existing name`
+- **Example**: `test.goop:3:3: extern binding "Println" conflicts with existing name`
 - **Trigger**: An extern binding's name collides with a name already bound
   in the environment (a previous let binding, type, or extern).
 - **Fix**: Rename the extern binding or the existing binding to resolve
   the conflict.
 - **Bad**:
-  ```c0
+  ```goop
   let Println s = ...
   extern "go" "fmt" { val Println : string -> unit }
   ```
 - **Good**:
-  ```c0
+  ```goop
   let myPrint s = ...
   extern "go" "fmt" { val Println : string -> unit }
   ```
@@ -561,20 +561,20 @@ cannot be resolved. All type errors stop compilation.
 - **Error code**: `TYPE003`
 - **Severity**: Error
 - **Message**: `type inference not implemented for %T`
-- **Example**: `test.c0:5:10: type inference not implemented for *ast.SomeExpr`
+- **Example**: `test.goop:5:10: type inference not implemented for *ast.SomeExpr`
 - **Trigger**: An AST expression node of a type that the typechecker does
   not know how to infer. This usually indicates a bug or an incomplete
   implementation.
 - **Fix**: This is an internal compiler limitation. As a workaround, try
   restructuring the expression. Report the issue if it occurs with valid
-  C0 code.
+  Goop code.
 
 ### TYPE004: Type inference not implemented for binary operator
 
 - **Error code**: `TYPE004`
 - **Severity**: Error
 - **Message**: `type inference not implemented for binary operator %s`
-- **Example**: `test.c0:5:12: type inference not implemented for binary operator MOD`
+- **Example**: `test.goop:5:12: type inference not implemented for binary operator MOD`
 - **Trigger**: A binary operator is used that the typechecker does not
   support. Currently supported: `+`, `-`, `*`, `/`, `*.`, `+.`, `-.`,
   `/.`, `=`, `==`, `!=`, `<>`, `<`, `>`, `<=`, `>=`, `^`, `&&`, `||`,
@@ -588,18 +588,18 @@ cannot be resolved. All type errors stop compilation.
 - **Error code**: `TYPE005`
 - **Severity**: Error
 - **Message**: `undefined constructor pattern: %s`
-- **Example**: `test.c0:8:5: undefined constructor pattern: Red`
+- **Example**: `test.goop:8:5: undefined constructor pattern: Red`
 - **Trigger**: A constructor name in a match pattern is not found in the
   environment. This means the ADT was not declared or imported.
 - **Fix**: Ensure the ADT type is declared and the constructor name is
   correct.
 - **Bad**:
-  ```c0
+  ```goop
   type Color = Red | Blue
   let describe c = match c with | Green -> "green"
   ```
 - **Good**:
-  ```c0
+  ```goop
   type Color = Red | Blue
   let describe c = match c with | Red -> "red"
   ```
@@ -609,19 +609,19 @@ cannot be resolved. All type errors stop compilation.
 - **Error code**: `TYPE006`
 - **Severity**: Error
 - **Message**: `constructor %s takes no argument`
-- **Example**: `test.c0:8:7: constructor Red takes no argument`
+- **Example**: `test.goop:8:7: constructor Red takes no argument`
 - **Trigger**: In a pattern match, a constructor that has no payload is
   used with an argument pattern (e.g., `Red(x)` when `Red` is a simple
   variant with no data).
 - **Fix**: Remove the argument from the pattern, or change the type
   definition to include payload.
 - **Bad**:
-  ```c0
+  ```goop
   type Color = Red | Blue
   let f c = match c with | Red(x) -> x
   ```
 - **Good**:
-  ```c0
+  ```goop
   type Color = Red of int | Blue
   let f c = match c with | Red(x) -> x
   ```
@@ -631,17 +631,17 @@ cannot be resolved. All type errors stop compilation.
 - **Error code**: `TYPE007`
 - **Severity**: Error
 - **Message**: `record has no field %q`
-- **Example**: `test.c0:6:10: record has no field "z"`
+- **Example**: `test.goop:6:10: record has no field "z"`
 - **Trigger**: A record pattern mentions a field name that does not exist on
   the matched record type. This is checked during pattern matching.
 - **Fix**: Use only field names that exist in the record type definition.
 - **Bad**:
-  ```c0
+  ```goop
   type Point = { x : int; y : int }
   let f p = match p with | { x = x; z = z } -> z
   ```
 - **Good**:
-  ```c0
+  ```goop
   type Point = { x : int; y : int }
   let f p = match p with | { x = x; y = y } -> y
   ```
@@ -651,18 +651,18 @@ cannot be resolved. All type errors stop compilation.
 - **Error code**: `TYPE008`
 - **Severity**: Error
 - **Message**: `tuple pattern arity mismatch: %d vs %d`
-- **Example**: `test.c0:6:10: tuple pattern arity mismatch: 3 vs 2`
+- **Example**: `test.goop:6:10: tuple pattern arity mismatch: 3 vs 2`
 - **Trigger**: A tuple pattern has a different number of elements than the
   tuple type being matched.
 - **Fix**: Match the number of elements in the tuple type, or adjust the
   type definition.
 - **Bad**:
-  ```c0
+  ```goop
   let f t = match t with | (x, y, z) -> x + y + z
   (* called with 2-tuple *)
   ```
 - **Good**:
-  ```c0
+  ```goop
   let f t = match t with | (x, y) -> x + y
   ```
 
@@ -671,16 +671,16 @@ cannot be resolved. All type errors stop compilation.
 - **Error code**: `TYPE009`
 - **Severity**: Error
 - **Message**: `expected tuple type for tuple pattern`
-- **Example**: `test.c0:6:10: expected tuple type for tuple pattern`
+- **Example**: `test.goop:6:10: expected tuple type for tuple pattern`
 - **Trigger**: A tuple pattern `(a, b)` is used to match a value that is
   not a tuple type.
 - **Fix**: Only use tuple patterns on tuple types.
 - **Bad**:
-  ```c0
+  ```goop
   let f (x : int) = match x with | (a, b) -> a + b
   ```
 - **Good**:
-  ```c0
+  ```goop
   let f (x : int * int) = match x with | (a, b) -> a + b
   ```
 
@@ -689,7 +689,7 @@ cannot be resolved. All type errors stop compilation.
 - **Error code**: `TYPE010`
 - **Severity**: Error
 - **Message**: `%v` (wraps the `UnifyError` message — see UNIFY section)
-- **Example**: `test.c0:5:10: type mismatch: got int, expected string`
+- **Example**: `test.goop:5:10: type mismatch: got int, expected string`
 - **Trigger**: Two types cannot be unified. This is the catch-all for type
   mismatch errors from the unification engine. The specific reason is given
   by the wrapped `UnifyError`.
@@ -715,7 +715,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY001`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (occurs check: %s occurs in %s)`
-- **Example**: `test.c0:5:10: type mismatch: got 'a, expected 'a list (occurs check: 'a occurs in list('a))`
+- **Example**: `test.goop:5:10: type mismatch: got 'a, expected 'a list (occurs check: 'a occurs in list('a))`
 - **Trigger**: A type variable is unified with a type that contains itself.
   This is the classic "occurs check" failure from Hindley-Milner type
   inference, indicating a self-referential type like `'a = list('a)` where
@@ -732,7 +732,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY002`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (expected primitive type)`
-- **Example**: `test.c0:4:10: type mismatch: got int -> int, expected int (expected primitive type)`
+- **Example**: `test.goop:4:10: type mismatch: got int -> int, expected int (expected primitive type)`
 - **Trigger**: An operation expects a primitive type (`int`, `float`,
   `string`, `bool`, `unit`) but a compound type (function, tuple, record,
   ADT, etc.) was provided.
@@ -745,7 +745,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY003`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (different primitive types)`
-- **Example**: `test.c0:4:10: type mismatch: got string, expected int (different primitive types)`
+- **Example**: `test.goop:4:10: type mismatch: got string, expected int (different primitive types)`
 - **Trigger**: Two primitive types are unified but they are different
   (e.g., `int` vs `string`).
 - **Fix**: Change one side to match the expected type.
@@ -757,7 +757,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY004`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (expected a function)`
-- **Example**: `test.c0:4:10: type mismatch: got int, expected int -> int (expected a function)`
+- **Example**: `test.goop:4:10: type mismatch: got int, expected int -> int (expected a function)`
 - **Trigger**: A value is used as a function (in application) but its type
   is not a function type.
 - **Fix**: Use a function value for application.
@@ -769,7 +769,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY005`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (expected a tuple)`
-- **Example**: `test.c0:4:10: type mismatch: got int, expected int * string (expected a tuple)`
+- **Example**: `test.goop:4:10: type mismatch: got int, expected int * string (expected a tuple)`
 - **Trigger**: A tuple operation is used on a non-tuple type.
 - **Fix**: Ensure the expression has a tuple type.
 - **Bad**: `let f t = match t with | (a, b) -> a` where `t` is `int`
@@ -780,7 +780,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY006`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (tuple arity mismatch: %d vs %d)`
-- **Example**: `test.c0:4:10: type mismatch: got int * string * bool, expected int * string (tuple arity mismatch: 3 vs 2)`
+- **Example**: `test.goop:4:10: type mismatch: got int * string * bool, expected int * string (tuple arity mismatch: 3 vs 2)`
 - **Trigger**: Two tuple types have different numbers of elements.
 - **Fix**: Make the tuples have the same number of elements.
 - **Bad**: `let (x, y, z) : int * string = ("hello", 42, true)`
@@ -791,7 +791,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY007`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (expected a record)`
-- **Example**: `test.c0:4:10: type mismatch: got int, expected { x : int } (expected a record)`
+- **Example**: `test.goop:4:10: type mismatch: got int, expected { x : int } (expected a record)`
 - **Trigger**: A record operation (field access, record pattern) is used on
   a non-record type.
 - **Fix**: Ensure the value has a record type.
@@ -803,7 +803,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY008`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (record has no field %q)`
-- **Example**: `test.c0:4:10: type mismatch: got { x : int }, expected { y : int } (record has no field "y")`
+- **Example**: `test.goop:4:10: type mismatch: got { x : int }, expected { y : int } (record has no field "y")`
 - **Trigger**: A record provides a field that does not exist on the other
   side during unification.
 - **Fix**: Add the missing field, or remove the reference to it.
@@ -815,7 +815,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY009`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (record has unexpected field %q)`
-- **Example**: `test.c0:4:10: type mismatch: got { x : int; y : int }, expected { x : int } (record has unexpected field "y")`
+- **Example**: `test.goop:4:10: type mismatch: got { x : int; y : int }, expected { x : int } (record has unexpected field "y")`
 - **Trigger**: When unifying two closed records, one side has an extra field
   that does not exist on the other side.
 - **Fix**: Remove the extra field or use row polymorphism (open records with
@@ -828,12 +828,12 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY010`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (expected an ADT)`
-- **Example**: `test.c0:4:10: type mismatch: got int, expected Color (expected an ADT)`
+- **Example**: `test.goop:4:10: type mismatch: got int, expected Color (expected an ADT)`
 - **Trigger**: An ADT (algebraic data type) is expected but a different type
   was provided.
 - **Fix**: Provide a value of the correct ADT.
 - **Bad**:
-  ```c0
+  ```goop
   type Color = Red | Blue
   let f (c : Color) = ...
   let x = f 42
@@ -845,12 +845,12 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY011`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (different ADT names)`
-- **Example**: `test.c0:4:10: type mismatch: got Color, expected Shape (different ADT names)`
+- **Example**: `test.goop:4:10: type mismatch: got Color, expected Shape (different ADT names)`
 - **Trigger**: Two ADT types are unified but they refer to different type
   names.
 - **Fix**: Use values of the same ADT type.
 - **Bad**:
-  ```c0
+  ```goop
   type Color = Red | Blue
   type Shape = Circle | Square
   let f (c : Color) = ...
@@ -863,7 +863,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY012`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (ADT arity mismatch)`
-- **Example**: `test.c0:4:10: type mismatch: got option(int), expected option(int, string) (ADT arity mismatch)`
+- **Example**: `test.goop:4:10: type mismatch: got option(int), expected option(int, string) (ADT arity mismatch)`
 - **Trigger**: A generic ADT is used with the wrong number of type
   parameters.
 - **Fix**: Provide the correct number of type arguments.
@@ -875,7 +875,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY013`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (expected a type constructor)`
-- **Example**: `test.c0:4:10: type mismatch: got int, expected list(int) (expected a type constructor)`
+- **Example**: `test.goop:4:10: type mismatch: got int, expected list(int) (expected a type constructor)`
 - **Trigger**: A type constructor (like `list`, `option`, `result`) is
   expected but a different type was provided.
 - **Fix**: Use the correct type constructor.
@@ -887,7 +887,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY014`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (different type constructors)`
-- **Example**: `test.c0:4:10: type mismatch: got option(int), expected list(int) (different type constructors)`
+- **Example**: `test.goop:4:10: type mismatch: got option(int), expected list(int) (different type constructors)`
 - **Trigger**: Two type constructor applications have the same constructor
   name but refer to different types (or the same name is used differently).
 - **Fix**: Ensure consistent use of type constructors.
@@ -897,7 +897,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY015`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (type constructor arity mismatch)`
-- **Example**: `test.c0:4:10: type mismatch: got list(int, string), expected list(int) (type constructor arity mismatch)`
+- **Example**: `test.goop:4:10: type mismatch: got list(int, string), expected list(int) (type constructor arity mismatch)`
 - **Trigger**: A type constructor is applied to the wrong number of type
   arguments.
 - **Fix**: Provide the correct number of type arguments to the type
@@ -910,7 +910,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY016`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (expected a channel type)`
-- **Example**: `test.c0:4:10: type mismatch: got int, expected chan(int) (expected a channel type)`
+- **Example**: `test.goop:4:10: type mismatch: got int, expected chan(int) (expected a channel type)`
 - **Trigger**: A channel operation (send/receive) is used on a non-channel
   type.
 - **Fix**: Ensure the value is a channel type.
@@ -922,7 +922,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY017`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (unknown type)`
-- **Example**: `test.c0:4:10: type mismatch: got <custom>, expected int (unknown type)`
+- **Example**: `test.goop:4:10: type mismatch: got <custom>, expected int (unknown type)`
 - **Trigger**: The unification algorithm encounters a type it does not
   recognize. This is a catch-all for types not handled by the structural
   cases. This is extremely rare and indicates an internal compiler issue.
@@ -934,7 +934,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY018`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (effect row mismatch)`
-- **Example**: `test.c0:4:10: type mismatch: got int -> int with { io }, expected int -> int with {} (effect row mismatch)`
+- **Example**: `test.goop:4:10: type mismatch: got int -> int with { io }, expected int -> int with {} (effect row mismatch)`
 - **Trigger**: Two closed effect rows have different sizes. Both rows must
   have exactly the same set of effects.
 - **Fix**: Match the effect sets. If you want extensibility, use open rows
@@ -949,7 +949,7 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY019`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (effect row missing effect: %s)`
-- **Example**: `test.c0:4:10: type mismatch: got int -> int with { log }, expected int -> int with { io } (effect row missing effect: io)`
+- **Example**: `test.goop:4:10: type mismatch: got int -> int with { log }, expected int -> int with { io } (effect row missing effect: io)`
 - **Trigger**: A closed effect row on one side does not include an effect
   that is present on the other side.
 - **Fix**: Add the missing effect to the type annotation, or make the row
@@ -970,19 +970,19 @@ code).
 - **Error code**: `EXHAUST001`
 - **Severity**: Warning
 - **Message**: `unreachable pattern: all values already matched by previous wildcard`
-- **Example**: `test.c0:10:3: unreachable pattern: all values already matched by previous wildcard`
+- **Example**: `test.goop:10:3: unreachable pattern: all values already matched by previous wildcard`
 - **Trigger**: In a match expression, a wildcard pattern (`_`) appears, and
   a later arm also has a wildcard pattern. The second wildcard can never be
   reached because the first matches everything.
 - **Fix**: Remove the unreachable arm, or reorder the arms.
 - **Bad**:
-  ```c0
+  ```goop
   match x with
   | _ -> "anything"
   | Some v -> "got some"
   ```
 - **Good**:
-  ```c0
+  ```goop
   match x with
   | Some v -> "got some"
   | _ -> "anything"
@@ -993,7 +993,7 @@ code).
 - **Error code**: `EXHAUST002`
 - **Severity**: Warning
 - **Message**: `unreachable pattern: constructor %q already covered`
-- **Example**: `test.c0:10:5: unreachable pattern: constructor "Red" already covered`
+- **Example**: `test.goop:10:5: unreachable pattern: constructor "Red" already covered`
 - **Trigger**: A match arm for a constructor appears after an earlier arm
   already covers that constructor (without a guard). Since the previous arm
   handles all values of that constructor, the later arm is dead code.
@@ -1001,13 +1001,13 @@ code).
   guard condition that the first lacks, the warning is not emitted (guarded
   patterns do not fully cover the constructor).
 - **Bad**:
-  ```c0
+  ```goop
   match c with
   | Red -> "red"
   | Red -> "also red"
   ```
 - **Good**:
-  ```c0
+  ```goop
   match c with
   | Red -> "red"
   | Blue -> "blue"
@@ -1018,18 +1018,18 @@ code).
 - **Error code**: `EXHAUST003`
 - **Severity**: Warning
 - **Message**: `non-exhaustive match: missing constructor(s): %s`
-- **Example**: `test.c0:8:3: non-exhaustive match: missing constructor(s): Blue, Green`
+- **Example**: `test.goop:8:3: non-exhaustive match: missing constructor(s): Blue, Green`
 - **Trigger**: A match expression does not cover all possible constructors
   of the matched ADT, and no wildcard pattern (`_`) is present to catch the
   remaining cases.
 - **Fix**: Add arms for the missing constructors, or add a wildcard catch-all.
 - **Bad**:
-  ```c0
+  ```goop
   type Color = Red | Blue | Green
   let describe c = match c with | Red -> "red"
   ```
 - **Good**:
-  ```c0
+  ```goop
   type Color = Red | Blue | Green
   let describe c = match c with
   | Red -> "red"
@@ -1037,7 +1037,7 @@ code).
   | Green -> "green"
   ```
   Or:
-  ```c0
+  ```goop
   let describe c = match c with
   | Red -> "red"
   | _ -> "other"
@@ -1056,7 +1056,7 @@ control-flow path. All linear errors stop compilation.
 - **Error code**: `LINEAR001`
 - **Severity**: Error
 - **Message**: `linear variable %q not discharged on all paths (%s)`
-- **Example**: `test.c0:5:10: linear variable "fh" not discharged on all paths (function open_file)`
+- **Example**: `test.goop:5:10: linear variable "fh" not discharged on all paths (function open_file)`
 - **Trigger**: A linear variable was bound but never used (handed off) on
   some code path. This is the most general discharge error, triggered at
   function exit, binding boundaries, and region exits. The `%s` gives
@@ -1064,7 +1064,7 @@ control-flow path. All linear errors stop compilation.
 - **Fix**: Ensure the linear variable is passed to a function that consumes
   it, or explicitly discharged, on every code path.
 - **Bad**:
-  ```c0
+  ```goop
   type file_handle : 1
   let open_file () : file_handle = ...
   let bad () =
@@ -1072,7 +1072,7 @@ control-flow path. All linear errors stop compilation.
     ()  (* fh never used — leak detected *)
   ```
 - **Good**:
-  ```c0
+  ```goop
   type file_handle : 1
   let open_file () : file_handle = ...
   let close_file (fh : file_handle) = ...
@@ -1086,7 +1086,7 @@ control-flow path. All linear errors stop compilation.
 - **Error code**: `LINEAR002`
 - **Severity**: Error
 - **Message**: `linear variable %q used after being discharged`
-- **Example**: `test.c0:7:5: linear variable "fh" used after being discharged`
+- **Example**: `test.goop:7:5: linear variable "fh" used after being discharged`
 - **Trigger**: A linear variable is used more than once. After the first use
   (hand-off), the variable is "discharged" and cannot be referenced again.
   This is the linear equivalent of a use-after-move/use-after-free error.
@@ -1094,7 +1094,7 @@ control-flow path. All linear errors stop compilation.
   multiple times, consider whether the type should be linear or whether
   you need to restructure the code (e.g., use a borrow pattern).
 - **Bad**:
-  ```c0
+  ```goop
   type file_handle : 1
   let read_file (fh : file_handle) = ...
   let close_file (fh : file_handle) = ...
@@ -1104,7 +1104,7 @@ control-flow path. All linear errors stop compilation.
     close_file fh   (* second use — ERROR *)
   ```
 - **Good**:
-  ```c0
+  ```goop
   type file_handle : 1
   let read_and_close (fh : file_handle) =
     read_file fh;  (* pass ownership to read_file, no return value *)
@@ -1116,13 +1116,13 @@ control-flow path. All linear errors stop compilation.
 - **Error code**: `LINEAR003`
 - **Severity**: Error
 - **Message**: `linear variable %q not discharged in then-branch`
-- **Example**: `test.c0:6:10: linear variable "fh" not discharged in then-branch`
+- **Example**: `test.goop:6:10: linear variable "fh" not discharged in then-branch`
 - **Trigger**: Inside an `if expr then ... else ...`, a linear variable that
   is live before the `if` is not used (discharged) in the then-branch.
 - **Fix**: Ensure the linear variable is consumed in both branches (or the
   branch that retains it passes ownership on).
 - **Bad**:
-  ```c0
+  ```goop
   let f (fh : file_handle) (flag : bool) =
     if flag then
       close_file fh
@@ -1130,7 +1130,7 @@ control-flow path. All linear errors stop compilation.
       ()  (* fh not discharged in else branch *)
   ```
 - **Good**:
-  ```c0
+  ```goop
   let f (fh : file_handle) (flag : bool) =
     if flag then
       close_file fh
@@ -1143,7 +1143,7 @@ control-flow path. All linear errors stop compilation.
 - **Error code**: `LINEAR004`
 - **Severity**: Error
 - **Message**: `linear variable %q not discharged in else-branch`
-- **Example**: `test.c0:8:10: linear variable "fh" not discharged in else-branch`
+- **Example**: `test.goop:8:10: linear variable "fh" not discharged in else-branch`
 - **Trigger**: Same as LINEAR003 but for the else-branch. A linear variable
   live before the `if` is not discharged in the else path.
 - **Fix**: See LINEAR003 — discharge the variable in both branches.
@@ -1153,13 +1153,13 @@ control-flow path. All linear errors stop compilation.
 - **Error code**: `LINEAR005`
 - **Severity**: Error
 - **Message**: `linear variable %q not discharged in match arm %d`
-- **Example**: `test.c0:10:12: linear variable "fh" not discharged in match arm 2`
+- **Example**: `test.goop:10:12: linear variable "fh" not discharged in match arm 2`
 - **Trigger**: In a match expression, a linear variable that is live before
   the match is not discharged in one of the match arms. Each arm must
   independently discharge all live linear variables.
 - **Fix**: Add code to discharge the linear variable in each match arm.
 - **Bad**:
-  ```c0
+  ```goop
   type option = Some of file_handle | None
   let f (opt_fh : option) =
     match opt_fh with
@@ -1174,14 +1174,14 @@ control-flow path. All linear errors stop compilation.
 - **Error code**: `LINEAR006`
 - **Severity**: Error
 - **Message**: `potential data race: mutable variable %q shared between multiple goroutines`
-- **Example**: `test.c0:12:5: potential data race: mutable variable "counter" shared between multiple goroutines`
+- **Example**: `test.goop:12:5: potential data race: mutable variable "counter" shared between multiple goroutines`
 - **Trigger**: A `mutable` variable is captured by closures passed to
   multiple `go` expressions. This creates a data race because multiple
   goroutines can read/write the same mutable variable concurrently.
 - **Fix**: Avoid sharing mutable variables between goroutines. Use channels
   or synchronization primitives instead.
 - **Bad**:
-  ```c0
+  ```goop
   let mutable counter = 0
   let _ = go (fun () -> counter := counter + 1)
   let _ = go (fun () -> counter := counter + 1)
@@ -1193,14 +1193,14 @@ control-flow path. All linear errors stop compilation.
 - **Error code**: `LINEAR007`
 - **Severity**: Error
 - **Message**: `potential data race: mutable variable %q captured by goroutine is still accessible in spawning scope`
-- **Example**: `test.c0:10:5: potential data race: mutable variable "counter" captured by goroutine is still accessible in spawning scope`
+- **Example**: `test.goop:10:5: potential data race: mutable variable "counter" captured by goroutine is still accessible in spawning scope`
 - **Trigger**: A `mutable` variable is captured by a `go` closure while the
   spawning scope can still access the variable. This creates a data race
   between the goroutine and the spawning code.
 - **Fix**: Ensure the mutable variable is not accessed in the spawning scope
   after the goroutine starts, or use proper synchronization.
 - **Bad**:
-  ```c0
+  ```goop
   let mutable x = 0
   let _ = go (fun () -> x := 42)
   x := 1  (* race with goroutine *)
@@ -1225,7 +1225,7 @@ three possible outcomes for each refinement:
 - **Error code**: `REFINE001`
 - **Severity**: Error
 - **Message**: `refinement violated: cannot satisfy %s at %s`
-- **Example**: `test.c0:10:5: refinement violated: cannot satisfy x > 0 at line 10`
+- **Example**: `test.goop:10:5: refinement violated: cannot satisfy x > 0 at line 10`
 - **Trigger**: A function call has a refinement-annotated parameter (e.g.,
   `(x : int where x > 0)`) and the solver can prove that the actual
   argument violates the constraint at the call site. The compiler stops
@@ -1233,12 +1233,12 @@ three possible outcomes for each refinement:
 - **Fix**: Ensure the argument satisfies the refinement contract. Check
   the call site's path constraints (e.g., from `if` conditions, guards).
 - **Bad**:
-  ```c0
+  ```goop
   let sqrt (x : int where x >= 0) = ...
   let _ = sqrt (-5)  (* -5 >= 0 is disproven → ERROR *)
   ```
 - **Good**:
-  ```c0
+  ```goop
   let sqrt (x : int where x >= 0) = ...
   let _ = sqrt 4   (* 4 >= 0 is proven → no error *)
   ```
@@ -1248,7 +1248,7 @@ three possible outcomes for each refinement:
 - **Error code**: `REFINE002`
 - **Severity**: Warning
 - **Message**: `could not prove refinement %s at %s — runtime check emitted`
-- **Example**: `test.c0:15:5: WARNING: could not prove refinement n > 0 at line 15 — runtime check emitted`
+- **Example**: `test.goop:15:5: WARNING: could not prove refinement n > 0 at line 15 — runtime check emitted`
 - **Trigger**: A refinement-annotated parameter receives an argument whose
   constraint the solver cannot prove or disprove at compile time. A runtime
   `panic` check is emitted in the generated Go code to catch violations at
@@ -1258,13 +1258,13 @@ three possible outcomes for each refinement:
   statically obvious. This is not a compile error but may cause runtime
   failures.
 - **Bad**:
-  ```c0
+  ```goop
   let sqrt (x : int where x >= 0) = ...
   let x = read_int ()   (* compiler can't know if x >= 0 *)
   let _ = sqrt x        (* WARNING: runtime check for x >= 0 *)
   ```
 - **Good**:
-  ```c0
+  ```goop
   let sqrt (x : int where x >= 0) = ...
   let x = read_int () in
   if x >= 0 then
@@ -1283,7 +1283,7 @@ three possible outcomes for each refinement:
   No runtime check is emitted and no warning/error is reported.
 - **Fix**: N/A — this is the desired outcome.
 - **Good**:
-  ```c0
+  ```goop
   let sqrt (x : int where x >= 0) = ...
   let _ = sqrt 4   (* runtime check skipped *)
   ```
@@ -1301,7 +1301,7 @@ associated with a specific source location.
 - **Severity**: Error
 - **Message**:
   ```
-  Usage: c0 [--no-source-map] <command> <file.c0>
+  Usage: goop [--no-source-map] <command> <file.goop>
   Commands: lex, parse, check, compile, build, test, resolve
   ```
 - **Example**: Running `c0` with no arguments.
@@ -1314,7 +1314,7 @@ associated with a specific source location.
 - **Error code**: `CLI002`
 - **Severity**: Error
 - **Message**: `error reading %s: %v`
-- **Example**: `error reading /path/to/missing.c0: open /path/to/missing.c0: no such file or directory`
+- **Example**: `error reading /path/to/missing.goop: open /path/to/missing.goop: no such file or directory`
 - **Trigger**: The source file cannot be read (does not exist, permissions
   error, etc.).
 - **Fix**: Ensure the file path is correct and readable.
@@ -1333,7 +1333,7 @@ associated with a specific source location.
 - **Error code**: `CLI004`
 - **Severity**: Error
 - **Message**: `lex error: %v`
-- **Example**: `lex error: test.c0:5:3: unexpected character '@'`
+- **Example**: `lex error: test.goop:5:3: unexpected character '@'`
 - **Trigger**: The `lex` command encounters a lexer error in the source file.
 - **Fix**: See the specific LEX error code in the message.
 
@@ -1342,7 +1342,7 @@ associated with a specific source location.
 - **Error code**: `CLI005`
 - **Severity**: Error
 - **Message**: `parse error: %v` or `FAIL: parse error: %v`
-- **Example**: `parse error: test.c0:10:1: expected EQUALS, got IDENT`
+- **Example**: `parse error: test.goop:10:1: expected EQUALS, got IDENT`
 - **Trigger**: The parser encounters a syntax error.
 - **Fix**: See the specific PARSE error code in the message.
 
@@ -1385,7 +1385,7 @@ associated with a specific source location.
 - **Trigger**: The `build` command generates Go code but the Go compiler
   fails to compile it. This can happen if the generated Go code has
   issues or required imports are unavailable.
-- **Fix**: Check the Go compiler's error message. May indicate a C0 compiler
+- **Fix**: Check the Go compiler's error message. May indicate a Goop compiler
   bug in code generation, or that the generated code references an
   unavailable Go package.
 
@@ -1393,10 +1393,10 @@ associated with a specific source location.
 
 - **Error code**: `CLI010`
 - **Severity**: Error
-- **Message**: `no test files found in %s (matching *_test.c0)`
-- **Example**: `no test files found in ./tests (matching *_test.c0)`
-- **Trigger**: The `c0 test <dir>` command finds no `*_test.c0` files.
-- **Fix**: Ensure test files exist and follow the `*_test.c0` naming
+- **Message**: `no test files found in %s (matching *_test.goop)`
+- **Example**: `no test files found in ./tests (matching *_test.goop)`
+- **Trigger**: The `goop test <dir>` command finds no `*_test.goop` files.
+- **Fix**: Ensure test files exist and follow the `*_test.goop` naming
   convention.
 
 ### CLI011: Gosig fallback warning
@@ -1407,7 +1407,7 @@ associated with a specific source location.
 - **Example**: `c0: gosig fallback for fmt.Printf: loading package "fmt": ...`
 - **Trigger**: The compiler tried to refine the type of an extern binding by
   looking up the real Go function signature, but the lookup failed. The
-  declared C0 type is used as a fallback.
+  declared Goop type is used as a fallback.
 - **Fix**: This is a soft warning; compilation continues with the declared
   type. If the declared type is wrong, runtime errors may occur.
 
@@ -1426,10 +1426,10 @@ associated with a specific source location.
 - **Error code**: `CLI013`
 - **Severity**: Error (in library context)
 - **Message**: `reading config %s: %w`
-- **Example**: `reading config ./c0.toml: permission denied`
-- **Trigger**: The `c0.toml` project configuration file exists but cannot be
+- **Example**: `reading config ./goop.toml: permission denied`
+- **Trigger**: The `goop.toml` project configuration file exists but cannot be
   read.
-- **Fix**: Check file permissions on `c0.toml`.
+- **Fix**: Check file permissions on `goop.toml`.
 
 ---
 
@@ -1451,7 +1451,7 @@ associated with a specific source location.
 
 ## Appendix B: Error Reporting Format
 
-All C0 compile-time errors follow this format:
+All Goop compile-time errors follow this format:
 
 ```
 <file>:<line>:<column>: <message>
@@ -1460,7 +1460,7 @@ All C0 compile-time errors follow this format:
 For example:
 
 ```
-examples/demo.c0:15:10: type mismatch: got int, expected string (different primitive types)
+examples/demo.goop:15:10: type mismatch: got int, expected string (different primitive types)
 ```
 
 Warnings are prefixed with `WARNING:` on stderr:

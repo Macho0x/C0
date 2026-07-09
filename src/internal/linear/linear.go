@@ -1,4 +1,4 @@
-// Package linear implements compile-time linear resource checking for C0.
+// Package linear implements compile-time linear resource checking for Goop.
 //
 // Linear types are declared with `: 1` syntax (e.g. `type handle : 1`).
 // Values of linear type must be used exactly once on every control-flow
@@ -26,7 +26,7 @@ package linear
 import (
 	"fmt"
 
-	"c0.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/ast"
 )
 
 // Error represents a linear discharge error.

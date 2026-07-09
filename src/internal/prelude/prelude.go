@@ -1,9 +1,9 @@
-// Package prelude defines the built-in bindings available to all C0 programs
+// Package prelude defines the built-in bindings available to all Goop programs
 // without explicit `open` statements.
 //
 // Each binding has:
 //   - A user‑visible name (e.g. "print_line")
-//   - A C0 type (e.g. "string -> unit")
+//   - A Goop type (e.g. "string -> unit")
 //   - A Go lowering that describes how to emit the corresponding Go code
 //
 // Prelude bindings are bound into the type‑checker environment before any
@@ -12,7 +12,7 @@
 package prelude
 
 import (
-	"c0.dev/compiler/internal/types"
+	"goop.dev/compiler/internal/types"
 )
 
 // Binding describes one prelude entry.

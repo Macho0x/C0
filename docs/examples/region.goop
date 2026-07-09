@@ -13,7 +13,7 @@ let useHandle (h: Handle) : unit =
 
 (* region demonstrates scoped resource management.
    let! acquires a linear resource; it is auto-closed at region exit.
-   For v1, handle values can't be created in pure C0 — they come from
+   For v1, handle values can't be created in pure Goop — they come from
    extern Go functions. This example demonstrates the structure.
    In real code, `makeHandle` would be an extern call to a Go function
    that allocates a resource. *)

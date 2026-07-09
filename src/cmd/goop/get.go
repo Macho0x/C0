@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"c0.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/config"
 )
 
 func runGet(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "usage: c0 get <module-path>[@version]\n")
+		fmt.Fprintf(os.Stderr, "usage: goop get <module-path>[@version]\n")
 		return 1
 	}
 	modPath := args[0]
@@ -23,10 +23,10 @@ func runGet(args []string) int {
 	}
 
 	cwd, _ := os.Getwd()
-	cfgPath := filepath.Join(cwd, "c0.toml")
+	cfgPath := filepath.Join(cwd, "goop.toml")
 	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error loading c0.toml: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error loading goop.toml: %v\n", err)
 		return 1
 	}
 	if cfg.Dependencies == nil {
@@ -34,10 +34,10 @@ func runGet(args []string) int {
 	}
 	cfg.Dependencies[modPath] = version
 
-	cacheHome := os.Getenv("C0_HOME")
+	cacheHome := os.Getenv("GOOP_HOME")
 	if cacheHome == "" {
 		home, _ := os.UserHomeDir()
-		cacheHome = filepath.Join(home, ".cache", "c0")
+		cacheHome = filepath.Join(home, ".cache", "goop")
 	}
 	dest := filepath.Join(cacheHome, "pkg", "mod", filepath.FromSlash(modPath))
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
@@ -59,7 +59,7 @@ func runGet(args []string) int {
 		}
 	}
 
-	lockPath := filepath.Join(cwd, "c0.lock")
+	lockPath := filepath.Join(cwd, "goop.lock")
 	lock, _ := config.LoadLockfile(lockPath)
 	lock.Upsert(config.LockModule{
 		Path:    modPath,
@@ -67,12 +67,12 @@ func runGet(args []string) int {
 		Source:  modPath,
 	})
 	if err := os.WriteFile(lockPath, []byte(lock.Format()), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "write c0.lock: %v\n", err)
+		fmt.Fprintf(os.Stderr, "write goop.lock: %v\n", err)
 		return 1
 	}
 
 	if err := writeTomlDependencies(cfgPath, cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "update c0.toml: %v\n", err)
+		fmt.Fprintf(os.Stderr, "update goop.toml: %v\n", err)
 		return 1
 	}
 	fmt.Printf("added %s@%s\n", modPath, version)

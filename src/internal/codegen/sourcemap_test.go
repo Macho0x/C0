@@ -7,24 +7,24 @@ import (
 	"strings"
 	"testing"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/codegen"
-	"c0.dev/compiler/internal/config"
-	"c0.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/codegen"
+	"goop.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/parser"
 )
 
 func TestSourceMapGenerated(t *testing.T) {
-	path := filepath.Join(examplesDir, "hello.c0")
+	path := filepath.Join(examplesDir, "hello.goop")
 	src, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-	mod, err := parser.Parse("hello.c0", src)
+	mod, err := parser.Parse("hello.goop", src)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 
-	gen := codegen.NewGenerator("hello.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("hello.goop", config.DefaultConfig())
 	_, err = gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -37,8 +37,8 @@ func TestSourceMapGenerated(t *testing.T) {
 	if sm.Version != 3 {
 		t.Errorf("expected version 3, got %d", sm.Version)
 	}
-	if sm.Source != "hello.c0" {
-		t.Errorf("expected source 'hello.c0', got %q", sm.Source)
+	if sm.Source != "hello.goop" {
+		t.Errorf("expected source 'hello.goop', got %q", sm.Source)
 	}
 	if sm.Generated != "main.go" {
 		t.Errorf("expected generated 'main.go', got %q", sm.Generated)
@@ -58,17 +58,17 @@ func TestSourceMapGenerated(t *testing.T) {
 }
 
 func TestSourceMapWrite(t *testing.T) {
-	path := filepath.Join(examplesDir, "hello.c0")
+	path := filepath.Join(examplesDir, "hello.goop")
 	src, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	mod, err := parser.Parse("hello.c0", src)
+	mod, err := parser.Parse("hello.goop", src)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 
-	gen := codegen.NewGenerator("hello.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("hello.goop", config.DefaultConfig())
 	_, err = gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -96,17 +96,17 @@ func TestSourceMapWrite(t *testing.T) {
 }
 
 func TestCompileWritesMapFile(t *testing.T) {
-	path := filepath.Join(examplesDir, "hello.c0")
+	path := filepath.Join(examplesDir, "hello.goop")
 	src, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	mod, err := parser.Parse("hello.c0", src)
+	mod, err := parser.Parse("hello.goop", src)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 
-	gen := codegen.NewGenerator("hello.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("hello.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -143,7 +143,7 @@ func TestCompileWritesMapFile(t *testing.T) {
 	if !strings.Contains(string(mapData), `"version"`) {
 		t.Error("map file missing version field")
 	}
-	if !strings.Contains(string(mapData), `"hello.c0"`) {
+	if !strings.Contains(string(mapData), `"hello.goop"`) {
 		t.Error("map file missing source reference")
 	}
 }

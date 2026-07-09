@@ -6,20 +6,20 @@ import (
 	"strings"
 )
 
-// LockModule pins a resolved C0 module in c0.lock.
+// LockModule pins a resolved Goop module in goop.lock.
 type LockModule struct {
 	Path    string // canonical import path
 	Version string // tag, commit, or version string
 	Source  string // source location (often same as Path)
 }
 
-// Lockfile holds pinned module versions from c0.lock.
+// Lockfile holds pinned module versions from goop.lock.
 type Lockfile struct {
 	Modules []LockModule
 	byPath  map[string]LockModule
 }
 
-// LoadLockfile reads c0.lock from path. Missing file returns empty lockfile.
+// LoadLockfile reads goop.lock from path. Missing file returns empty lockfile.
 func LoadLockfile(path string) (*Lockfile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

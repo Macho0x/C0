@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/desugar"
-	"c0.dev/compiler/internal/exhaustive"
-	"c0.dev/compiler/internal/parser"
-	"c0.dev/compiler/internal/typecheck"
-	"c0.dev/compiler/internal/types"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/desugar"
+	"goop.dev/compiler/internal/exhaustive"
+	"goop.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/typecheck"
+	"goop.dev/compiler/internal/types"
 )
 
 var examplesDir = "../../../docs/examples"
@@ -31,7 +31,7 @@ func mustParse(t *testing.T, filename string) *ast.Module {
 }
 
 func TestTypeCheckHello(t *testing.T) {
-	mod := mustParse(t, "hello.c0")
+	mod := mustParse(t, "hello.goop")
 	errs := typecheck.Check(mod)
 	if len(errs) > 0 {
 		for _, e := range errs {
@@ -41,7 +41,7 @@ func TestTypeCheckHello(t *testing.T) {
 }
 
 func TestTypeCheckShapes(t *testing.T) {
-	mod := mustParse(t, "shapes.c0")
+	mod := mustParse(t, "shapes.goop")
 	errs := typecheck.Check(mod)
 	if len(errs) > 0 {
 		for _, e := range errs {
@@ -51,7 +51,7 @@ func TestTypeCheckShapes(t *testing.T) {
 }
 
 func TestTypeCheckResult(t *testing.T) {
-	mod := mustParse(t, "result.c0")
+	mod := mustParse(t, "result.goop")
 	errs := typecheck.Check(mod)
 	if len(errs) > 0 {
 		for _, e := range errs {
@@ -61,7 +61,7 @@ func TestTypeCheckResult(t *testing.T) {
 }
 
 func TestTypeCheckOrderbook(t *testing.T) {
-	mod := mustParse(t, "orderbook.c0")
+	mod := mustParse(t, "orderbook.goop")
 	errs := typecheck.Check(mod)
 	if len(errs) > 0 {
 		for _, e := range errs {
@@ -79,7 +79,7 @@ func TestTypeMismatch(t *testing.T) {
 	src := `module Test
 let f (x: int) : int = x + "hello"
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestPrivateSameModuleOk(t *testing.T) {
 private let helper x = x + 1
 let main () = helper 1
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -112,11 +112,11 @@ let publicFn x = helper x
 	consumer := `module main
 let main () = helper 1
 `
-	libMod, err := parser.Parse("lib.c0", []byte(lib))
+	libMod, err := parser.Parse("lib.goop", []byte(lib))
 	if err != nil {
 		t.Fatalf("parse lib: %v", err)
 	}
-	consMod, err := parser.Parse("main.c0", []byte(consumer))
+	consMod, err := parser.Parse("main.goop", []byte(consumer))
 	if err != nil {
 		t.Fatalf("parse main: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestPrivateUppercaseNameRejected(t *testing.T) {
 private let Helper x = x
 let main () = Helper 1
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestModuloFloatRejected(t *testing.T) {
 	src := `module main
 let main () = 1.5 % 1.0
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestTypeErrorHasLocation(t *testing.T) {
 	src := `module Test
 let f (x: int) : int = x + "hello"
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -182,7 +182,7 @@ let f (x: int) : int = x + "hello"
 	}
 	msg := errs[0].Error()
 	// Should contain file:line:col format
-	if !strings.Contains(msg, "test.c0:2:") {
+	if !strings.Contains(msg, "test.goop:2:") {
 		t.Errorf("error message should contain source location, got: %s", msg)
 	}
 }
@@ -191,7 +191,7 @@ func TestTypeErrorLocationBinaryOp(t *testing.T) {
 	src := `module Test
 let f () = true + 42
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -200,7 +200,7 @@ let f () = true + 42
 		t.Fatal("expected a type error for bool + int")
 	}
 	msg := errs[0].Error()
-	if !strings.Contains(msg, "test.c0:2:") {
+	if !strings.Contains(msg, "test.goop:2:") {
 		t.Errorf("error should have location, got: %s", msg)
 	}
 }
@@ -209,7 +209,7 @@ func TestTypeErrorLocationIf(t *testing.T) {
 	src := `module Test
 let f () = if 42 then true else false
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -218,7 +218,7 @@ let f () = if 42 then true else false
 		t.Fatal("expected a type error for non-bool condition")
 	}
 	msg := errs[0].Error()
-	if !strings.Contains(msg, "test.c0:2:") {
+	if !strings.Contains(msg, "test.goop:2:") {
 		t.Errorf("error should have location, got: %s", msg)
 	}
 }
@@ -227,7 +227,7 @@ func TestTypeErrorLocationApp(t *testing.T) {
 	src := `module Test
 let f () = 42 "hello"
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -236,7 +236,7 @@ let f () = 42 "hello"
 		t.Fatal("expected a type error for int applied as function")
 	}
 	msg := errs[0].Error()
-	if !strings.Contains(msg, "test.c0:2:") {
+	if !strings.Contains(msg, "test.goop:2:") {
 		t.Errorf("error should have location, got: %s", msg)
 	}
 }
@@ -254,7 +254,7 @@ let f (x: t) : int =
   | A -> 1
   | B -> true
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestWrongArgCount(t *testing.T) {
 let add (x: int) (y: int) : int = x + y
 let wrong = add true
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -285,7 +285,7 @@ let wrong = add true
 // ---------------------------------------------------------------------------
 
 func TestExhaustiveMatchPasses(t *testing.T) {
-	mod := mustParse(t, "shapes.c0")
+	mod := mustParse(t, "shapes.goop")
 	// Register ADTs as the CLI does
 	registerADTs(mod)
 	errs := exhaustive.Check(mod)
@@ -305,7 +305,7 @@ let describe (c: color) : string =
   | Red -> "red"
   | Green -> "green"
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -325,7 +325,7 @@ let describe (c: color) : string =
   | Red -> "red"
   | _ -> "other"
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -342,7 +342,7 @@ let f (r: result) : string =
   match r with
   | Ok x -> "ok"
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -384,7 +384,7 @@ func TestBidirectionalLambdaKnownFunc(t *testing.T) {
 let apply_to_42 (f: int -> int) : int = f 42
 let result = apply_to_42 (fun x -> x + 1)
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -438,7 +438,7 @@ func TestBidirectionalLambdaCurried(t *testing.T) {
 let compose (f: int -> int) (g: int -> int) (a: int) : int = g (f a)
 let result = compose (fun x -> x * 2) (fun y -> y + 1) 5
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -483,7 +483,7 @@ func TestBidirectionalLambdaNoAnnotation(t *testing.T) {
 let call_with_hello (f: string -> string) : string = f "hello"
 let result = call_with_hello (fun s -> string_concat s " world")
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -528,7 +528,7 @@ let map (f: 'a -> 'b) (xs: 'a list) : 'b list =
 
 let result = map (fun x -> x + 1) (1 :: 2 :: 3 :: [])
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -553,7 +553,7 @@ func TestBidirectionalFallbackToFresh(t *testing.T) {
 let identity (x: 'a) : 'a = x
 let result = identity (fun x -> x)
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -581,7 +581,7 @@ let main () =
   let got = Contains "hello" "he" in
   print_line (if got then "ok" else "no")
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -613,7 +613,7 @@ func TestEffectRowIo(t *testing.T) {
 	src := `module Test
 let readFile (path: string) : string with { io } = path
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -648,7 +648,7 @@ func TestEffectRowPure(t *testing.T) {
 	src := `module Test
 let double (x: int) : int = x * 2
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -680,7 +680,7 @@ func TestEffectRowPolymorphic(t *testing.T) {
 	src := `module Test
 let runAndLog (f: unit -> unit with { log; io }) : unit with { io } = f ()
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -708,7 +708,7 @@ func TestEffectRowBackwardCompat(t *testing.T) {
 let add (x: int) (y: int) : int = x + y
 let result = add 3 4
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -732,7 +732,7 @@ import golang "strings" {
 
 let main () = Contains "a" "b"
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -754,7 +754,7 @@ func TestEffectRowMultipleEffects(t *testing.T) {
 	src := `module Test
 let logAndWrite (msg: string) : unit with { io; log } = if true then () else ()
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -798,7 +798,7 @@ func TestEffectRowExplicitPure(t *testing.T) {
 	src := `module Test
 let f (x: int) : int with {} = x
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -832,7 +832,7 @@ func TestEffectRowOpen(t *testing.T) {
 	src := `module Test
 let catchAll (f: unit -> 'a with { e | .. }) (handler: string -> 'a) : 'a with { e | .. } = f ()
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -872,7 +872,7 @@ let process (h: handle) : unit =
     return ()
   }
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -894,7 +894,7 @@ let answer () : int =
     return 42
   }
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

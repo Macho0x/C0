@@ -1,18 +1,18 @@
-// Package config reads the project-level c0.toml configuration file and
-// resolves C0 module names to Go import paths.
+// Package config reads the project-level goop.toml configuration file and
+// resolves Goop module names to Go import paths.
 //
-// Configuration format (c0.toml):
+// Configuration format (goop.toml):
 //
 //	module_root = "github.com/example/project"
 //
 //	[mappings]
-//	"Std.IO"   = "c0.dev/std/io"
-//	"Std.List" = "c0.dev/std/list"
+//	"Std.IO"   = "goop.dev/std/io"
+//	"Std.List" = "goop.dev/std/list"
 //
 // When no config file exists, built-in defaults are used:
 //
-//	Std.IO   → c0.dev/std/io   (package io)
-//	Std.List → c0.dev/std/list (package list)
+//	Std.IO   → goop.dev/std/io   (package io)
+//	Std.List → goop.dev/std/list (package list)
 //
 // Project modules without an explicit mapping are resolved by combining
 // ModuleRoot with the lowercased, slash-separated module segments.
@@ -30,7 +30,7 @@ import (
 // Config holds the project-wide compiler configuration.
 type Config struct {
 	ModuleRoot   string            // e.g. "github.com/example/project"
-	Mappings     map[string]string // C0 logical path → Go import path
+	Mappings     map[string]string // Goop logical path → Go import path
 	Dependencies map[string]string // canonical path → version pin
 }
 
@@ -40,15 +40,15 @@ func DefaultConfig() *Config {
 		ModuleRoot:   "",
 		Dependencies: make(map[string]string),
 		Mappings: map[string]string{
-			"std.io":     "github.com/Macho0x/C0/std/io",
-			"std.list":   "github.com/Macho0x/C0/std/list",
-			"std.option": "github.com/Macho0x/C0/std/option",
-			"std.result": "github.com/Macho0x/C0/std/result",
+			"std.io":     "github.com/Macho0x/Goop/std/io",
+			"std.list":   "github.com/Macho0x/Goop/std/list",
+			"std.option": "github.com/Macho0x/Goop/std/option",
+			"std.result": "github.com/Macho0x/Goop/std/result",
 		},
 	}
 }
 
-// LoadConfig reads a c0.toml file from the given path.
+// LoadConfig reads a goop.toml file from the given path.
 // If the file does not exist, DefaultConfig is returned.
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -61,7 +61,7 @@ func LoadConfig(path string) (*Config, error) {
 	return parseConfig(string(data))
 }
 
-// ResolveImport resolves a C0 module name (e.g. "Std.IO", "Trading.OrderBook")
+// ResolveImport resolves a Goop module name (e.g. "Std.IO", "Trading.OrderBook")
 // to a Go import path and package name.
 func (c *Config) ResolveImport(c0ModuleName string) (goImportPath, goPackageName string) {
 	// 1. Check explicit mappings
@@ -72,13 +72,13 @@ func (c *Config) ResolveImport(c0ModuleName string) (goImportPath, goPackageName
 	// 2. Built-in defaults
 	switch c0ModuleName {
 	case "std.io", "Std.IO":
-		return "github.com/Macho0x/C0/std/io", "io"
+		return "github.com/Macho0x/Goop/std/io", "io"
 	case "std.list", "Std.List":
-		return "github.com/Macho0x/C0/std/list", "list"
+		return "github.com/Macho0x/Goop/std/list", "list"
 	case "std.option", "Std.Option":
-		return "github.com/Macho0x/C0/std/option", "option"
+		return "github.com/Macho0x/Goop/std/option", "option"
 	case "std.result", "Std.Result":
-		return "github.com/Macho0x/C0/std/result", "result"
+		return "github.com/Macho0x/Goop/std/result", "result"
 	}
 
 	// 3. Project module: combine ModuleRoot with lowercased path segments
@@ -103,7 +103,7 @@ func packageNameFromPath(path string) string {
 }
 
 // ---------------------------------------------------------------------------
-// Minimal TOML parser (handles only the subset needed for c0.toml)
+// Minimal TOML parser (handles only the subset needed for goop.toml)
 // ---------------------------------------------------------------------------
 
 func parseConfig(data string) (*Config, error) {

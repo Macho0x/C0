@@ -1,4 +1,4 @@
-// Package lexer implements a hand-written lexer for C0.
+// Package lexer implements a hand-written lexer for Goop.
 //
 // It handles:
 //   - Nested block comments (* ... *)
@@ -14,7 +14,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"c0.dev/compiler/internal/token"
+	"goop.dev/compiler/internal/token"
 )
 
 // Lexer holds the state of the scanner.

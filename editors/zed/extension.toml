@@ -1,15 +1,15 @@
-id = "c0"
-name = "C0"
+id = "goop"
+name = "Goop"
 version = "0.1.0"
 schema_version = 1
 
-[grammars.c0]
-path = "grammars/c0.tmLanguage.json"
-title = "C0"
+[grammars.goop]
+path = "grammars/goop.tmLanguage.json"
+title = "Goop"
 
-[language_servers.c0]
-name = "C0 Language Server"
-languages = ["C0"]
+[language_servers.goop]
+name = "Goop Language Server"
+languages = ["Goop"]
 
 [icon_theme]
 path = "icons/theme.json"

@@ -1,5 +1,5 @@
 // Package exhaustive implements pattern exhaustiveness and redundancy
-// checking for C0 match expressions.
+// checking for Goop match expressions.
 //
 // For every match expression, we verify that the patterns cover all possible
 // values of the scrutinee type. We also detect redundant (unreachable) patterns.
@@ -23,8 +23,8 @@ import (
 	"fmt"
 	"strings"
 
-	"c0.dev/compiler/internal/active"
-	"c0.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/active"
+	"goop.dev/compiler/internal/ast"
 )
 
 // Warning represents an exhaustiveness warning.

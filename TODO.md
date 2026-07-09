@@ -1,6 +1,6 @@
-# C0 TODO
+# Goop TODO
 
-This file tracks the remaining work to make C0 a usable language. It is kept in sync with `docs/design/07-roadmap.md`.
+This file tracks the remaining work to make Goop a usable language. It is kept in sync with `docs/design/07-roadmap.md`.
 
 ## Compiler (bootstrap in Go)
 
@@ -9,7 +9,7 @@ This file tracks the remaining work to make C0 a usable language. It is kept in 
 - [x] Lexer with nested block comments and source locations
 - [x] Recursive-descent parser for the core grammar
 - [x] AST and pretty-printer
-- [x] CLI: lex, parse, check, compile, build, resolve, test
+- [x] CLI: lex, parse, check, compile, build, test, get, resolve, fmt, lsp
 - [x] Type checker with HM inference
 - [x] Exhaustive pattern-match checking
 - [x] Go code generation
@@ -17,7 +17,7 @@ This file tracks the remaining work to make C0 a usable language. It is kept in 
 - [x] Imports and module resolution
 - [x] Standard library prelude
 - [x] Layered lambda type inference (bidirectional inference + optional `go/types` fallback)
-- [x] Build system and package manager (`c0 get`, `c0.lock`)
+- [x] Build system and package manager (`goop get`, `goop.lock`)
 
 ## Language features
 
@@ -34,10 +34,11 @@ This file tracks the remaining work to make C0 a usable language. It is kept in 
 - [x] Row polymorphism
 - [x] Concurrency primitives (`go`, `chan`, `select`)
 - [x] `using` for resource cleanup
-- [x] `extern` Go interop (`@golang { }` embed blocks)
+- [x] Go interop (`import golang`, `@golang { }` embed blocks)
+- [x] Unified imports (`import golang` / `import goop`, dot and aliased forms)
 - [x] `private` module visibility
 - [x] `%` modulo operator
-- [x] Extern 2-tuple returns
+- [x] Golang import 2-tuple returns
 - [x] Flow-sensitive goroutine liveness (fewer race false positives)
 - [x] std/ modules (`std.io`, `std.list`, `std.option`, `std.result`)
 - [x] Effect rows (erased, row-polymorphic effect tracking in types)
@@ -57,10 +58,9 @@ This file tracks the remaining work to make C0 a usable language. It is kept in 
 ## Tooling
 
 - [x] LSP server (features: diagnostics, hover, definition, completion)
-- [x] Formatter (`c0 fmt` command)
+- [x] Formatter (`goop fmt` command)
 - [x] Test runner
 - [ ] Documentation generator
-- [ ] Package manager (`c0 get`)
 
 ## Documentation
 
@@ -68,7 +68,8 @@ This file tracks the remaining work to make C0 a usable language. It is kept in 
 - [x] Design documents
 - [x] Specification drafts
 - [x] Examples
-- [x] `c0.toml` project configuration
+- [x] `goop.toml` project configuration
+- [x] Package manager (`goop get`, `goop.lock`; see `docs/design/11-package-manager.md`)
 - [ ] Language tutorial
 - [ ] Standard library reference
 - [ ] Contributing guide

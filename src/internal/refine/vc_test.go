@@ -4,17 +4,17 @@ import (
 	"strings"
 	"testing"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/parser"
-	"c0.dev/compiler/internal/desugar"
-	"c0.dev/compiler/internal/typecheck"
-	"c0.dev/compiler/internal/typeinfo"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/desugar"
+	"goop.dev/compiler/internal/typecheck"
+	"goop.dev/compiler/internal/typeinfo"
 )
 
-// testMod parses and type-checks a C0 source snippet and returns the module and type map.
+// testMod parses and type-checks a Goop source snippet and returns the module and type map.
 func testMod(t *testing.T, src string) (*ast.Module, typeinfo.TypeMap) {
 	t.Helper()
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

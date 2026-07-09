@@ -1,6 +1,6 @@
 // Package gosig provides an optional fallback for querying real Go function
 // signatures using golang.org/x/tools/go/packages and go/types. This helps
-// the C0 typechecker resolve lambda parameter types when C0's own
+// the Goop typechecker resolve lambda parameter types when Goop's own
 // Hindley-Milner inference cannot determine them from local context alone.
 package gosig
 
@@ -24,7 +24,7 @@ type Param struct {
 // FuncSig holds the full Go function signature: parameter types and result types.
 type FuncSig struct {
 	Params  []Param
-	Results []Param // result types (usually 0 or 1 for C0 FFI)
+	Results []Param // result types (usually 0 or 1 for Goop FFI)
 }
 
 // cache avoids reloading the same package multiple times.
@@ -136,7 +136,7 @@ func LookupFunc(importPath, funcName string) (*FuncSig, error) {
 }
 
 // relativeQualifier returns a types.Qualifier that strips the current package
-// path from type names, making them more suitable for C0 type mapping.
+// path from type names, making them more suitable for Goop type mapping.
 func relativeQualifier(importPath string) gotypes.Qualifier {
 	return func(pkg *gotypes.Package) string {
 		if pkg.Path() == importPath {

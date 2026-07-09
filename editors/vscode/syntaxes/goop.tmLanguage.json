@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "C0",
-  "scopeName": "source.c0",
+  "name": "Goop",
+  "scopeName": "source.goop",
   "fileTypes": ["c0"],
   "patterns": [
     { "include": "#comments" },
@@ -16,12 +16,12 @@
     "comments": {
       "patterns": [
         {
-          "name": "comment.block.c0",
+          "name": "comment.block.goop",
           "begin": "\\(\\*",
           "end": "\\*\\)"
         },
         {
-          "name": "comment.line.c0",
+          "name": "comment.line.goop",
           "match": "//.*$"
         }
       ]
@@ -29,23 +29,23 @@
     "strings": {
       "patterns": [
         {
-          "name": "string.quoted.double.c0",
+          "name": "string.quoted.double.goop",
           "begin": "\"",
           "end": "\"",
           "patterns": [
             {
-              "name": "constant.character.escape.c0",
+              "name": "constant.character.escape.goop",
               "match": "\\\\[ntr\"'\\\\]"
             }
           ]
         },
         {
-          "name": "string.quoted.single.c0",
+          "name": "string.quoted.single.goop",
           "begin": "'",
           "end": "'",
           "patterns": [
             {
-              "name": "constant.character.escape.c0",
+              "name": "constant.character.escape.goop",
               "match": "\\\\[ntr\"'\\\\]"
             }
           ]
@@ -55,11 +55,11 @@
     "numbers": {
       "patterns": [
         {
-          "name": "constant.numeric.float.c0",
+          "name": "constant.numeric.float.goop",
           "match": "\\b[0-9]+\\.[0-9]*(?:[eE][+-]?[0-9]+)?\\b"
         },
         {
-          "name": "constant.numeric.integer.c0",
+          "name": "constant.numeric.integer.goop",
           "match": "\\b[0-9]+\\b"
         }
       ]
@@ -67,19 +67,19 @@
     "keywords": {
       "patterns": [
         {
-          "name": "keyword.control.c0",
+          "name": "keyword.control.goop",
           "match": "\\b(if|then|else|match|with|when|guard|of|in|let|rec|mutable|and|as)\\b"
         },
         {
-          "name": "keyword.declaration.c0",
+          "name": "keyword.declaration.goop",
           "match": "\\b(module|open|import|extern|type|val|fun)\\b"
         },
         {
-          "name": "keyword.operator.c0",
+          "name": "keyword.operator.goop",
           "match": "\\b(requires|returns|panic|using|chan|go)\\b"
         },
         {
-          "name": "constant.language.c0",
+          "name": "constant.language.goop",
           "match": "\\b(true|false|unit|forall)\\b"
         }
       ]
@@ -87,11 +87,11 @@
     "types": {
       "patterns": [
         {
-          "name": "variable.language.typevar.c0",
+          "name": "variable.language.typevar.goop",
           "match": "'[a-z][a-zA-Z0-9_']*"
         },
         {
-          "name": "support.type.primitive.c0",
+          "name": "support.type.primitive.goop",
           "match": "\\b(bool|int|float|string|char|unit)\\b"
         }
       ]
@@ -99,59 +99,59 @@
     "operators": {
       "patterns": [
         {
-          "name": "keyword.operator.arrow.c0",
+          "name": "keyword.operator.arrow.goop",
           "match": "->"
         },
         {
-          "name": "keyword.operator.pipe.c0",
+          "name": "keyword.operator.pipe.goop",
           "match": "\\|>"
         },
         {
-          "name": "keyword.operator.fatarrow.c0",
+          "name": "keyword.operator.fatarrow.goop",
           "match": "=>"
         },
         {
-          "name": "keyword.operator.assignment.c0",
+          "name": "keyword.operator.assignment.goop",
           "match": "="
         },
         {
-          "name": "keyword.operator.comparison.c0",
+          "name": "keyword.operator.comparison.goop",
           "match": "<>|<=|>=|<|>|==|!="
         },
         {
-          "name": "keyword.operator.arithmetic.c0",
+          "name": "keyword.operator.arithmetic.goop",
           "match": "\\+|\\-|\\*\\*|\\*|/\\.|\\*\\."
         },
         {
-          "name": "keyword.operator.logical.c0",
+          "name": "keyword.operator.logical.goop",
           "match": "\\|\\||&&|!"
         },
         {
-          "name": "keyword.operator.concatenation.c0",
+          "name": "keyword.operator.concatenation.goop",
           "match": "\\^"
         },
         {
-          "name": "keyword.operator.range.c0",
+          "name": "keyword.operator.range.goop",
           "match": "\\.\\."
         },
         {
-          "name": "punctuation.separator.dot.c0",
+          "name": "punctuation.separator.dot.goop",
           "match": "\\."
         },
         {
-          "name": "punctuation.separator.comma.c0",
+          "name": "punctuation.separator.comma.goop",
           "match": ","
         },
         {
-          "name": "punctuation.separator.semicolon.c0",
+          "name": "punctuation.separator.semicolon.goop",
           "match": ";"
         },
         {
-          "name": "punctuation.separator.colon.c0",
+          "name": "punctuation.separator.colon.goop",
           "match": ":"
         },
         {
-          "name": "punctuation.bracket.c0",
+          "name": "punctuation.bracket.goop",
           "match": "[\\[\\]{}()|]"
         }
       ]
@@ -159,11 +159,11 @@
     "identifiers": {
       "patterns": [
         {
-          "name": "entity.name.type.constructor.c0",
+          "name": "entity.name.type.constructor.goop",
           "match": "\\b[A-Z][a-zA-Z0-9_']*\\b"
         },
         {
-          "name": "variable.c0",
+          "name": "variable.goop",
           "match": "\\b[a-z_][a-zA-Z0-9_']*\\b"
         }
       ]

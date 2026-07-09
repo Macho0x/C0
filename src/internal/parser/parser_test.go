@@ -6,16 +6,16 @@ import (
 	"strings"
 	"testing"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/parser"
-	"c0.dev/compiler/internal/typecheck"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/typecheck"
 )
 
 // examplesDir is relative to the module root.
 var examplesDir = "../../../docs/examples"
 
 func TestParseHello(t *testing.T) {
-	mod := mustParse(t, "hello.c0")
+	mod := mustParse(t, "hello.goop")
 	if mod.Name != "main" {
 		t.Errorf("expected module name main, got %q", mod.Name)
 	}
@@ -32,7 +32,7 @@ func TestParseHello(t *testing.T) {
 	if d.Bindings[0].Name != "main" {
 		t.Errorf("expected binding name main, got %q", d.Bindings[0].Name)
 	}
-	// Body should be an AppExpr: print_line "Hello, C0!"
+	// Body should be an AppExpr: print_line "Hello, Goop!"
 	app, ok := d.Bindings[0].Body.(*ast.AppExpr)
 	if !ok {
 		t.Fatalf("expected AppExpr body, got %T", d.Bindings[0].Body)
@@ -53,18 +53,18 @@ func TestParseHello(t *testing.T) {
 			t.Errorf("expected print_line, got %q", ident.Name)
 		}
 	}
-	// Right side: "Hello, C0!" string literal
+	// Right side: "Hello, Goop!" string literal
 	lit, ok := app.Arg.(*ast.LitExpr)
 	if !ok {
 		t.Fatalf("expected LitExpr arg, got %T", app.Arg)
 	}
-	if lit.Value != "Hello, C0!" {
-		t.Errorf("expected 'Hello, C0!', got %v", lit.Value)
+	if lit.Value != "Hello, Goop!" {
+		t.Errorf("expected 'Hello, Goop!', got %v", lit.Value)
 	}
 }
 
 func TestParseShapes(t *testing.T) {
-	mod := mustParse(t, "shapes.c0")
+	mod := mustParse(t, "shapes.goop")
 	if mod.Name != "main" {
 		t.Errorf("expected main, got %q", mod.Name)
 	}
@@ -135,7 +135,7 @@ func TestParseShapes(t *testing.T) {
 }
 
 func TestParseResult(t *testing.T) {
-	mod := mustParse(t, "result.c0")
+	mod := mustParse(t, "result.goop")
 	if mod.Name != "main" {
 		t.Errorf("expected main, got %q", mod.Name)
 	}
@@ -197,7 +197,7 @@ func TestParseResult(t *testing.T) {
 }
 
 func TestParseOrderbook(t *testing.T) {
-	mod := mustParse(t, "orderbook.c0")
+	mod := mustParse(t, "orderbook.goop")
 	if mod.Name != "Trading.OrderBook" {
 		t.Errorf("expected Trading.OrderBook, got %q", mod.Name)
 	}
@@ -273,22 +273,22 @@ func TestParseOrderbook(t *testing.T) {
 }
 
 func TestLexHello(t *testing.T) {
-	mod := mustParse(t, "hello.c0")
+	mod := mustParse(t, "hello.goop")
 	_ = mod // just verify it parses; lexing is tested implicitly
 }
 
 func TestLexShapes(t *testing.T) {
-	mod := mustParse(t, "shapes.c0")
+	mod := mustParse(t, "shapes.goop")
 	_ = mod
 }
 
 func TestLexResult(t *testing.T) {
-	mod := mustParse(t, "result.c0")
+	mod := mustParse(t, "result.goop")
 	_ = mod
 }
 
 func TestLexOrderbook(t *testing.T) {
-	mod := mustParse(t, "orderbook.c0")
+	mod := mustParse(t, "orderbook.goop")
 	_ = mod
 }
 
@@ -306,7 +306,7 @@ val nowString : unit -> string
 
 let main () = print_line (nowString ())
 `
-	mod, err := parser.Parse("golang.c0", []byte(src))
+	mod, err := parser.Parse("golang.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -336,7 +336,7 @@ import golang "fmt" {
   }
 }
 `
-	_, err := parser.Parse("bad.c0", []byte(src))
+	_, err := parser.Parse("bad.goop", []byte(src))
 	if err == nil {
 		t.Fatal("expected parse error for go { } inside import block")
 	}
@@ -349,11 +349,11 @@ func TestImportGrouped(t *testing.T) {
 	src := `module main
 import (
   golang "fmt"
-  c0 "std.io"
+  goop "std.io"
 )
 let main () = ()
 `
-	mod, err := parser.Parse("t.c0", []byte(src))
+	mod, err := parser.Parse("t.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -363,7 +363,7 @@ let main () = ()
 	if mod.Imports[0].Kind != ast.ImportGolang || mod.Imports[0].Path != "fmt" {
 		t.Errorf("import[0]: %+v", mod.Imports[0])
 	}
-	if mod.Imports[1].Kind != ast.ImportC0 || mod.Imports[1].Path != "std.io" {
+	if mod.Imports[1].Kind != ast.ImportGoop || mod.Imports[1].Path != "std.io" {
 		t.Errorf("import[1]: %+v", mod.Imports[1])
 	}
 }
@@ -373,7 +373,7 @@ func TestImportGolangVals(t *testing.T) {
 import golang "strconv" { val Atoi : string -> (int, string) }
 let main () = ()
 `
-	mod, err := parser.Parse("t.c0", []byte(src))
+	mod, err := parser.Parse("t.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -382,12 +382,12 @@ let main () = ()
 	}
 }
 
-func TestImportC0Dot(t *testing.T) {
+func TestImportGoopDot(t *testing.T) {
 	src := `module main
-import c0 . "std.io"
+import goop . "std.io"
 let main () = ()
 `
-	mod, err := parser.Parse("t.c0", []byte(src))
+	mod, err := parser.Parse("t.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -401,7 +401,7 @@ func TestImportAlias(t *testing.T) {
 import httpx golang "net/http"
 let main () = ()
 `
-	mod, err := parser.Parse("t.c0", []byte(src))
+	mod, err := parser.Parse("t.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -410,12 +410,12 @@ let main () = ()
 	}
 }
 
-func TestImportC0CanonicalPath(t *testing.T) {
+func TestImportGoopCanonicalPath(t *testing.T) {
 	src := `module main
-import c0 "github.com/foo/bar"
+import goop "github.com/foo/bar"
 let main () = ()
 `
-	mod, err := parser.Parse("t.c0", []byte(src))
+	mod, err := parser.Parse("t.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -429,11 +429,11 @@ func TestRejectOpen(t *testing.T) {
 open Std.IO
 let main () = ()
 `
-	_, err := parser.Parse("t.c0", []byte(src))
+	_, err := parser.Parse("t.goop", []byte(src))
 	if err == nil {
 		t.Fatal("expected error for open")
 	}
-	if !strings.Contains(err.Error(), "import c0") {
+	if !strings.Contains(err.Error(), "import goop") {
 		t.Errorf("expected migration hint, got: %v", err)
 	}
 }
@@ -443,7 +443,7 @@ func TestRejectExtern(t *testing.T) {
 extern "go" "fmt" {}
 let main () = ()
 `
-	_, err := parser.Parse("t.c0", []byte(src))
+	_, err := parser.Parse("t.goop", []byte(src))
 	if err == nil {
 		t.Fatal("expected error for extern")
 	}
@@ -454,10 +454,10 @@ let main () = ()
 
 func TestRejectC0ImportVals(t *testing.T) {
 	src := `module main
-import c0 "std.io" { val X : int }
+import goop "std.io" { val X : int }
 let main () = ()
 `
-	_, err := parser.Parse("t.c0", []byte(src))
+	_, err := parser.Parse("t.goop", []byte(src))
 	if err == nil {
 		t.Fatal("expected error for c0 import with vals")
 	}
@@ -468,7 +468,7 @@ func TestRejectImportGo(t *testing.T) {
 import go "fmt"
 let main () = ()
 `
-	_, err := parser.Parse("t.c0", []byte(src))
+	_, err := parser.Parse("t.goop", []byte(src))
 	if err == nil {
 		t.Fatal("expected error for import go")
 	}
@@ -482,7 +482,7 @@ func TestImportEmptyGrouped(t *testing.T) {
 import ()
 let main () = ()
 `
-	mod, err := parser.Parse("t.c0", []byte(src))
+	mod, err := parser.Parse("t.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("empty import group should parse: %v", err)
 	}
@@ -499,7 +499,7 @@ import (
 )
 let main () = ()
 `
-	mod, err := parser.Parse("t.c0", []byte(src))
+	mod, err := parser.Parse("t.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

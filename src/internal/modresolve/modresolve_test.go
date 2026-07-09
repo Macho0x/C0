@@ -4,19 +4,19 @@ import (
 	"path/filepath"
 	"testing"
 
-	"c0.dev/compiler/internal/config"
-	"c0.dev/compiler/internal/modresolve"
+	"goop.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/modresolve"
 )
 
 func TestResolveStdIO(t *testing.T) {
 	root := filepath.Join("..", "..", "..")
 	cfg := config.DefaultConfig()
 	r := modresolve.New(cfg, nil, root)
-	res, err := r.ResolveC0Path("std.io")
+	res, err := r.ResolveGoopPath("std.io")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.GoImportPath != "github.com/Macho0x/C0/std/io" {
+	if res.GoImportPath != "github.com/Macho0x/Goop/std/io" {
 		t.Errorf("go path: %s", res.GoImportPath)
 	}
 	if res.SourceFile == "" {
@@ -34,7 +34,7 @@ func TestExportNamesFiltersPrivate(t *testing.T) {
 func TestMissingModule(t *testing.T) {
 	cfg := &config.Config{Mappings: map[string]string{}}
 	r := modresolve.New(cfg, nil, "/nonexistent")
-	res, err := r.ResolveC0Path("unknown.logical")
+	res, err := r.ResolveGoopPath("unknown.logical")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestLockfileOverride(t *testing.T) {
 	})
 	cfg := config.DefaultConfig()
 	r := modresolve.New(cfg, lock, "")
-	res, err := r.ResolveC0Path("github.com/acme/lib")
+	res, err := r.ResolveGoopPath("github.com/acme/lib")
 	if err != nil {
 		t.Fatal(err)
 	}

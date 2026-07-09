@@ -1,4 +1,4 @@
-// Package types defines the internal type representation for C0 type checking.
+// Package types defines the internal type representation for Goop type checking.
 //
 // This is separate from the AST types (ast.Type) which represent parsed type
 // expressions. The type checker converts ast.Type nodes into these internal

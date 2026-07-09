@@ -1,4 +1,4 @@
-// Package parser implements a recursive-descent parser for C0.
+// Package parser implements a recursive-descent parser for Goop.
 //
 // It handles:
 //   - Module declarations with qualified names (dots)
@@ -15,9 +15,9 @@ import (
 	"fmt"
 	"strings"
 
-	"c0.dev/compiler/internal/ast"
-	lc0 "c0.dev/compiler/internal/lexer"
-	"c0.dev/compiler/internal/token"
+	"goop.dev/compiler/internal/ast"
+	lc0 "goop.dev/compiler/internal/lexer"
+	"goop.dev/compiler/internal/token"
 )
 
 // ParseError records a parse failure with source location.
@@ -40,7 +40,7 @@ type Parser struct {
 	wherePred bool // true when parsing a where-clause predicate (stops at =)
 }
 
-// Parse reads a complete C0 source file and returns the AST module.
+// Parse reads a complete Goop source file and returns the AST module.
 func Parse(file string, src []byte) (*ast.Module, error) {
 	toks, err := lc0.Lex(file, src)
 	if err != nil {
@@ -274,7 +274,7 @@ func (p *Parser) parseModule() *ast.Module {
 
 	// Reject legacy `open` with migration hint
 	if p.cur().Type == token.OPEN {
-		p.errorf("'open' is removed; use `import c0 \"path\"` or `import c0 . \"path\"` for dot import")
+		p.errorf("'open' is removed; use `import goop \"path\"` or `import goop . \"path\"` for dot import")
 		p.advance()
 		p.parseQualifiedName()
 	}
@@ -355,7 +355,7 @@ func (p *Parser) parseTopDecl() ast.TopDecl {
 		p.parseQualifiedName()
 		return nil
 	case token.OPEN:
-		p.errorf("'open' is removed; use `import c0 \"path\"` or `import c0 . \"path\"`")
+		p.errorf("'open' is removed; use `import goop \"path\"` or `import goop . \"path\"`")
 		p.advance()
 		p.parseQualifiedName()
 		return nil
@@ -697,13 +697,13 @@ func (p *Parser) parseImportSpec() ast.ImportSpec {
 	case token.GOLANG:
 		spec.Kind = ast.ImportGolang
 		p.advance()
-	case token.C0:
-		spec.Kind = ast.ImportC0
+	case token.GOOP:
+		spec.Kind = ast.ImportGoop
 		p.advance()
 		// Dot import: c0 . "path"
 		if p.cur().Type == token.DOT {
 			if spec.Alias != "" {
-				p.errorf("dot import cannot have a local alias; use `import c0 . \"path\"`")
+				p.errorf("dot import cannot have a local alias; use `import goop . \"path\"`")
 			}
 			spec.Alias = "."
 			p.advance()
@@ -716,7 +716,7 @@ func (p *Parser) parseImportSpec() ast.ImportSpec {
 		}
 		return spec
 	default:
-		p.errorf("expected `golang` or `c0` after import, got %s", p.cur().Type)
+		p.errorf("expected `golang` or `goop` after import, got %s", p.cur().Type)
 		p.synchronizeImportSpec()
 		return spec
 	}
@@ -730,7 +730,7 @@ func (p *Parser) parseImportSpec() ast.ImportSpec {
 	}
 
 	if p.cur().Type == token.LBRACE {
-		if spec.Kind == ast.ImportC0 {
+		if spec.Kind == ast.ImportGoop {
 			p.errorf("c0 imports cannot have `{ val ... }` blocks (only golang imports)")
 		}
 		p.advance()
@@ -761,7 +761,7 @@ func (p *Parser) parseImportSpec() ast.ImportSpec {
 func (p *Parser) synchronizeImportSpec() {
 	for p.cur().Type != token.EOF {
 		switch p.cur().Type {
-		case token.RPAREN, token.GOLANG, token.C0, token.IMPORT:
+		case token.RPAREN, token.GOLANG, token.GOOP, token.IMPORT:
 			return
 		default:
 			p.advance()

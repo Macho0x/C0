@@ -28,9 +28,9 @@ val addPrefix : string -> string -> string
 val nowString : unit -> string
 
 let main () =
-  let a = ToUpper "hello from C0" in
+  let a = ToUpper "hello from Goop" in
   let b = ToLower "GOODBYE" in
-  let c = greet "C0" in
+  let c = greet "Goop" in
   let d = addPrefix "INFO" "inline Go extern works" in
   let e = nowString () in
   let report =

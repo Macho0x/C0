@@ -4,7 +4,7 @@ import "testing"
 
 func TestRender(t *testing.T) {
 	src := []byte("module T\nlet x = 1 + \"hi\"\n")
-	err := &mockErr{msg: "/tmp/t.c0:2:11: type mismatch"}
+	err := &mockErr{msg: "/tmp/t.goop:2:11: type mismatch"}
 	out := Render(err, src)
 	if !contains(out, "╰──") || !contains(out, "type mismatch") {
 		t.Errorf("bad render: %s", out)

@@ -1,6 +1,6 @@
-name = "C0"
-grammar = "c0"
-path_suffixes = ["c0"]
+name = "Goop"
+grammar = "goop"
+path_suffixes = ["goop"]
 line_comments = ["//"]
 block_comment = ["(*", "*)"]
 tab_size = 2

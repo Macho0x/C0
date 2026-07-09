@@ -1,4 +1,4 @@
-# C0 Grammar
+# Goop Grammar
 
 This is a high-level grammar in EBNF-like notation. It is not a complete LALR(1) grammar; it describes the intended surface syntax for specification purposes.
 
@@ -18,7 +18,7 @@ unit     := '()'
 ## Reserved words
 
 ```
-and as c0 else false fun golang guard if import in
+and as goop else false fun golang guard if import in
 let match module mutable of panic private rec
 requires returns then true type unit val when with
 ```

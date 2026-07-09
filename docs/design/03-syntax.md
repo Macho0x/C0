@@ -1,10 +1,10 @@
 ## Source style
 
-C0 uses **offside-rule** syntax (like F# and Python): indentation defines block structure. The language is case-sensitive.
+Goop uses **offside-rule** syntax (like F# and Python): indentation defines block structure. The language is case-sensitive.
 
 Comments:
 
-```c0
+```goop
 (* This is a block comment. *)
 (* Nested comments (* are supported *). *)
 ```
@@ -21,12 +21,12 @@ Line comments are not provided by default; block comments are sufficient and ali
 
 A file begins with a module declaration and optional imports:
 
-```c0
+```goop
 module MyModule
 
 import (
   golang "fmt"
-  c0 . "std.io"
+  goop . "std.io"
 )
 
 let x = 1
@@ -36,7 +36,7 @@ See [05-modules-and-packages.md](../design/05-modules-and-packages.md) for impor
 
 ## Value declarations
 
-```c0
+```goop
 let pi = 3.14159
 
 let square (x: float) : float = x *. x
@@ -48,7 +48,7 @@ let rec factorial (n: int) : int =
 
 Mutability is explicit:
 
-```c0
+```goop
 let mutable counter = 0
 counter <- counter + 1
 ```
@@ -57,14 +57,14 @@ counter <- counter + 1
 
 Functions are curried by default:
 
-```c0
+```goop
 let add (x: int) (y: int) : int = x + y
 let addFive = add 5
 ```
 
 Anonymous functions:
 
-```c0
+```goop
 let f = fun x -> x + 1
 let doubled = List.map (fun x -> x * 2) numbers
 ```
@@ -73,35 +73,35 @@ let doubled = List.map (fun x -> x * 2) numbers
 
 Records:
 
-```c0
+```goop
 type point = { x: float; y: float }
 ```
 
 ADTs:
 
-```c0
+```goop
 type option 'a = None | Some of 'a
 ```
 
 Type aliases:
 
-```c0
+```goop
 type user_id = string
 ```
 
 Linear resource types (opt-in modal linearity):
 
-```c0
+```goop
 type handle : 1
 ```
 
-Types without `: 1` are unrestricted (`ω`). Linear types must be discharged (used/handed-off) on every control-flow path. See `docs/examples/linear.c0`.
+Types without `: 1` are unrestricted (`ω`). Linear types must be discharged (used/handed-off) on every control-flow path. See `docs/examples/linear.goop`.
 
 ## Effect row annotations
 
 Effect rows appear after a function return type with `with`:
 
-```c0
+```goop
 (* Explicitly pure *)
 let double (x: int) : int with {} = x * 2
 
@@ -115,13 +115,13 @@ let complex () : unit with { io; log } = ...
 let withState (f: unit -> 'a with { state | e }) : 'a with { e } = ...
 ```
 
-Effect rows are compile-time only and erased in Go output. See `docs/design/02-type-system.md` and `docs/examples/effects.c0`.
+Effect rows are compile-time only and erased in Go output. See `docs/design/02-type-system.md` and `docs/examples/effects.goop`.
 
 ## Refinement `where` clauses
 
 `where` is a postfix type modifier for runtime contract assertions:
 
-```c0
+```goop
 (* `it` refers to the parameter value *)
 let safeDiv (a: int) (b: int where b <> 0) : int = a / b
 
@@ -129,11 +129,11 @@ let safeDiv (a: int) (b: int where b <> 0) : int = a / b
 let clamp (x: int) (lo: int) (hi: int where hi >= lo) : int where result >= lo && result <= hi = ...
 ```
 
-Refinements lower to runtime `panic` guards. No SMT solver is involved. See `docs/design/02-type-system.md` and `docs/examples/contracts.c0`.
+Refinements lower to runtime `panic` guards. No SMT solver is involved. See `docs/design/02-type-system.md` and `docs/examples/contracts.goop`.
 
 ## Pattern matching
 
-```c0
+```goop
 match expr with
 | Pattern1 -> expr1
 | Pattern2 when guard -> expr2
@@ -153,23 +153,23 @@ Patterns include:
 
 ## Match macros
 
-C0 provides three syntactic shortcuts that desugar to `match`:
+Goop provides three syntactic shortcuts that desugar to `match`:
 
 ### `is`
 
-```c0
+```goop
 if status is Passed then ...
 ```
 
 ### `as`
 
-```c0
+```goop
 let name = getUser(id) as Some {name, ..} -> name else "Anonymous"
 ```
 
 ### `guard`
 
-```c0
+```goop
 let processUser (id: int) : result<user, string> =
   guard Some user = findUser id else Error "not found"
   guard Ok validated = validate user else Error "validation failed"
@@ -180,7 +180,7 @@ let processUser (id: int) : result<user, string> =
 
 The `?` operator propagates `result` errors:
 
-```c0
+```goop
 let readConfig (path: string) : result<config, error> =
   let bytes = File.readAllBytes path ?
   let text = Encoding.utf8.getString bytes ?
@@ -190,7 +190,7 @@ let readConfig (path: string) : result<config, error> =
 
 Three forms are supported:
 
-```c0
+```goop
 let x = f() ?                           (* bare *)
 let x = f() ? "context message"         (* wrap message *)
 let x = f() ? fun e -> wrapError e      (* transform error *)
@@ -198,9 +198,9 @@ let x = f() ? fun e -> wrapError e      (* transform error *)
 
 ## Pipelines
 
-C0 uses F#-style data-first pipelines:
+Goop uses F#-style data-first pipelines:
 
-```c0
+```goop
 let result =
   data
   |> List.filter (fun x -> x > 0)
@@ -216,7 +216,7 @@ Arithmetic and comparison operators follow ML precedence. Logical operators: `&&
 
 Call into Go directly:
 
-```c0
+```goop
 extern "go" "github.com/example/lib" {
   val loadConfig : string -> result<config, error>
 }
@@ -224,13 +224,13 @@ extern "go" "github.com/example/lib" {
 
 ## Computation expressions
 
-C0 supports F#-style computation expressions for monadic programming. Two builders are provided: `result` and `async`.
+Goop supports F#-style computation expressions for monadic programming. Two builders are provided: `result` and `async`.
 
 ### `result { ... }`
 
 The `result` builder desugars `let!` bindings into nested `match` expressions that propagate errors:
 
-```c0
+```goop
 let safeDiv (x: float) (y: float) : (float, string) result =
   if y = 0.0 then Error "division by zero"
   else Ok (x *. y)
@@ -243,7 +243,7 @@ result {
 ```
 
 Desugars to:
-```c0
+```goop
 match safeDiv 10.0 2.0 with
 | Ok a ->
     match safeDiv a 3.0 with
@@ -264,7 +264,7 @@ Operations inside `result { }`:
 
 The `region` builder provides scoped resource management with guaranteed cleanup:
 
-```c0
+```goop
 type handle : 1
 
 let Close (h: handle) : unit = ...
@@ -285,4 +285,4 @@ Operations inside `region { }`:
 
 The linear discharge checker auto-discharges region-bound variables at scope exit. This replaces the legacy `using` block with compile-time-guaranteed cleanup.
 
-See `docs/examples/region.c0`.
+See `docs/examples/region.goop`.

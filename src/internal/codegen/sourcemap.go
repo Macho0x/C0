@@ -1,6 +1,6 @@
 // Package codegen — JSON source-map support.
 //
-// The SourceMap records mappings from C0 source locations to generated
+// The SourceMap records mappings from Goop source locations to generated
 // Go output locations.  It is serialisable as JSON for external debuggers.
 package codegen
 
@@ -10,7 +10,7 @@ import (
 	"io"
 )
 
-// SourceMap links C0 source positions to generated Go output positions.
+// SourceMap links Goop source positions to generated Go output positions.
 type SourceMap struct {
 	Version   int       `json:"version"`
 	Source    string    `json:"source"`
@@ -18,7 +18,7 @@ type SourceMap struct {
 	Mappings  []Mapping `json:"mappings"`
 }
 
-// Mapping is a single C0→Go position correspondence.
+// Mapping is a single Goop→Go position correspondence.
 type Mapping struct {
 	C0Line   int `json:"c0_line"`
 	C0Column int `json:"c0_column"`
@@ -35,7 +35,7 @@ func NewSourceMap(source, generated string) *SourceMap {
 	}
 }
 
-// Add records a single C0→Go mapping.
+// Add records a single Goop→Go mapping.
 func (sm *SourceMap) Add(c0Line, c0Col, goLine, goCol int) {
 	sm.Mappings = append(sm.Mappings, Mapping{
 		C0Line:   c0Line,

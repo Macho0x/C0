@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/codegen"
-	"c0.dev/compiler/internal/config"
-	"c0.dev/compiler/internal/desugar"
-	"c0.dev/compiler/internal/parser"
-	"c0.dev/compiler/internal/typecheck"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/codegen"
+	"goop.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/desugar"
+	"goop.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/typecheck"
 )
 
 func externFinalReturn(t ast.Type) ast.Type {
@@ -46,8 +46,8 @@ func mustParse(t *testing.T, filename string) *ast.Module {
 }
 
 func TestCompileHello(t *testing.T) {
-	mod := mustParse(t, "hello.c0")
-	gen := codegen.NewGenerator("hello.c0", config.DefaultConfig())
+	mod := mustParse(t, "hello.goop")
+	gen := codegen.NewGenerator("hello.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -58,14 +58,14 @@ func TestCompileHello(t *testing.T) {
 	if !strings.Contains(goSrc, "fmt.Println") {
 		t.Error("missing fmt.Println")
 	}
-	if !strings.Contains(goSrc, "Hello, C0!") {
-		t.Error("missing Hello, C0! string")
+	if !strings.Contains(goSrc, "Hello, Goop!") {
+		t.Error("missing Hello, Goop! string")
 	}
 }
 
 func TestCompileShapes(t *testing.T) {
-	mod := mustParse(t, "shapes.c0")
-	gen := codegen.NewGenerator("shapes.c0", config.DefaultConfig())
+	mod := mustParse(t, "shapes.goop")
+	gen := codegen.NewGenerator("shapes.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -86,8 +86,8 @@ func TestCompileShapes(t *testing.T) {
 }
 
 func TestCompileResult(t *testing.T) {
-	mod := mustParse(t, "result.c0")
-	gen := codegen.NewGenerator("result.c0", config.DefaultConfig())
+	mod := mustParse(t, "result.goop")
+	gen := codegen.NewGenerator("result.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -111,12 +111,12 @@ func TestExternTupleCallCodegen(t *testing.T) {
 import golang "strconv" { val Atoi : string -> (int, string) }
 let main () = let pair = Atoi "42" in pair
 `
-	mod, err := parser.Parse("t.c0", []byte(src))
+	mod, err := parser.Parse("t.goop", []byte(src))
 	if err != nil {
 		t.Fatal(err)
 	}
 	mod = desugar.DesugarModule(mod)
-	gen := codegen.NewGenerator("t.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("t.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatal(err)
@@ -127,8 +127,8 @@ let main () = let pair = Atoi "42" in pair
 }
 
 func TestHelloBuildAndRun(t *testing.T) {
-	mod := mustParse(t, "hello.c0")
-	gen := codegen.NewGenerator("hello.c0", config.DefaultConfig())
+	mod := mustParse(t, "hello.goop")
+	gen := codegen.NewGenerator("hello.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -159,14 +159,14 @@ func TestHelloBuildAndRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if !strings.Contains(string(out), "Hello, C0!") {
-		t.Errorf("expected 'Hello, C0!', got %q", string(out))
+	if !strings.Contains(string(out), "Hello, Goop!") {
+		t.Errorf("expected 'Hello, Goop!', got %q", string(out))
 	}
 }
 
 func TestShapesBuild(t *testing.T) {
-	mod := mustParse(t, "shapes.c0")
-	gen := codegen.NewGenerator("shapes.c0", config.DefaultConfig())
+	mod := mustParse(t, "shapes.goop")
+	gen := codegen.NewGenerator("shapes.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -186,8 +186,8 @@ func TestShapesBuild(t *testing.T) {
 }
 
 func TestResultBuild(t *testing.T) {
-	mod := mustParse(t, "result.c0")
-	gen := codegen.NewGenerator("result.c0", config.DefaultConfig())
+	mod := mustParse(t, "result.goop")
+	gen := codegen.NewGenerator("result.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -207,8 +207,8 @@ func TestResultBuild(t *testing.T) {
 }
 
 func TestOrderbookBuild(t *testing.T) {
-	mod := mustParse(t, "orderbook.c0")
-	gen := codegen.NewGenerator("orderbook.c0", config.DefaultConfig())
+	mod := mustParse(t, "orderbook.goop")
+	gen := codegen.NewGenerator("orderbook.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -255,7 +255,7 @@ func TestOrderbookBuild(t *testing.T) {
 }
 
 func TestTypeCheckBeforeCodegen(t *testing.T) {
-	mod := mustParse(t, "hello.c0")
+	mod := mustParse(t, "hello.goop")
 	errs := typecheck.Check(mod)
 	if len(errs) > 0 {
 		t.Fatalf("type check failed: %v", errs)
@@ -263,18 +263,18 @@ func TestTypeCheckBeforeCodegen(t *testing.T) {
 }
 
 func TestActivePatternsExampleBuild(t *testing.T) {
-	path := filepath.Join(examplesDir, "active_patterns.c0")
+	path := filepath.Join(examplesDir, "active_patterns.goop")
 	src, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	mod, err := parser.Parse("active_patterns.c0", src)
+	mod, err := parser.Parse("active_patterns.goop", src)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	mod = desugar.DesugarModule(mod)
 
-	gen := codegen.NewGenerator("active_patterns.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("active_patterns.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -306,8 +306,8 @@ func TestActivePatternsExampleBuild(t *testing.T) {
 }
 
 func TestContractsBuild(t *testing.T) {
-	mod := mustParse(t, "contracts.c0")
-	gen := codegen.NewGenerator("contracts.c0", config.DefaultConfig())
+	mod := mustParse(t, "contracts.goop")
+	gen := codegen.NewGenerator("contracts.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -369,13 +369,13 @@ let process (h: handle) : unit =
     return ()
   }
 `
-	mod, err := parser.Parse("region_test.c0", []byte(src))
+	mod, err := parser.Parse("region_test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	mod = desugar.DesugarModule(mod)
 
-	gen := codegen.NewGenerator("region_test.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("region_test.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -416,7 +416,7 @@ let main () =
   let v = Chan.close ch in
   print_line "channel operations work"
 `
-	mod, err := parser.Parse("chan_test.c0", []byte(src))
+	mod, err := parser.Parse("chan_test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -430,7 +430,7 @@ let main () =
 		t.Fatalf("typecheck failed")
 	}
 
-	gen := codegen.NewGenerator("chan_test.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("chan_test.goop", config.DefaultConfig())
 	gen.SetTypeMap(tm, vtm)
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
@@ -503,13 +503,13 @@ func TestChanSafetyNoChannel(t *testing.T) {
 let main () =
   print_line "no channels here!"
 `
-	mod, err := parser.Parse("nochan_test.c0", []byte(src))
+	mod, err := parser.Parse("nochan_test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	mod = desugar.DesugarModule(mod)
 
-	gen := codegen.NewGenerator("nochan_test.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("nochan_test.goop", config.DefaultConfig())
 	goSrc, err := gen.Generate(mod)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -530,7 +530,7 @@ let main () =
   let u = Chan.close ch in
   print_line "channel closed"
 `
-	mod, err := parser.Parse("chanbuild_test.c0", []byte(src))
+	mod, err := parser.Parse("chanbuild_test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -544,7 +544,7 @@ let main () =
 		t.Fatalf("typecheck failed")
 	}
 
-	gen := codegen.NewGenerator("chanbuild_test.c0", config.DefaultConfig())
+	gen := codegen.NewGenerator("chanbuild_test.goop", config.DefaultConfig())
 	gen.SetTypeMap(tm, vtm)
 	goSrc, err := gen.Generate(mod)
 	if err != nil {

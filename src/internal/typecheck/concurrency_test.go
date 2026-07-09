@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/desugar"
-	"c0.dev/compiler/internal/parser"
-	"c0.dev/compiler/internal/typecheck"
-	"c0.dev/compiler/internal/types"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/desugar"
+	"goop.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/typecheck"
+	"goop.dev/compiler/internal/types"
 )
 
 // TestChanElementTypeInfersInt verifies that Chan.make () used with a
@@ -21,7 +21,7 @@ let main () =
   let v = Chan.recv ch in
   print_line (int_to_string v)
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

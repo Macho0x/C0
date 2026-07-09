@@ -1,4 +1,4 @@
-// Package active tracks active pattern definitions for the C0 compiler.
+// Package active tracks active pattern definitions for the Goop compiler.
 //
 // Active patterns let users define custom match patterns as functions
 // returning an option type:
@@ -17,7 +17,7 @@
 package active
 
 import (
-	"c0.dev/compiler/internal/types"
+	"goop.dev/compiler/internal/types"
 )
 
 // Entry describes a registered active pattern.

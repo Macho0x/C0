@@ -1,4 +1,4 @@
-// Package codegen emits idiomatic Go source from a typed C0 AST.
+// Package codegen emits idiomatic Go source from a typed Goop AST.
 //
 // Lowering strategy (see docs/design/04-go-lowering.md):
 //   - ADTs → Go interface + one concrete struct per variant + constructors
@@ -21,22 +21,22 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"c0.dev/compiler/internal/active"
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/config"
-	"c0.dev/compiler/internal/modresolve"
-	"c0.dev/compiler/internal/prelude"
-	"c0.dev/compiler/internal/refine"
-	"c0.dev/compiler/internal/token"
-	"c0.dev/compiler/internal/typeinfo"
-	"c0.dev/compiler/internal/types"
+	"goop.dev/compiler/internal/active"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/modresolve"
+	"goop.dev/compiler/internal/prelude"
+	"goop.dev/compiler/internal/refine"
+	"goop.dev/compiler/internal/token"
+	"goop.dev/compiler/internal/typeinfo"
+	"goop.dev/compiler/internal/types"
 )
 
-// Generator emits Go source code for a C0 module.
+// Generator emits Go source code for a Goop module.
 type Generator struct {
 	buf     strings.Builder
 	indent  int
-	srcFile string // original C0 source file path
+	srcFile string // original Goop source file path
 
 	// source-map tracking
 	srcMap *SourceMap
@@ -44,7 +44,7 @@ type Generator struct {
 	goCol  int // current Go output column (1-based)
 
 	// module state
-	moduleName string // C0 module name
+	moduleName string // Goop module name
 	goPkg      string // Go package name
 	goFileName string // suggested output file name
 
@@ -55,21 +55,21 @@ type Generator struct {
 	usedOption     map[string]string        // Go type name → element Go type
 	usedResult     map[string][]string      // Go type name → [okGoType, errGoType]
 	usedTuple      map[string][]string      // Go type name → field Go type names
-	funcRetType    map[string]string        // C0 func name → Go return type (for ?)
-	funcParamCount map[string]int           // C0 func name → number of parameters
-	funcParamTypes map[string][]string      // C0 func name → Go types of parameters
+	funcRetType    map[string]string        // Goop func name → Go return type (for ?)
+	funcParamCount map[string]int           // Goop func name → number of parameters
+	funcParamTypes map[string][]string      // Goop func name → Go types of parameters
 
 	// inferred types from typechecker (for polymorphic codegen)
 	typeMap    typeinfo.TypeMap
 	varTypeMap typeinfo.VarTypeMap
 
 	// name mapping
-	c0ToGo map[string]string // C0 name → Go name
-	goToC0 map[string]string // Go name → C0 name (reverse)
+	goopToGo map[string]string // Goop name → Go name
+	goToGoop map[string]string // Go name → Goop name (reverse)
 
 	// module / import resolution
 	cfg             *config.Config    // project configuration
-	resolvedImports map[string]string // C0 module name → Go import path
+	resolvedImports map[string]string // Goop module name → Go import path
 	importPkgs      map[string]string // Go import path → Go package name
 	openExports     map[string]string // exported name from open → Go package name
 
@@ -78,8 +78,8 @@ type Generator struct {
 
 	// extern tracking
 	externImports  map[string]string   // Go import path → package name
-	externNames    map[string]string   // C0 name → Go qualified name (pkg.Name)
-	externRetTypes map[string]ast.Type // C0 extern val name → full function type
+	externNames    map[string]string   // Goop name → Go qualified name (pkg.Name)
+	externRetTypes map[string]ast.Type // Goop extern val name → full function type
 
 	// row-polymorphic function params: funcName → field names
 	rowParams    map[string][]string
@@ -128,8 +128,8 @@ func NewGenerator(srcFile string, cfg *config.Config) *Generator {
 		funcRetType:      make(map[string]string),
 		funcParamCount:   make(map[string]int),
 		funcParamTypes:   make(map[string][]string),
-		c0ToGo:           make(map[string]string),
-		goToC0:           make(map[string]string),
+		goopToGo:           make(map[string]string),
+		goToGoop:           make(map[string]string),
 		refinementParams: make(map[string][]refinedParam),
 	}
 }
@@ -221,28 +221,28 @@ func (g *Generator) internalTypeToGo(t types.Type) string {
 	}
 }
 
-// recordMapping records a C0→Go position mapping at the current Go output position.
+// recordMapping records a Goop→Go position mapping at the current Go output position.
 func (g *Generator) recordMapping(c0Line, c0Col int) {
 	if g.srcMap != nil {
 		g.srcMap.Add(c0Line, c0Col, g.goLine, g.goCol)
 	}
 }
 
-// Generate produces Go source code from a C0 module.
+// Generate produces Go source code from a Goop module.
 func (g *Generator) Generate(mod *ast.Module) (string, error) {
 	g.moduleName = mod.Name
 	g.goPkg = goPkgName(mod.Name)
 	g.goFileName = goFileName(mod.Name)
 
-	// Initialise source map (generated path is the Go file, source is the C0 file)
+	// Initialise source map (generated path is the Go file, source is the Goop file)
 	g.srcMap = NewSourceMap(g.srcFile, g.goFileName)
 
-	// Register C0 → Go name mappings
-	g.c0ToGo["int"] = "int"
-	g.c0ToGo["float"] = "float64"
-	g.c0ToGo["bool"] = "bool"
-	g.c0ToGo["string"] = "string"
-	g.c0ToGo["unit"] = "struct{}"
+	// Register Goop → Go name mappings
+	g.goopToGo["int"] = "int"
+	g.goopToGo["float"] = "float64"
+	g.goopToGo["bool"] = "bool"
+	g.goopToGo["string"] = "string"
+	g.goopToGo["unit"] = "struct{}"
 
 	// Pre-scan: collect type and function declarations
 	g.prescan(mod)
@@ -312,17 +312,17 @@ func (g *Generator) prescan(mod *ast.Module) {
 			case *ast.ADTTypeKind:
 				g.adts[d.Name] = d
 				goName := g.goName(d.Name)
-				g.c0ToGo[d.Name] = goName
+				g.goopToGo[d.Name] = goName
 			case *ast.RecordTypeKind:
 				g.records[d.Name] = d
 				goName := g.goName(d.Name)
-				g.c0ToGo[d.Name] = goName
+				g.goopToGo[d.Name] = goName
 			case *ast.OpaqueTypeKind:
 				// Opaque linear type — erased in Go output.
 				// Register the Go name so references resolve correctly.
 				g.opaqueTypes[d.Name] = d
 				goName := g.goName(d.Name)
-				g.c0ToGo[d.Name] = goName
+				g.goopToGo[d.Name] = goName
 			case *ast.AliasTypeKind:
 				// Aliases map to their underlying type
 			}
@@ -474,7 +474,7 @@ func (g *Generator) scanExprTypes(e ast.Expr) {
 // ---------------------------------------------------------------------------
 
 func (g *Generator) goName(c0Name string) string {
-	if mapped, ok := g.c0ToGo[c0Name]; ok {
+	if mapped, ok := g.goopToGo[c0Name]; ok {
 		return mapped
 	}
 	return c0Name
@@ -634,7 +634,7 @@ func (g *Generator) emitLine(line, col int) {
 	if g.srcFile != "" {
 		g.emitf("//line %s:%d:%d\n", g.srcFile, line, col)
 	}
-	// After a //line directive, the next Go line maps to the given C0 line.
+	// After a //line directive, the next Go line maps to the given Goop line.
 	// Record this remapping so the source map reflects it.
 	g.recordMapping(line, col)
 }
@@ -687,11 +687,11 @@ func (g *Generator) collectImports(mod *ast.Module) {
 		switch spec.Kind {
 		case ast.ImportGolang:
 			g.collectGolangImport(spec)
-		case ast.ImportC0:
+		case ast.ImportGoop:
 			if resolver == nil {
 				continue
 			}
-			resolved, err := resolver.ResolveC0Path(spec.Path)
+			resolved, err := resolver.ResolveGoopPath(spec.Path)
 			if err != nil {
 				continue
 			}
@@ -851,7 +851,7 @@ func findProjectRootFromFile(srcFile string) string {
 		return ""
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "c0.toml")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "goop.toml")); err == nil {
 			return dir
 		}
 		if _, err := os.Stat(filepath.Join(dir, "std")); err == nil {
@@ -865,14 +865,14 @@ func findProjectRootFromFile(srcFile string) string {
 	}
 }
 
-func localC0PathForImport(projectRoot, goImport string) string {
-	const prefix = "github.com/Macho0x/C0/"
+func localGoopPathForImport(projectRoot, goImport string) string {
+	const prefix = "github.com/Macho0x/Goop/"
 	if !strings.HasPrefix(goImport, prefix) {
 		return ""
 	}
 	rel := strings.TrimPrefix(goImport, prefix)
 	pkg := filepath.Base(rel)
-	return filepath.Join(projectRoot, filepath.FromSlash(rel), pkg+".c0")
+	return filepath.Join(projectRoot, filepath.FromSlash(rel), pkg+modresolve.SourceExt)
 }
 
 func (g *Generator) emitImports() {
@@ -1299,9 +1299,9 @@ func (g *Generator) emitLetDecl(d *ast.LetDecl) {
 		_ = funcName
 
 		// Record source mapping: we don't have the AST source location directly,
-		// so we use the current Go output position and approximate C0 line from
+		// so we use the current Go output position and approximate Goop line from
 		// the function name context.
-		g.recordMapping(g.goLine, 0) // approximate C0 line = current Go line
+		g.recordMapping(g.goLine, 0) // approximate Goop line = current Go line
 
 		// Filter out empty-named params (from `()` parsing quirk)
 		realParams := make([]ast.Param, 0, len(b.Params))
@@ -1995,7 +1995,7 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 		if paramCnt, ok := g.funcParamCount[funcName]; ok && paramCnt == 0 {
 			goto afterArgs
 		}
-		// For extern functions, strip unit arguments — C0's `unit` type maps
+		// For extern functions, strip unit arguments — Goop's `unit` type maps
 		// to zero Go parameters.
 		if _, isExtern := g.externNames[funcName]; isExtern {
 			var filtered []ast.Expr
@@ -3343,7 +3343,7 @@ func (g *Generator) emitChanHelpers() {
 	if !g.usedChan {
 		return
 	}
-	g.emitf("// C0 file-operations‑safe channel wrapper with close‑time tracking\n")
+	g.emitf("// Goop file-operations‑safe channel wrapper with close‑time tracking\n")
 	g.emitf("type C0Chan struct {\n")
 	g.indent++
 	g.emitf("ch     chan interface{}\n")
@@ -3389,7 +3389,7 @@ func (g *Generator) emitHTTPHelpers() {
 	if !g.usedHTTP {
 		return
 	}
-	g.emitf("// HTTP/JSON helpers for C0 prelude\n")
+	g.emitf("// HTTP/JSON helpers for Goop prelude\n")
 	g.emitf("func httpGetString(url string) string {\n")
 	g.indent++
 	g.emitf("client := &http.Client{Timeout: 15 * time.Second}\n")

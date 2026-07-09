@@ -1,8 +1,8 @@
-# C0 Type System
+# Goop Type System
 
 ## Design goals
 
-C0's type system aims to catch common errors at compile time while remaining implementable as a source-to-source compiler to Go. The priorities are:
+Goop's type system aims to catch common errors at compile time while remaining implementable as a source-to-source compiler to Go. The priorities are:
 
 1. Sound, global type inference (Hindley-Milner style).
 2. Null safety through explicit `option`.
@@ -14,7 +14,7 @@ C0's type system aims to catch common errors at compile time while remaining imp
 
 ### Primitive types
 
-| C0 type | Lowered Go type | Notes |
+| Goop type | Lowered Go type | Notes |
 |---|---|---|
 | `int` | `int` | Platform word size |
 | `int8`, `int16`, `int32`, `int64` | `int8`, `int16`, `int32`, `int64` | Signed fixed-width |
@@ -31,14 +31,14 @@ C0's type system aims to catch common errors at compile time while remaining imp
 
 Polymorphic functions use quoted type variables:
 
-```c0
+```goop
 let identity (x: 'a) : 'a = x
 let pair (a: 'a) (b: 'b) : 'a * 'b = (a, b)
 ```
 
 ### Tuples
 
-```c0
+```goop
 let p : int * string = (42, "hello")
 let (x, y) = p
 ```
@@ -49,7 +49,7 @@ Lowered to Go structs with positional fields when needed.
 
 ADTs are the primary abstraction for sums:
 
-```c0
+```goop
 type color = Red | Green | Blue
 
 type shape =
@@ -64,7 +64,7 @@ ADT values must be constructed with their constructor and deconstructed with `ma
 
 Records are product types with named fields. They are **closed by default**: a record value must have exactly the fields declared.
 
-```c0
+```goop
 type point = { x: float; y: float }
 
 let origin : point = { x = 0.0; y = 0.0 }
@@ -75,7 +75,7 @@ let moved = { origin with x = 1.0 }
 
 Functions may accept any record with at least a given set of fields:
 
-```c0
+```goop
 let print_name (r: { name: string | .. }) : unit =
   Console.print_line r.name
 ```
@@ -86,18 +86,18 @@ This is opt-in via the `| ..` annotation. Closed records lower to Go structs; op
 
 These are built-in generic ADTs:
 
-```c0
+```goop
 type 'a option = None | Some of 'a
 type ('ok, 'err) result = Ok of 'ok | Error of 'err
 ```
 
-There is no `null` in C0. A value of type `string` is always a string. Absence is represented as `string option`.
+There is no `null` in Goop. A value of type `string` is always a string. Absence is represented as `string option`.
 
 ## Pattern matching
 
 `match` is exhaustive. The compiler rejects matches that omit variants:
 
-```c0
+```goop
 let describe (c: color) : string =
   match c with
   | Red -> "red"
@@ -111,7 +111,7 @@ Patterns may be nested, include guards, and use active patterns.
 
 Active patterns let users define new patterns as functions:
 
-```c0
+```goop
 let (|Positive|_|) (n: int) : int option =
   if n > 0 then Some n else None
 
@@ -122,9 +122,9 @@ match x with
 
 ## Generics
 
-C0 supports parametric polymorphism but **not** higher-kinded types. This matches Go's generic capabilities and keeps lowering straightforward.
+Goop supports parametric polymorphism but **not** higher-kinded types. This matches Go's generic capabilities and keeps lowering straightforward.
 
-```c0
+```goop
 let map (f: 'a -> 'b) (xs: 'a list) : 'b list =
   match xs with
   | [] -> []
@@ -133,13 +133,13 @@ let map (f: 'a -> 'b) (xs: 'a list) : 'b list =
 
 ## Effect rows
 
-C0 has row-polymorphic effect tracking in the type system. Effect rows are compile-time only (erased in Go output) and track which side effects a function may perform.
+Goop has row-polymorphic effect tracking in the type system. Effect rows are compile-time only (erased in Go output) and track which side effects a function may perform.
 
 ### Syntax
 
 Effect rows appear after a function return type using `with`:
 
-```c0
+```goop
 (* Explicit IO effect *)
 let readFile (path: string) : string with { io } = ...
 
@@ -174,15 +174,15 @@ Effect rows are completely erased in the Go output. They impose zero runtime cos
 
 Extern Go functions default to unknown effects unless the user declares an explicit `with` clause.
 
-See also: `docs/examples/effects.c0`, `docs/design/08-deferred-features-analysis.md`.
+See also: `docs/examples/effects.goop`, `docs/design/08-deferred-features-analysis.md`.
 
 ## Refinement contracts
 
-C0 supports lightweight runtime refinement contracts via `where` clauses on types. These are runtime assertions (no SMT solver) that `panic` on violation.
+Goop supports lightweight runtime refinement contracts via `where` clauses on types. These are runtime assertions (no SMT solver) that `panic` on violation.
 
 ### Syntax
 
-```c0
+```goop
 (* Parameter refinement: `it` refers to the parameter value *)
 let safeDiv (a: int) (b: int where b <> 0) : int = a / b
 
@@ -202,15 +202,15 @@ let clamp (x: int) (lo: int) (hi: int where hi >= lo) : int where result >= lo &
 
 There is **no SMT solver** and no compile-time proof obligation. Refinements are checked only at runtime. This is an intentional design choice (see `docs/design/08-deferred-features-analysis.md` for the full analysis of why SMT-based refinement types are deferred).
 
-See also: `docs/examples/contracts.c0`.
+See also: `docs/examples/contracts.goop`.
 
 ## Linear resource types
 
-C0 supports opt-in modal linearity. A type declared with `: 1` is a linear resource type that must be discharged (used/handed-off) on every control-flow path.
+Goop supports opt-in modal linearity. A type declared with `: 1` is a linear resource type that must be discharged (used/handed-off) on every control-flow path.
 
 ### Syntax
 
-```c0
+```goop
 (* Declare a linear resource type *)
 type handle : 1
 ```
@@ -230,7 +230,7 @@ The conservative v1 rule is: **first use = hand-off = discharge**. When a linear
 
 Linear types are erased in Go output. They lower to `interface{}` or the extern-declared Go type. The linearity discipline is enforced purely at compile time.
 
-See also: `docs/examples/linear.c0`, `docs/design/08-deferred-features-analysis.md`.
+See also: `docs/examples/linear.goop`, `docs/design/08-deferred-features-analysis.md`.
 
 ## What is intentionally absent
 
@@ -245,7 +245,7 @@ See also: `docs/examples/linear.c0`, `docs/design/08-deferred-features-analysis.
 
 ## Type inference
 
-C0 uses Hindley-Milner style inference with let-polymorphism. Top-level declarations may omit types; local bindings are generalized at `let`. Function parameters generally require annotations at module boundaries and for exported functions.
+Goop uses Hindley-Milner style inference with let-polymorphism. Top-level declarations may omit types; local bindings are generalized at `let`. Function parameters generally require annotations at module boundaries and for exported functions.
 
 The bootstrap compiler uses a layered approach:
 

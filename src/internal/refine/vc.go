@@ -3,9 +3,9 @@ package refine
 import (
 	"fmt"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/token"
-	"c0.dev/compiler/internal/typeinfo"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/token"
+	"goop.dev/compiler/internal/typeinfo"
 )
 
 // CheckRefinements walks a module's function bodies and checks refinement

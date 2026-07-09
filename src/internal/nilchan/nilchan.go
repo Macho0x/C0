@@ -1,4 +1,4 @@
-// Package nilchan implements full flow-sensitive nil-channel detection for C0.
+// Package nilchan implements full flow-sensitive nil-channel detection for Goop.
 //
 // Reports NIL001 when a channel may be used before it is known to be non-nil.
 package nilchan
@@ -6,8 +6,8 @@ package nilchan
 import (
 	"fmt"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/token"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/token"
 )
 
 // Error is a nil-channel safety violation.

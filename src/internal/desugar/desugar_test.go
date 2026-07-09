@@ -3,16 +3,16 @@ package desugar_test
 import (
 	"testing"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/desugar"
-	"c0.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/desugar"
+	"goop.dev/compiler/internal/parser"
 )
 
 func parseExpr(t *testing.T, src string) ast.Expr {
 	t.Helper()
 	// Wrap in a minimal module so the parser has context
 	fullSrc := "module Test\nlet x = " + src
-	mod, err := parser.Parse("test.c0", []byte(fullSrc))
+	mod, err := parser.Parse("test.goop", []byte(fullSrc))
 	if err != nil {
 		t.Fatalf("parse %q: %v", src, err)
 	}
@@ -74,7 +74,7 @@ type status = Ok | Err of string
 let handle (s: status) : string =
   guard Err msg = s else "no error"
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestDesugarPreservesOtherExprs(t *testing.T) {
 	src := `module Test
 let x = 1 + 2
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -107,7 +107,7 @@ let x = 1 + 2
 }
 
 func TestMacrosExampleParses(t *testing.T) {
-	// Verify the macros.c0 example parses without errors
+	// Verify the macros.goop example parses without errors
 	src := `module MacrosDemo
 
 type status = Ok | Err of string
@@ -121,9 +121,9 @@ let message (s: status) : string =
 	let handle (s: status) : string =
 		guard Err msg = s else "no error"
 `
-	mod, err := parser.Parse("macros.c0", []byte(src))
+	mod, err := parser.Parse("macros.goop", []byte(src))
 	if err != nil {
-		t.Fatalf("parse macros.c0: %v", err)
+		t.Fatalf("parse macros.goop: %v", err)
 	}
 	if mod.Name != "MacrosDemo" {
 		t.Errorf("expected MacrosDemo, got %s", mod.Name)

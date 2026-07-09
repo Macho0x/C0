@@ -27,30 +27,30 @@ jobs:
       - name: Build Linux (amd64)
         run: |
           cd src
-          go build -o c0-linux-amd64 -ldflags="-s -w" ./cmd/c0
+          go build -o goop-linux-amd64 -ldflags="-s -w" ./cmd/goop
 
       - name: Build macOS (amd64)
         run: |
           cd src
-          GOOS=darwin GOARCH=amd64 go build -o c0-darwin-amd64 -ldflags="-s -w" ./cmd/c0
+          GOOS=darwin GOARCH=amd64 go build -o goop-darwin-amd64 -ldflags="-s -w" ./cmd/goop
 
       - name: Build macOS (arm64)
         run: |
           cd src
-          GOOS=darwin GOARCH=arm64 go build -o c0-darwin-arm64 -ldflags="-s -w" ./cmd/c0
+          GOOS=darwin GOARCH=arm64 go build -o goop-darwin-arm64 -ldflags="-s -w" ./cmd/goop
 
       - name: Build Windows (amd64)
         run: |
           cd src
-          GOOS=windows GOARCH=amd64 go build -o c0-windows-amd64.exe -ldflags="-s -w" ./cmd/c0
+          GOOS=windows GOARCH=amd64 go build -o goop-windows-amd64.exe -ldflags="-s -w" ./cmd/goop
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: C0 ${{ steps.version.outputs.version }}
+          name: Goop ${{ steps.version.outputs.version }}
           body_path: VERSION
           files: |
-            src/c0-linux-amd64
-            src/c0-darwin-amd64
-            src/c0-darwin-arm64
-            src/c0-windows-amd64.exe
+            src/goop-linux-amd64
+            src/goop-darwin-amd64
+            src/goop-darwin-arm64
+            src/goop-windows-amd64.exe

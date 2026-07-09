@@ -22,8 +22,8 @@
 package desugar
 
 import (
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/token"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/token"
 )
 
 // DesugarModule transforms all match-macro expressions in a module
@@ -46,7 +46,7 @@ func desugarDecl(d ast.TopDecl) {
 	case *ast.ExternDecl:
 		// Extern declarations contain types, not expressions
 	case *ast.GolangEmbedDecl:
-		// @golang embed blocks contain raw Go, not C0 expressions
+		// @golang embed blocks contain raw Go, not Goop expressions
 	}
 }
 

@@ -1,8 +1,8 @@
-# C0 Semantics
+# Goop Semantics
 
 ## Scoping
 
-C0 uses lexical scoping. A `let` binding introduces a name in the body following it (or in the rest of the module for top-level bindings). Modules provide a namespace boundary. `open` imports exported names unqualified.
+Goop uses lexical scoping. A `let` binding introduces a name in the body following it (or in the rest of the module for top-level bindings). Modules provide a namespace boundary. `open` imports exported names unqualified.
 
 ## Evaluation order
 
@@ -12,7 +12,7 @@ Function arguments are evaluated left-to-right before the function is applied. R
 
 By default, all bindings and record fields are immutable. Mutation is explicit via `mutable` and the `<-` assignment operator. Mutable fields may be updated with `<-` as well.
 
-```c0
+```goop
 let mutable x = 0
 x <- x + 1
 
@@ -39,7 +39,7 @@ The compiler guarantees exhaustiveness: every possible value of the scrutinee ty
 
 Recursive bindings must be marked with `rec`:
 
-```c0
+```goop
 let rec length (xs: 'a list) : int =
   match xs with
   | [] -> 0
@@ -48,7 +48,7 @@ let rec length (xs: 'a list) : int =
 
 Mutually recursive bindings are joined with `and`:
 
-```c0
+```goop
 let rec even (n: int) : bool =
   if n = 0 then true else odd (n - 1)
 and odd (n: int) : bool =
@@ -61,17 +61,17 @@ Structural equality is provided by the `=` and `<>` operators for types that sup
 
 ## Laziness
 
-C0 is call-by-value. There is no built-in lazy evaluation in v1.
+Goop is call-by-value. There is no built-in lazy evaluation in v1.
 
 ## Effects
 
-C0 has row-polymorphic effect tracking in the type system. Effect rows are compile-time only and erased in Go output.
+Goop has row-polymorphic effect tracking in the type system. Effect rows are compile-time only and erased in Go output.
 
 ### Effect row syntax
 
 Functions may declare their effects with a `with` clause after the return type:
 
-```c0
+```goop
 let f (x: int) : int with { io } = ...
 (* f may perform IO *)
 

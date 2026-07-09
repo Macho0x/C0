@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"c0.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/config"
 )
 
 func TestGetUsage(t *testing.T) {
@@ -17,7 +17,7 @@ func TestGetUsage(t *testing.T) {
 
 func TestWriteTomlDependencies(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "c0.toml")
+	path := filepath.Join(dir, "goop.toml")
 	cfg := config.DefaultConfig()
 	cfg.Dependencies = map[string]string{"github.com/acme/lib": "v1.0.0"}
 	if err := writeTomlDependencies(path, cfg); err != nil {

@@ -28,8 +28,8 @@ jobs:
         run: go test ./...
 
       - name: Build
-        run: go build -o /tmp/c0 ./cmd/c0
+        run: go build -o /tmp/goop ./cmd/goop
 
       - name: End-to-end tests
         run: |
-          /tmp/c0 test ../tests/
+          /tmp/goop test ../tests/

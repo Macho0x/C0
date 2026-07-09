@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"c0.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/config"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -19,8 +19,8 @@ func TestDefaultConfig(t *testing.T) {
 func TestDefaultResolution(t *testing.T) {
 	cfg := config.DefaultConfig()
 	goPath, goPkg := cfg.ResolveImport("std.io")
-	if goPath != "github.com/Macho0x/C0/std/io" {
-		t.Errorf("expected github.com/Macho0x/C0/std/io, got %s", goPath)
+	if goPath != "github.com/Macho0x/Goop/std/io" {
+		t.Errorf("expected github.com/Macho0x/Goop/std/io, got %s", goPath)
 	}
 	if goPkg != "io" {
 		t.Errorf("expected package io, got %s", goPkg)
@@ -56,7 +56,7 @@ func TestProjectModuleResolution(t *testing.T) {
 func TestLoadConfigFile(t *testing.T) {
 	// Create a temporary config file
 	tmpDir := t.TempDir()
-	cfgPath := filepath.Join(tmpDir, "c0.toml")
+	cfgPath := filepath.Join(tmpDir, "goop.toml")
 	content := `
 module_root = "github.com/test/demo"
 
@@ -102,7 +102,7 @@ module_root = "github.com/test/demo"
 }
 
 func TestMissingConfigFile(t *testing.T) {
-	cfg, err := config.LoadConfig("/nonexistent/c0.toml")
+	cfg, err := config.LoadConfig("/nonexistent/goop.toml")
 	if err != nil {
 		t.Fatalf("should not error on missing file: %v", err)
 	}
@@ -111,21 +111,21 @@ func TestMissingConfigFile(t *testing.T) {
 	}
 	// Default resolution should work
 	goPath, _ := cfg.ResolveImport("std.io")
-	if goPath != "github.com/Macho0x/C0/std/io" {
+	if goPath != "github.com/Macho0x/Goop/std/io" {
 		t.Errorf("expected default path, got %s", goPath)
 	}
 }
 
 func TestImportFromGeneratedCode(t *testing.T) {
-	// Create a C0 file with open statements
+	// Create a Goop file with open statements
 	c0Content := `module TestMod
 
-import c0 . "std.io"
+import goop . "std.io"
 
 let greet () =
   print_line "hi"
 `
-	srcFile := filepath.Join(t.TempDir(), "test.c0")
+	srcFile := filepath.Join(t.TempDir(), "test.goop")
 	os.WriteFile(srcFile, []byte(c0Content), 0644)
 
 	// This test just verifies that the config resolution works for
@@ -139,18 +139,18 @@ let greet () =
 }
 
 func TestC0TomlAtProjectRoot(t *testing.T) {
-	// Verify the project root c0.toml exists and can be loaded
+	// Verify the project root goop.toml exists and can be loaded
 	paths := []string{
-		"../../../../c0.toml", // from src/internal/config/
+		"../../../../goop.toml", // from src/internal/config/
 	}
 	found := false
 	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil {
 			cfg, err := config.LoadConfig(p)
 			if err != nil {
-				t.Fatalf("load project c0.toml: %v", err)
+				t.Fatalf("load project goop.toml: %v", err)
 			}
-			if cfg.ModuleRoot != "github.com/Macho0x/C0" {
+			if cfg.ModuleRoot != "github.com/Macho0x/Goop" {
 				t.Errorf("unexpected module_root: %s", cfg.ModuleRoot)
 			}
 			found = true
@@ -158,7 +158,7 @@ func TestC0TomlAtProjectRoot(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Skip("c0.toml not found from test directory")
+		t.Skip("goop.toml not found from test directory")
 	}
 	_ = strings.Join
 }

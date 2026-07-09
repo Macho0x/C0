@@ -1,7 +1,7 @@
 {
-  "name": "c0",
-  "displayName": "C0 Language Support",
-  "description": "Syntax highlighting and LSP support for C0, a statically typed language that compiles to Go",
+  "name": "goop",
+  "displayName": "Goop Language Support",
+  "description": "Syntax highlighting and LSP support for Goop, a statically typed language that compiles to Go",
   "version": "0.1.0",
   "engines": {
     "vscode": "^1.88.0"
@@ -10,28 +10,28 @@
     "Programming Languages"
   ],
   "activationEvents": [
-    "onLanguage:c0"
+    "onLanguage:goop"
   ],
   "main": "./extension.js",
   "contributes": {
     "languages": [
       {
-        "id": "c0",
+        "id": "goop",
         "aliases": [
-          "C0",
-          "c0"
+          "Goop",
+          "goop"
         ],
         "extensions": [
-          ".c0"
+          ".goop"
         ],
         "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "c0",
-        "scope": "source.c0",
-        "path": "./syntaxes/c0.tmLanguage.json"
+        "language": "goop",
+        "scope": "source.goop",
+        "path": "./syntaxes/goop.tmLanguage.json"
       }
     ]
   },

@@ -1,30 +1,30 @@
-// Package ast defines the Abstract Syntax Tree types for C0.
+// Package ast defines the Abstract Syntax Tree types for Goop.
 package ast
 
 import (
 	"fmt"
 	"strings"
 
-	"c0.dev/compiler/internal/token"
+	"goop.dev/compiler/internal/token"
 )
 
 // ---------------------------------------------------------------------------
 // Top-level nodes
 // ---------------------------------------------------------------------------
 
-// Module represents a complete C0 source file.
+// Module represents a complete Goop source file.
 type Module struct {
 	Name    string       // module path, e.g. "Trading.OrderBook"
 	Imports []ImportSpec // import directives (golang and c0)
 	Decls   []TopDecl    // top-level declarations
 }
 
-// ImportKind distinguishes Go package imports from C0 module imports.
+// ImportKind distinguishes Go package imports from Goop module imports.
 type ImportKind int
 
 const (
 	ImportGolang ImportKind = iota // import golang "path"
-	ImportC0                       // import c0 "path"
+	ImportGoop                       // import goop "path"
 )
 
 // ImportSpec is one arm of an import declaration.

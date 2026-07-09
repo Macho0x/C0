@@ -1,4 +1,4 @@
-// Package typecheck implements Hindley-Milner style type inference for C0.
+// Package typecheck implements Hindley-Milner style type inference for Goop.
 //
 // Design decisions:
 //   - We use a mutable substitution map updated in-place during unification.
@@ -20,16 +20,16 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"c0.dev/compiler/internal/active"
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/config"
-	"c0.dev/compiler/internal/exhaustive"
-	"c0.dev/compiler/internal/gosig"
-	"c0.dev/compiler/internal/modresolve"
-	"c0.dev/compiler/internal/prelude"
-	"c0.dev/compiler/internal/token"
-	"c0.dev/compiler/internal/typeinfo"
-	"c0.dev/compiler/internal/types"
+	"goop.dev/compiler/internal/active"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/exhaustive"
+	"goop.dev/compiler/internal/gosig"
+	"goop.dev/compiler/internal/modresolve"
+	"goop.dev/compiler/internal/prelude"
+	"goop.dev/compiler/internal/token"
+	"goop.dev/compiler/internal/typeinfo"
+	"goop.dev/compiler/internal/types"
 )
 
 // ---------------------------------------------------------------------------
@@ -151,7 +151,7 @@ func CheckWithTypes(mod *ast.Module) (typeinfo.TypeMap, typeinfo.VarTypeMap, []e
 	return CheckWithTypesForFile(mod, "", nil, nil)
 }
 
-// CheckWithTypesForFile type-checks mod, resolving import c0 dependencies from disk when srcFile is set.
+// CheckWithTypesForFile type-checks mod, resolving import goop dependencies from disk when srcFile is set.
 func CheckWithTypesForFile(mod *ast.Module, srcFile string, cfg *config.Config, lock *config.Lockfile) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
 	var deps map[string]*ast.Module
 	var resolver *modresolve.Resolver
@@ -1476,20 +1476,20 @@ func (c *Checker) unifyAt(loc token.SourceLoc, t1, t2 types.Type) {
 // ---------------------------------------------------------------------------
 
 // refineExternType attempts to look up the real Go function signature for an
-// extern binding and convert it to a more precise C0 type. If the lookup
+// extern binding and convert it to a more precise Goop type. If the lookup
 // fails or the conversion produces an unsatisfactory type, it returns nil
-// and the caller keeps the declared C0 type.
+// and the caller keeps the declared Goop type.
 func (c *Checker) refineExternType(importPath, funcName string, declared types.Type) types.Type {
 	if importPath == "" {
 		return nil // same-package externs have no Go package to load
 	}
 	sig, err := gosig.LookupFunc(importPath, funcName)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "c0: gosig fallback for %s.%s: %v\n", importPath, funcName, err)
+		fmt.Fprintf(os.Stderr, "goop: gosig fallback for %s.%s: %v\n", importPath, funcName, err)
 		return nil
 	}
 
-	// Build a curried C0 function type from the Go parameters and results.
+	// Build a curried Goop function type from the Go parameters and results.
 	// Go result types become the final return type; if there are multiple
 	// results we use unit (tuples not yet supported in externs).
 	var resultType types.Type
@@ -1499,7 +1499,7 @@ func (c *Checker) refineExternType(importPath, funcName string, declared types.T
 	case 1:
 		rt := goTypeToC0Type(sig.Results[0].Type)
 		if rt == nil {
-			fmt.Fprintf(os.Stderr, "c0: gosig fallback for %s.%s: cannot map Go result type %q to C0\n",
+			fmt.Fprintf(os.Stderr, "goop: gosig fallback for %s.%s: cannot map Go result type %q to Goop\n",
 				importPath, funcName, sig.Results[0].Type)
 			return nil
 		}
@@ -1509,7 +1509,7 @@ func (c *Checker) refineExternType(importPath, funcName string, declared types.T
 		for i, r := range sig.Results {
 			rt := goTypeToC0Type(r.Type)
 			if rt == nil {
-				fmt.Fprintf(os.Stderr, "c0: gosig fallback for %s.%s: cannot map Go result type %q to C0\n",
+				fmt.Fprintf(os.Stderr, "goop: gosig fallback for %s.%s: cannot map Go result type %q to Goop\n",
 					importPath, funcName, r.Type)
 				return nil
 			}
@@ -1517,7 +1517,7 @@ func (c *Checker) refineExternType(importPath, funcName string, declared types.T
 		}
 		resultType = &types.TTuple{Elems: elems}
 	default:
-		fmt.Fprintf(os.Stderr, "c0: gosig fallback for %s.%s: %d result values (not supported)\n",
+		fmt.Fprintf(os.Stderr, "goop: gosig fallback for %s.%s: %d result values (not supported)\n",
 			importPath, funcName, len(sig.Results))
 		return nil
 	}
@@ -1527,8 +1527,8 @@ func (c *Checker) refineExternType(importPath, funcName string, declared types.T
 	declaredResult := extractResultType(declared)
 	if declaredResult != nil && resultType != nil {
 		// If declared result is more specific than what gosig can infer,
-		// keep the declared one.  For example, if C0 says `string` but
-		// gosig maps the Go type to `interface{}`, keep C0's `string`.
+		// keep the declared one.  For example, if Goop says `string` but
+		// gosig maps the Go type to `interface{}`, keep Goop's `string`.
 		if isMoreSpecific(declaredResult, resultType) {
 			resultType = declaredResult
 		}
@@ -1539,7 +1539,7 @@ func (c *Checker) refineExternType(importPath, funcName string, declared types.T
 	for i := len(sig.Params) - 1; i >= 0; i-- {
 		c0ParamType := goTypeToC0Type(sig.Params[i].Type)
 		if c0ParamType == nil {
-			fmt.Fprintf(os.Stderr, "c0: gosig fallback for %s.%s: cannot map Go type %q to C0\n",
+			fmt.Fprintf(os.Stderr, "goop: gosig fallback for %s.%s: cannot map Go type %q to Goop\n",
 				importPath, funcName, sig.Params[i].Type)
 			return nil
 		}
@@ -1580,7 +1580,7 @@ func isMoreSpecific(a, b types.Type) bool {
 }
 
 // goTypeToC0Type converts a Go type string (as returned by go/types) to a
-// C0 internal type. Returns nil if the type cannot be mapped.
+// Goop internal type. Returns nil if the type cannot be mapped.
 //
 // Handles: int, int8..int64, uint..uint64, float64→float, float32, bool,
 // string, rune, []byte→bytes, []T→T list, func(A,B)C→A→B→C, chan T→T chan.
@@ -1649,7 +1649,7 @@ func goTypeToC0Type(goType string) types.Type {
 }
 
 // parseGoFuncType parses a Go func type string like "func(int, string) bool"
-// and returns a curried C0 function type: int -> string -> bool.
+// and returns a curried Goop function type: int -> string -> bool.
 func parseGoFuncType(s string) types.Type {
 	// Expect: "func(...) result"
 	s = strings.TrimPrefix(s, "func")
@@ -1686,7 +1686,7 @@ func parseGoFuncType(s string) types.Type {
 	if rest != "" {
 		resultType = goTypeToC0Type(rest)
 	} else {
-		// No return value → unit in C0
+		// No return value → unit in Goop
 		resultType = types.Unit
 	}
 	if resultType == nil {
@@ -1784,12 +1784,12 @@ func (c *Checker) bindImportSpecs(imports []ast.ImportSpec, deps map[string]*ast
 			if len(spec.Vals) > 0 {
 				c.bindExternVals(spec.Path, spec.Vals)
 			}
-		case ast.ImportC0:
+		case ast.ImportGoop:
 			if resolver == nil {
 				c.errorf("cannot resolve c0 import %q without source file context", spec.Path)
 				continue
 			}
-			resolved, err := resolver.ResolveC0Path(spec.Path)
+			resolved, err := resolver.ResolveGoopPath(spec.Path)
 			if err != nil {
 				c.errorf("%v", err)
 				continue

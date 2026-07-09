@@ -46,9 +46,9 @@ func TestLookupFuncStringsHasPrefix(t *testing.T) {
 	}
 }
 
-// TestGoTypeToC0TypeMapping tests the Go-type→C0-type conversion in
+// TestGoTypeToGoopTypeMapping tests the Go-type→Goop-type conversion in
 // isolation (unit test, no network needed).
-func TestGoTypeToC0TypeMapping(t *testing.T) {
+func TestGoTypeToGoopTypeMapping(t *testing.T) {
 	// This tests the conversion functions in the typecheck package, but
 	// those functions are unexported. We test a simplified version here
 	// that exercises the same logic used by the gosig integration.

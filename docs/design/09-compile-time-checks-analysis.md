@@ -1,6 +1,6 @@
-# Analysis: Compile-Time Safety Checks in C0
+# Analysis: Compile-Time Safety Checks in Goop
 
-This document analyzes four compile-time safety features requested for C0: SMT-based refinement checking, data race detection, deadlock detection, and channel misuse detection. Each section covers feasibility, cost, Go-lowering impact, comparison to other languages, and a verdict. The analysis assumes C0's hard constraint: everything must lower to idiomatic Go.
+This document analyzes four compile-time safety features requested for Goop: SMT-based refinement checking, data race detection, deadlock detection, and channel misuse detection. Each section covers feasibility, cost, Go-lowering impact, comparison to other languages, and a verdict. The analysis assumes Goop's hard constraint: everything must lower to idiomatic Go.
 
 ---
 
@@ -8,21 +8,21 @@ This document analyzes four compile-time safety features requested for C0: SMT-b
 
 ### 1.1 Current state
 
-C0 already has runtime refinement contracts (`where` clauses on types) that lower to `panic` guards. The entire infrastructure — AST nodes (`RefinementType`), parser support, codegen lowering — is implemented and tested (`contracts.c0`, `codegen.go` lines 2766-2821). There is **no SMT solver** and no compile-time proof obligation. All checks happen at runtime.
+Goop already has runtime refinement contracts (`where` clauses on types) that lower to `panic` guards. The entire infrastructure — AST nodes (`RefinementType`), parser support, codegen lowering — is implemented and tested (`contracts.goop`, `codegen.go` lines 2766-2821). There is **no SMT solver** and no compile-time proof obligation. All checks happen at runtime.
 
 ### 1.2 What SMT-based compile-time checking would add
 
 The LiquidHaskell model works in three phases:
 
-1. **Run standard HM inference** — get base types (`int`, `float`, etc.). C0 already does this.
+1. **Run standard HM inference** — get base types (`int`, `float`, etc.). Goop already does this.
 2. **Generate verification conditions (VCs)** — for each function body containing refinement-annotated parameters/returns, produce logical formulas encoding that the refinements hold at each call site.
 3. **Discharge VCs with an SMT solver** — send formulas to Z3/CVC5. If all VCs discharge, the function is safe. If not, report a counterexample.
 
-The key insight: this is a **separate pass after type inference**. It does not affect HM unification. C0's architecture (`typecheck` → `codegen`) supports adding a post-inference analysis pass cleanly.
+The key insight: this is a **separate pass after type inference**. It does not affect HM unification. Goop's architecture (`typecheck` → `codegen`) supports adding a post-inference analysis pass cleanly.
 
 ### 1.3 How it works concretely
 
-```c0
+```goop
 let safeDiv (a: int) (b: int where b <> 0) : int = a / b
 
 let compute (x: int) (y: int) : int =
@@ -42,7 +42,7 @@ The VC generation pass would:
 
 **Zero.** Refinements are already erased in Go output (see `codegen.go` line 569-571: `case *ast.RefinementType: return g.typeToGo(t.Inner)`). The only change: if a VC is **proven** at compile time, the codegen can **skip emitting a runtime panic guard**. Currently, every `where` clause emits a check unconditionally. With SMT, proven-safe call sites would omit the check, reducing runtime overhead.
 
-However, the compiler must still emit runtime guards at the C0→Go boundary (for Go functions calling C0 functions). A refinement like `where b <> 0` is not enforced by Go's type system, so a Go caller passing `-1` would bypass the compile-time proof. The compiler should emit runtime guards on all **exported** functions regardless of internal proofs — or accept this unsoundness at the FFI boundary as a documented limitation.
+However, the compiler must still emit runtime guards at the Goop→Go boundary (for Go functions calling Goop functions). A refinement like `where b <> 0` is not enforced by Go's type system, so a Go caller passing `-1` would bypass the compile-time proof. The compiler should emit runtime guards on all **exported** functions regardless of internal proofs — or accept this unsoundness at the FFI boundary as a documented limitation.
 
 ### 1.5 Cost analysis
 
@@ -53,32 +53,32 @@ However, the compiler must still emit runtime guards at the C0→Go boundary (fo
 | **SMT solver interface** | ~200-300 lines. Translate internal VC representation to SMT-LIB text, invoke Z3, parse response. |
 | **Error messages** | **This is the hard part.** Z3 returns a counterexample model (`b = -1` at line 42). Mapping that back to a user-friendly error with source locations is non-trivial. LiquidHaskell and Dafny have invested years in error message quality. |
 | **Compile-time overhead** | Proportional to the number of refinement-annotated functions. In most codebases, <10% of functions would carry refinements. Each annotated function generates 1-5 VCs depending on call count. |
-| **Annotation burden** | Functions without refinement annotations get plain HM types — zero overhead. Users annotate only the functions where they want compile-time proofs. This matches C0's incremental adoption philosophy. |
+| **Annotation burden** | Functions without refinement annotations get plain HM types — zero overhead. Users annotate only the functions where they want compile-time proofs. This matches Goop's incremental adoption philosophy. |
 
 ### 1.6 Gradual adoption path
 
-C0 could adopt refinement checking gradually, without committing to full SMT from day one:
+Goop could adopt refinement checking gradually, without committing to full SMT from day one:
 
 1. **Simple arithmetic refinements** (`x > 0`, `x == len`, `x >= y`) — check with a built-in constraint solver operating on integer linear arithmetic. This covers 80% of practical refinements without an external SMT dependency. A simple interval analysis or abstract interpretation passes suffices.
 
-2. **SMT solver as opt-in** — configure `c0.toml` with `[check] smt = true` to enable Z3-backed checking. Without it, all refinements are runtime assertions.
+2. **SMT solver as opt-in** — configure `goop.toml` with `[check] smt = true` to enable Z3-backed checking. Without it, all refinements are runtime assertions.
 
 3. **Hybrid mode** — the compiler proves what it can with the built-in solver; everything else falls back to runtime checks. This is transparent to the user.
 
-This gradual path means C0 ships compile-time refinement checking for simple cases (no external dependency) while leaving the door open for full SMT later.
+This gradual path means Goop ships compile-time refinement checking for simple cases (no external dependency) while leaving the door open for full SMT later.
 
 ### 1.7 Comparison to other languages
 
-| Language | Approach | C0 can borrow? |
+| Language | Approach | Goop can borrow? |
 |---|---|---|
 | **LiquidHaskell** | Refinement types on HM-inferred Haskell; Z3-backed VC generation; erased at runtime | The model to follow. Post-inference pass, same architecture. |
 | **F\*** | Full dependent types + refinements; SMT + interactive proofs | Too heavy. F* requires tactics and a dedicated IDE. |
 | **Dafny** | Imperative language with pre/post contracts; Boogie/Z3 | Error message quality lessons; Boogie is an intermediate verification language worth studying. |
 | **Whiley** | Flow typing + verifier; compiles with embedded runtime checks | Interesting hybrid model (prove what you can, check the rest). |
 | **Rust** | No refinement types. Const generics (`[T; N]`) are a limited form. | Const generics are a practical alternative for array length checks. |
-| **Swift** | No refinement types. Result builders and `precondition`/`assert` only. | Runtime-only model — like C0's current state. |
+| **Swift** | No refinement types. Result builders and `precondition`/`assert` only. | Runtime-only model — like Goop's current state. |
 
-### 1.8 Single biggest obstacle for C0
+### 1.8 Single biggest obstacle for Goop
 
 **Error message quality.** An SMT solver produces counterexamples in the form of variable assignments. Translating `(define-fun b () Int (- 1))` into "at line 42: cannot prove `b <> 0`; counterexample: `b = -1`" requires a source-level model of which solver variables correspond to which program variables. This is a multi-year effort to get right. Without good errors, SMT-based refinement checking is worse than runtime assertions (which at least give a stack trace pointing to the exact line).
 
@@ -94,26 +94,26 @@ This gradual path means C0 ships compile-time refinement checking for simple cas
 
 ### 2.1 Current state
 
-C0 exposes Go's goroutines via `go` expressions, channels via `chan` types, and multiplexing via `select`. The prelude provides `Chan.make`, `Chan.send`, `Chan.recv`. There is **no concurrency safety analysis**. A C0 program can freely share mutable state between goroutines (e.g., `go (fun () -> counter <- counter + 1)`) without any compiler warning, and the resulting data race will manifest as undefined behavior in the lowered Go.
+Goop exposes Go's goroutines via `go` expressions, channels via `chan` types, and multiplexing via `select`. The prelude provides `Chan.make`, `Chan.send`, `Chan.recv`. There is **no concurrency safety analysis**. A Goop program can freely share mutable state between goroutines (e.g., `go (fun () -> counter <- counter + 1)`) without any compiler warning, and the resulting data race will manifest as undefined behavior in the lowered Go.
 
-### 2.2 What Rust does (and why C0 can't copy it)
+### 2.2 What Rust does (and why Goop can't copy it)
 
 Rust prevents data races with its borrow checker: at any point, you can have either one mutable reference OR many shared references to a value. This is enforced through ownership, lifetimes, and the `&mut`/`&` distinction. The borrow checker is a whole-program analysis deeply integrated into the type system.
 
-C0 explicitly rejected this (see `docs/design/08-deferred-features-analysis.md` §2.12): "Borrow checker with lifetimes — hard to lower to Go, unnecessary with GC." The reasons are structural:
-- Go has no ownership or lifetimes at the value level. C0's linear types are opt-in for resource types, not a general ownership system.
+Goop explicitly rejected this (see `docs/design/08-deferred-features-analysis.md` §2.12): "Borrow checker with lifetimes — hard to lower to Go, unnecessary with GC." The reasons are structural:
+- Go has no ownership or lifetimes at the value level. Goop's linear types are opt-in for resource types, not a general ownership system.
 - Go's GC manages memory — there's no "use after free" to prevent, which is half of what a borrow checker is for.
 - Lowering lifetime-annotated types to Go interfaces/structs would require runtime lifetime tracking, which Go has no mechanism for.
 
-### 2.3 What C0 CAN do: lighter approaches
+### 2.3 What Goop CAN do: lighter approaches
 
-C0 doesn't need Rust's borrow checker to catch the most common data races. Four approaches, from lightest to heaviest:
+Goop doesn't need Rust's borrow checker to catch the most common data races. Four approaches, from lightest to heaviest:
 
 #### Approach A: Goroutine sharing analysis (effect-based)
 
 The idea: when a `go` expression captures a closure, the compiler analyzes which **mutable** variables from the enclosing scope are captured by the goroutine. If the same mutable variable is accessible from the spawning goroutine (or multiple spawned goroutines), flag it as a potential data race.
 
-```c0
+```goop
 let mutable counter = 0
 
 let launch (n: int) : unit =
@@ -139,7 +139,7 @@ The analysis tracks closure captures across `go` expressions. It's a pure **flow
 
 Require explicit annotations for cross-goroutine mutable state:
 
-```c0
+```goop
 let shared counter : int = 0       (* explicitly shared *)
 let atomic counter : atomic<int> = 0  (* sync/atomic protected *)
 
@@ -153,9 +153,9 @@ This is simpler to implement than flow analysis but adds annotation burden. It's
 
 #### Approach C: Ownership-lite via linear types
 
-Extend C0's existing linear type system to track "unique access" patterns. If a variable is linear (not shared), passing it to a `go` closure transfers ownership — the spawning goroutine can no longer access it. This prevents races by construction: two goroutines cannot simultaneously access a linear value.
+Extend Goop's existing linear type system to track "unique access" patterns. If a variable is linear (not shared), passing it to a `go` closure transfers ownership — the spawning goroutine can no longer access it. This prevents races by construction: two goroutines cannot simultaneously access a linear value.
 
-```c0
+```goop
 type Data : 1  (* linear resource *)
 
 let process (d: Data) : unit =
@@ -169,7 +169,7 @@ This is sound but limited: it works well for linear resources (files, handles) b
 
 #### Approach D: Separate static analysis pass
 
-A dedicated concurrency analysis pass (like Go's `go vet -race` but at the C0 level) that builds a happens-before graph from the C0 AST. This is the most sophisticated approach but also the most effort.
+A dedicated concurrency analysis pass (like Go's `go vet -race` but at the Goop level) that builds a happens-before graph from the Goop AST. This is the most sophisticated approach but also the most effort.
 
 **Effort**: ~2000+ LoC. Building a sound static race detector is a research-grade effort.
 
@@ -178,28 +178,28 @@ A dedicated concurrency analysis pass (like Go's `go vet -race` but at the C0 le
 **Approach A (goroutine sharing analysis) is the sweet spot.** It catches the most common data race pattern (mutable variable shared between goroutines) without any annotation burden, without any type-system changes, and with zero runtime cost. It's a pure flow analysis that extends the existing linear checker infrastructure.
 
 The false-positive risk is manageable because:
-- Immutable bindings (the default in C0) are never flagged — only explicit `mutable` variables.
+- Immutable bindings (the default in Goop) are never flagged — only explicit `mutable` variables.
 - The analysis can be conservative (flag potential races) and let the user annotate with `move` to suppress false positives.
-- It can be made configurable: `[check] concurrent = "warn"` in `c0.toml`.
+- It can be made configurable: `[check] concurrent = "warn"` in `goop.toml`.
 
 ### 2.5 Comparison to other languages
 
-| Language | Approach | C0 can borrow? |
+| Language | Approach | Goop can borrow? |
 |---|---|---|
-| **Rust** | Borrow checker (ownership + lifetimes). Prevents races at type level. | Rejected for C0 (see 08-deferred-features-analysis). |
+| **Rust** | Borrow checker (ownership + lifetimes). Prevents races at type level. | Rejected for Goop (see 08-deferred-features-analysis). |
 | **Go** | Runtime race detector (`go test -race`). Instruments memory accesses. | Useful as a backend check (lowered Go code can be tested with `-race`), but not compile-time. |
-| **Swift** | Actor model + `@Sendable` annotations. Compile-time actor isolation checking. | Swift's actor isolation is interesting — but C0 targets Go, not Swift's concurrency runtime. Cannot borrow directly. |
-| **Pony** | Reference capabilities (iso, val, ref, box, tag). Type-level data-race freedom. | Elegant but requires a fundamentally different type system. Too late for C0. |
+| **Swift** | Actor model + `@Sendable` annotations. Compile-time actor isolation checking. | Swift's actor isolation is interesting — but Goop targets Go, not Swift's concurrency runtime. Cannot borrow directly. |
+| **Pony** | Reference capabilities (iso, val, ref, box, tag). Type-level data-race freedom. | Elegant but requires a fundamentally different type system. Too late for Goop. |
 | **Kotlin** | Coroutines + structured concurrency. Races still possible but patterns discourage sharing. | No static race detection. |
 | **Java** | `synchronized`, `volatile`, `java.util.concurrent`. No static race detection. | N/A. |
 
-### 2.6 Single biggest obstacle for C0
+### 2.6 Single biggest obstacle for Goop
 
 **Channel-mediated sharing.** Tracking closure captures in `go` expressions is straightforward. Tracking data that flows through channels (`Chan.send ch v` in goroutine 1, `Chan.recv ch` in goroutine 2) requires modeling channel communication, which is significantly harder. The initial analysis should focus on direct closure captures and flag channel-mediated sharing as "unchecked" — document it as a limitation.
 
 ### 2.7 Verdict: **Feasible-minimal**
 
-**Implement goroutine sharing analysis as an extension of the existing linear discharge checker.** Track which mutable variables from the enclosing scope are captured by `go` closure expressions. If a mutable variable is captured by a goroutine AND still accessible in the spawning scope (or captured by another goroutine), report a potential data race. No new dependencies. No type-system changes. No runtime cost. Zero Go-lowering impact. Catches the #1 source of data races (shared mutable state across goroutines). The false-positive rate is manageable because C0 defaults to immutable bindings — only explicit `mutable` variables trigger the analysis. For linear types, make `go` a hand-off point (capturing a linear value in a goroutine discharges it from the spawning scope), preventing double-use.
+**Implement goroutine sharing analysis as an extension of the existing linear discharge checker.** Track which mutable variables from the enclosing scope are captured by `go` closure expressions. If a mutable variable is captured by a goroutine AND still accessible in the spawning scope (or captured by another goroutine), report a potential data race. No new dependencies. No type-system changes. No runtime cost. Zero Go-lowering impact. Catches the #1 source of data races (shared mutable state across goroutines). The false-positive rate is manageable because Goop defaults to immutable bindings — only explicit `mutable` variables trigger the analysis. For linear types, make `go` a hand-off point (capturing a linear value in a goroutine discharges it from the spawning scope), preventing double-use.
 
 **Effort estimate**: ~500 LoC extending `internal/linear/` with goroutine capture analysis. No new dependencies.
 
@@ -209,7 +209,7 @@ The false-positive risk is manageable because:
 
 ### 3.1 Current state
 
-C0 has no deadlock detection. Programs that deadlock on channels produce the same behavior as Go: all goroutines block, and Go's runtime detector eventually panics with `fatal error: all goroutines are asleep - deadlock!`. This is a runtime check, not a compile-time one.
+Goop has no deadlock detection. Programs that deadlock on channels produce the same behavior as Go: all goroutines block, and Go's runtime detector eventually panics with `fatal error: all goroutines are asleep - deadlock!`. This is a runtime check, not a compile-time one.
 
 ### 3.2 What's detectable at compile time
 
@@ -219,13 +219,13 @@ There are two classes of deadlocks that static analysis can detect:
 
 Thread A acquires lock L1 then L2. Thread B acquires L2 then L1. If both interleave, they deadlock. This is detectable with lock-set analysis: build a partial order of lock acquisitions and check for cycles.
 
-**C0 has no locks in the language.** Mutexes come from Go's `sync` package via `extern`. The compiler has no visibility into lock ordering. This class is **not detectable** without modeling extern Go behavior.
+**Goop has no locks in the language.** Mutexes come from Go's `sync` package via `extern`. The compiler has no visibility into lock ordering. This class is **not detectable** without modeling extern Go behavior.
 
 #### B. Channel-based communication deadlocks
 
 Goroutine 1 sends on `ch1` then receives on `ch2`. Goroutine 2 sends on `ch2` then receives on `ch1`. If both goroutines execute their sends before either executes its receive (and channels are unbuffered), they deadlock.
 
-```c0
+```goop
 let g1 (ch1: int chan) (ch2: int chan) : unit =
   go (fun () ->
     Chan.send ch1 42;       (* blocks until someone receives *)
@@ -272,26 +272,26 @@ Go's runtime includes a built-in deadlock detector. When **all** goroutines are 
 - **Complete for total deadlocks**: if the entire program is deadlocked, it's caught.
 - **Incomplete for partial deadlocks**: if some goroutines are alive but a subset is deadlocked (e.g., a worker pool with 3 workers, 2 are deadlocked but 1 is still running), the runtime won't detect it.
 
-Since C0 lowers to Go, every C0 program automatically gets Go's runtime deadlock detection. This is already implemented and costs zero effort.
+Since Goop lowers to Go, every Goop program automatically gets Go's runtime deadlock detection. This is already implemented and costs zero effort.
 
 ### 3.6 Comparison to other languages
 
-| Language | Approach | C0 can borrow? |
+| Language | Approach | Goop can borrow? |
 |---|---|---|
 | **Go** | Runtime detection (all goroutines blocked). No static detection. | Already inherited via Go lowering. |
 | **Rust** | No deadlock detection in the compiler. The borrow checker prevents some deadlocks (mutex poisoning) but not channel deadlocks. | N/A |
 | **Pony** | Reference capabilities prevent deadlocks by construction (no blocking operations). | Elegant but fundamentally different concurrency model. |
-| **Erlang** | Actor model — each process has a mailbox, no shared state. Deadlocks still possible but rare. The OTP framework provides supervision to detect hung processes. | C0's goroutines aren't actors. |
-| **Clojure core.async** | CSP model like Go. Runtime deadlock detection via `alt!` timeouts. No static detection. | Same model as C0/Go. |
+| **Erlang** | Actor model — each process has a mailbox, no shared state. Deadlocks still possible but rare. The OTP framework provides supervision to detect hung processes. | Goop's goroutines aren't actors. |
+| **Clojure core.async** | CSP model like Go. Runtime deadlock detection via `alt!` timeouts. No static detection. | Same model as Goop/Go. |
 | **Akka (Scala)** | Actor model. Deadlocks possible but framework encourages message-passing patterns that avoid them. | Different model. |
 
-### 3.7 Single biggest obstacle for C0
+### 3.7 Single biggest obstacle for Goop
 
-**The analysis doesn't scale beyond toy examples.** A sound static deadlock detector for channel-based programs that handles loops, `select`, buffered channels, and dynamic channel creation is a research problem, not an engineering one. A conservative detector that only handles straight-line code would either have so many false positives it's unusable, or so many false negatives it's not worth having. Meanwhile, Go's runtime deadlock detection already catches total deadlocks for free because C0 lowers to Go.
+**The analysis doesn't scale beyond toy examples.** A sound static deadlock detector for channel-based programs that handles loops, `select`, buffered channels, and dynamic channel creation is a research problem, not an engineering one. A conservative detector that only handles straight-line code would either have so many false positives it's unusable, or so many false negatives it's not worth having. Meanwhile, Go's runtime deadlock detection already catches total deadlocks for free because Goop lowers to Go.
 
 ### 3.8 Verdict: **Defer-indefinitely**
 
-**Go's runtime deadlock detector (inherited for free via C0→Go lowering) is the practical solution.** Building a static deadlock detector for channel-based concurrency that handles real-world patterns (loops, `select`, buffered channels) is a research-grade effort with no guarantee of success. The subset that IS statically detectable (straight-line channel ops between two goroutines) is so narrow that it would catch essentially zero real-world bugs while introducing ongoing maintenance burden. Invest instead in runtime debugging tools: structured concurrency patterns, goroutine leak detection, and channel operation tracing — pragmatic and lower-cost than static deadlock detection.
+**Go's runtime deadlock detector (inherited for free via Goop→Go lowering) is the practical solution.** Building a static deadlock detector for channel-based concurrency that handles real-world patterns (loops, `select`, buffered channels) is a research-grade effort with no guarantee of success. The subset that IS statically detectable (straight-line channel ops between two goroutines) is so narrow that it would catch essentially zero real-world bugs while introducing ongoing maintenance burden. Invest instead in runtime debugging tools: structured concurrency patterns, goroutine leak detection, and channel operation tracing — pragmatic and lower-cost than static deadlock detection.
 
 **Effort estimate**: N/A (not recommended). If pursued, a toy detector for straight-line patterns would be ~1000 LoC with 95%+ false negative rate on real code.
 
@@ -301,7 +301,7 @@ Since C0 lowers to Go, every C0 program automatically gets Go's runtime deadlock
 
 ### 4.1 Current state
 
-C0 exposes channels via a typed prelude:
+Goop exposes channels via a typed prelude:
 - `Chan.make ()` → `make(chan T)` (type inferred from annotation)
 - `Chan.send ch v` → `ch <- v`
 - `Chan.recv ch` → `<-ch`
@@ -319,9 +319,9 @@ There is **no `close` operation and no misuse detection.** The four misuse patte
 
 ### 4.2 Linear channels: the most promising approach
 
-C0's existing **linear type system** (`type handle : 1` → flow-sensitive discharge checking) is a natural fit for channel close safety. The idea:
+Goop's existing **linear type system** (`type handle : 1` → flow-sensitive discharge checking) is a natural fit for channel close safety. The idea:
 
-```c0
+```goop
 type 'a chan : 1  (* channels are linear resources *)
 
 let producer (ch: int chan) : unit =
@@ -369,17 +369,17 @@ If `chan` is linear, each sender must receive its own reference to the channel, 
 
 **Option 1 (minimal, boring, works):** Don't make channels linear. Add `Chan.close` as a regular (non-linear) operation. Detect send-after-close via **runtime tracking** — the lowered Go emits a wrapper around channels that tracks the closed state:
 
-```c0
+```goop
 let ch = Chan.make ()   (* lowered to: ch := NewChannel() — wraps make(chan int) with a closed flag *)
 Chan.close ch            (* ch.closed = true; close(ch.raw) *)
 Chan.send ch 42          (* if ch.closed { panic("send on closed channel") }; ch.raw <- 42 *)
 ```
 
-This adds a small runtime cost (one extra boolean check per send) but catches the most dangerous misuse (send-on-closed panics with a clear C0-level error message). The cost is minimal — one `if` per `Chan.send`.
+This adds a small runtime cost (one extra boolean check per send) but catches the most dangerous misuse (send-on-closed panics with a clear Goop-level error message). The cost is minimal — one `if` per `Chan.send`.
 
 **Option 2 (linear-sender model):** Make channels linear, but provide a **borrow** mechanism: `Chan.borrow` creates a non-linear view of the channel that can be shared but cannot close it. Only the linear owner can close.
 
-```c0
+```goop
 let ch : int chan = Chan.make ()    (* linear owner *)
 let view = Chan.borrow ch           (* non-linear reference, can send/recv but not close *)
 go (fun () -> Chan.send view 42)    (* OK: view is non-linear *)
@@ -390,38 +390,38 @@ Chan.close ch                       (* OK: owner closes *)
 
 This is elegant but complex: `Chan.borrow` requires tracking that borrows don't outlive the owner, which is drifting into Rust-style lifetime territory.
 
-**Option 3 (runtime only):** Don't solve this at compile time. C0's `Chan.close` emits Go's `close`. If the user closes and then sends, Go panics — the behavior is identical to if the user wrote the Go by hand. This is the "lower honestly" philosophy: C0 should not paper over Go's semantics.
+**Option 3 (runtime only):** Don't solve this at compile time. Goop's `Chan.close` emits Go's `close`. If the user closes and then sends, Go panics — the behavior is identical to if the user wrote the Go by hand. This is the "lower honestly" philosophy: Goop should not paper over Go's semantics.
 
 ### 4.5 Nil channel detection
 
 Go's nil channel blocks forever on send/receive. This is easy to catch with flow-sensitive nil checking:
 
-```c0
+```goop
 let ch : int chan    (* declared but never assigned — nil *)
 Chan.send ch 42      (* compile error: ch is nil *)
 ```
 
-C0 already forbids null — `option` is explicit. Extending this to channels: `Chan.make` always returns a non-nil channel. If a channel variable is not initialized before use, the compiler can flag it with flow-sensitive analysis. This is ~200 LoC and reuses the existing variable-liveness infrastructure.
+Goop already forbids null — `option` is explicit. Extending this to channels: `Chan.make` always returns a non-nil channel. If a channel variable is not initialized before use, the compiler can flag it with flow-sensitive analysis. This is ~200 LoC and reuses the existing variable-liveness infrastructure.
 
 ### 4.6 Comparison to other languages
 
-| Language | Approach | C0 can borrow? |
+| Language | Approach | Goop can borrow? |
 |---|---|---|
-| **Go** | Runtime panics for send-on-closed, double-close. Nil channel blocks forever. No static detection. | C0 currently inherits all of this. |
-| **Rust** | `mpsc::Sender`/`Receiver` split. `Sender::send` returns `Err` if the channel is closed (receiver dropped). `Sender` is `Send` but not `Copy` — single-owner semantics via ownership. | Split sender/receiver is elegant and maps well to linear types. But Go channels are unified — C0 targets Go. |
+| **Go** | Runtime panics for send-on-closed, double-close. Nil channel blocks forever. No static detection. | Goop currently inherits all of this. |
+| **Rust** | `mpsc::Sender`/`Receiver` split. `Sender::send` returns `Err` if the channel is closed (receiver dropped). `Sender` is `Send` but not `Copy` — single-owner semantics via ownership. | Split sender/receiver is elegant and maps well to linear types. But Go channels are unified — Goop targets Go. |
 | **Erlang/Elixir** | Processes, not channels. Messages are sent to process IDs. If a process dies, sends to it are silently dropped. No concept of "closed channel." | Different model entirely. |
 | **Clojure core.async** | `close!` on a channel. `>!` (put) returns `nil` if channel is closed. No panics. Nil channels accepted (block). | Runtime handling, not static detection. |
-| **Pony** | Reference capabilities. Channels are `val` (immutable, shareable) or `tag` (opaque, message-send only). The type system prevents misuse. | Requires Pony's capability system — not portable to C0. |
+| **Pony** | Reference capabilities. Channels are `val` (immutable, shareable) or `tag` (opaque, message-send only). The type system prevents misuse. | Requires Pony's capability system — not portable to Goop. |
 
-### 4.7 Single biggest obstacle for C0
+### 4.7 Single biggest obstacle for Goop
 
-**The multi-producer/multi-consumer pattern.** Go channels are designed for shared-memory concurrency where multiple goroutines send on the same channel. Making channels linear (to get close-safety) directly conflicts with this pattern. The split-`Sender`/`Receiver` model (Rust) is the right abstraction but diverges from Go's channel semantics — C0 programs would use channels differently than Go programs, violating the "emits idiomatic Go" constraint. The most honest answer is runtime checks.
+**The multi-producer/multi-consumer pattern.** Go channels are designed for shared-memory concurrency where multiple goroutines send on the same channel. Making channels linear (to get close-safety) directly conflicts with this pattern. The split-`Sender`/`Receiver` model (Rust) is the right abstraction but diverges from Go's channel semantics — Goop programs would use channels differently than Go programs, violating the "emits idiomatic Go" constraint. The most honest answer is runtime checks.
 
 ### 4.8 Verdict: **Feasible-minimal**
 
-**Add `Chan.close` with runtime safety checks, not compile-time linear enforcement.** The lowered Go wrapper around channels tracks a `closed` flag: `Chan.send` checks it before sending (panic with a clear C0-level message instead of Go's opaque "send on closed channel"), `Chan.close` sets it (double-close panics with clear message). This is ~100 LoC in codegen, adds a single boolean check per send, and produces Go code that a senior Go engineer would approve of. For nil channel detection: flow-sensitive initialization checking (~200 LoC, reuses existing infrastructure). **Do not make channels linear.** The fit is wrong: Go channels are shared-memory primitives, not ownership-tracked resources. If users want compile-time close safety, provide a separate `OwnedChan` as a linear wrapper around a raw channel — opt-in, not the default.
+**Add `Chan.close` with runtime safety checks, not compile-time linear enforcement.** The lowered Go wrapper around channels tracks a `closed` flag: `Chan.send` checks it before sending (panic with a clear Goop-level message instead of Go's opaque "send on closed channel"), `Chan.close` sets it (double-close panics with clear message). This is ~100 LoC in codegen, adds a single boolean check per send, and produces Go code that a senior Go engineer would approve of. For nil channel detection: flow-sensitive initialization checking (~200 LoC, reuses existing infrastructure). **Do not make channels linear.** The fit is wrong: Go channels are shared-memory primitives, not ownership-tracked resources. If users want compile-time close safety, provide a separate `OwnedChan` as a linear wrapper around a raw channel — opt-in, not the default.
 
-**Status: Implemented.** `OwnedChan` is now available as a linear (`: 1`) channel type with compile-time close safety. `OwnedChan.send` and `OwnedChan.recv` borrow the channel (non-consuming), while `OwnedChan.close` discharges it. Send-after-close and double-close are caught at compile time as linear double-use errors. See `docs/examples/owned_chan.c0`.
+**Status: Implemented.** `OwnedChan` is now available as a linear (`: 1`) channel type with compile-time close safety. `OwnedChan.send` and `OwnedChan.recv` borrow the channel (non-consuming), while `OwnedChan.close` discharges it. Send-after-close and double-close are caught at compile time as linear double-use errors. See `docs/examples/owned_chan.goop`.
 
 **Effort estimate**: ~300 LoC for runtime-safe `Chan.close` + nil detection. No new dependencies.
 
@@ -432,6 +432,6 @@ C0 already forbids null — `option` is explicit. Extending this to channels: `C
 | Feature | Verdict | Reasoning (one paragraph) | Effort |
 |---|---|---|---|
 | **SMT-based refinement checking** | **Feasible-with-effort** | Build a built-in constraint solver for linear integer arithmetic first (no external dependency, covers 80% of practical refinements). The existing `where` clause infrastructure is complete; this adds a post-inference VC generation pass that skips runtime panic guards for proven-safe call sites. Defer Z3 integration until the error-message quality problem is solved. | ~1000-1500 LoC |
-| **Data race detection** | **Feasible-minimal** | Extend the existing linear checker to track mutable variable captures across goroutine boundaries. Flag any `mutable` variable captured by a `go` closure that remains accessible in the spawning scope. This catches the #1 data race pattern with zero type-system changes, zero runtime cost, and manageable false positives (C0 defaults to immutable bindings). | ~500 LoC |
-| **Deadlock detection** | **Defer-indefinitely** | Go's runtime deadlock detector (inherited for free via C0→Go lowering) is the practical solution. Static deadlock detection for real-world channel-based programs (loops, `select`, buffered channels) is a research problem. The toy-able subset (straight-line ops between two goroutines) covers near-zero real bugs. Invest in runtime debugging tools instead. | N/A |
+| **Data race detection** | **Feasible-minimal** | Extend the existing linear checker to track mutable variable captures across goroutine boundaries. Flag any `mutable` variable captured by a `go` closure that remains accessible in the spawning scope. This catches the #1 data race pattern with zero type-system changes, zero runtime cost, and manageable false positives (Goop defaults to immutable bindings). | ~500 LoC |
+| **Deadlock detection** | **Defer-indefinitely** | Go's runtime deadlock detector (inherited for free via Goop→Go lowering) is the practical solution. Static deadlock detection for real-world channel-based programs (loops, `select`, buffered channels) is a research problem. The toy-able subset (straight-line ops between two goroutines) covers near-zero real bugs. Invest in runtime debugging tools instead. | N/A |
 | **Channel misuse** | **Feasible-minimal** | Add `Chan.close` with runtime safety tracking (closed flag checked on send/close). Add flow-sensitive nil channel detection. Do NOT make channels linear — the multi-producer pattern conflicts with linear ownership, and Go channels are shared-memory primitives. If compile-time close-safety is desired, provide an opt-in `OwnedChan` linear wrapper. **Status: `OwnedChan` implemented; `Chan.close` runtime safety implemented.** | ~300 LoC |

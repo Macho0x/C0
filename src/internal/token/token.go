@@ -1,4 +1,4 @@
-// Package token defines the lexical token types for the C0 language.
+// Package token defines the lexical token types for the Goop language.
 package token
 
 import "fmt"
@@ -39,7 +39,7 @@ const (
 	EXTERN
 	IMPORT
 	GOLANG // import golang "path"
-	C0     // import c0 "path"
+	GOOP   // import goop "path"
 	AS
 	WHEN
 	OF
@@ -136,7 +136,7 @@ var tokenNames = [...]string{
 	EXTERN:      "extern",
 	IMPORT:      "import",
 	GOLANG:      "golang",
-	C0:          "c0",
+	GOOP:        "goop",
 	AS:          "as",
 	WHEN:        "when",
 	OF:          "of",
@@ -209,7 +209,7 @@ func (t TokenType) String() string {
 func (t TokenType) IsKeyword() bool {
 	switch t {
 	case LET, REC, MUTABLE, TYPE, MATCH, WITH, IF, THEN, ELSE, FUN,
-		MODULE, OPEN, EXTERN, IMPORT, GOLANG, C0, AS, WHEN, OF, IN, AND, PANIC,
+		MODULE, OPEN, EXTERN, IMPORT, GOLANG, GOOP, AS, WHEN, OF, IN, AND, PANIC,
 		TRUE, FALSE, UNIT, VAL, GUARD, IS, REQUIRES, RETURNS, WHERE, PRIVATE, CHAN, GO, USING:
 		return true
 	}
@@ -291,8 +291,8 @@ func LookupKeyword(s string) TokenType {
 		return IMPORT
 	case "golang":
 		return GOLANG
-	case "c0":
-		return C0
+	case "goop":
+		return GOOP
 	case "as":
 		return AS
 	case "when":

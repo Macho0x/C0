@@ -3,10 +3,10 @@ package linear_test
 import (
 	"testing"
 
-	"c0.dev/compiler/internal/ast"
-	"c0.dev/compiler/internal/desugar"
-	"c0.dev/compiler/internal/linear"
-	"c0.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/desugar"
+	"goop.dev/compiler/internal/linear"
+	"goop.dev/compiler/internal/parser"
 )
 
 func mustParse(t *testing.T, src string) *ast.Module {

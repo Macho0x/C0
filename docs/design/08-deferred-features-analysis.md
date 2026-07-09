@@ -1,6 +1,6 @@
-# Analysis: Resumptive Effects and Dependent/Refinement Types in C0
+# Analysis: Resumptive Effects and Dependent/Refinement Types in Goop
 
-This document analyzes two features currently deferred ("Deferred or rejected" in the roadmap) to inform whether — and how — they could be added to C0. Each section covers: what the feature is, feasibility under the Go-lowering constraint, concrete syntax, type-system integration, lowering strategy, cost, comparison to other languages, and a recommendation.
+This document analyzes two features currently deferred ("Deferred or rejected" in the roadmap) to inform whether — and how — they could be added to Goop. Each section covers: what the feature is, feasibility under the Go-lowering constraint, concrete syntax, type-system integration, lowering strategy, cost, comparison to other languages, and a recommendation.
 
 ---
 
@@ -8,7 +8,7 @@ This document analyzes two features currently deferred ("Deferred or rejected" i
 
 ### 1.1 What it is
 
-A **resumptive effect system** treats computational effects (IO, state, nondeterminism, exceptions, generators) as first-class citizens of the type system. Unlike monads (Haskell) or effect annotations (C0's current `[@io]`), a resumptive system allows a handler to intercept an effect operation, perform some action, and then *resume* the suspended computation with a result — potentially more than once. This is the model of **Koka**, **Eff**, **Unison**, and **Multicore OCaml 5**'s effect handlers.
+A **resumptive effect system** treats computational effects (IO, state, nondeterminism, exceptions, generators) as first-class citizens of the type system. Unlike monads (Haskell) or effect annotations (Goop's current `[@io]`), a resumptive system allows a handler to intercept an effect operation, perform some action, and then *resume* the suspended computation with a result — potentially more than once. This is the model of **Koka**, **Eff**, **Unison**, and **Multicore OCaml 5**'s effect handlers.
 
 Minimal example from Koka:
 
@@ -19,7 +19,7 @@ fun main() { handle(handler { ask() -> resume(42) }) { println(ask() + ask()) } 
 
 The computation calls `ask()` twice. The handler intercepts each `ask()` and resumes with `42`. The result is `84`. This is not achievable with monads (no resumption) or simple annotations (no type-level tracking).
 
-### 1.2 The Go-lowering constraint: the single biggest obstacle for C0
+### 1.2 The Go-lowering constraint: the single biggest obstacle for Goop
 
 **Go has no continuations. There is no way to capture or resume part of the stack at runtime.** This is the absolute binding constraint. Any resumptive effect system must be compiled *entirely away* into something Go can express.
 
@@ -36,7 +36,7 @@ Let me compare these concretely.
 
 #### Strategy A: CPS transform
 
-```c0
+```goop
 effect ask : unit -> int
 
 let compute () : int =
@@ -59,7 +59,7 @@ func compute(k func(int)) {
 }
 ```
 
-**Verdict**: It works. Go closures can express this. But the output violates C0's core constraint: *"the Go a senior engineer would write by hand."* No senior Go engineer would ever write CPS-transformed Go. It is unreadable and undebuggable.
+**Verdict**: It works. Go closures can express this. But the output violates Goop's core constraint: *"the Go a senior engineer would write by hand."* No senior Go engineer would ever write CPS-transformed Go. It is unreadable and undebuggable.
 
 #### Strategy B: Free monad
 
@@ -77,9 +77,9 @@ Functions return `Comp[T]`; handlers interpret `Comp[T]` via recursion. Same ver
 
 #### Strategy C: Capability passing (no resumption)
 
-This is what Rust's effect system looks like in practice — and what C0's `extern` boundary already anticipates. An effect is a trait/interface; a handler is an implementation; you pass capabilities explicitly (or implicitly via implicit parameters).
+This is what Rust's effect system looks like in practice — and what Goop's `extern` boundary already anticipates. An effect is a trait/interface; a handler is an implementation; you pass capabilities explicitly (or implicitly via implicit parameters).
 
-```c0
+```goop
 effect Console {
   val print : string -> unit
   val read_line : unit -> string
@@ -120,9 +120,9 @@ func Counter(n int) iter.Seq[int] {
 
 This is the pattern for *generators*. You can lower a single effect (`yield`) with resumption via state machines. This is how Kotlin's coroutines and C#'s async/await work — all lowered to state machines.
 
-For C0, this could express a `gen` effect:
+For Goop, this could express a `gen` effect:
 
-```c0
+```goop
 effect gen (value: int) : unit
 
 let naturals () : unit =
@@ -137,13 +137,13 @@ Would lower to Go 1.23 iterator style. But: `gen` is a *single* effect. A genera
 
 **Bottom line**: state machines work for generators (1 effect, 1 yield point pattern). They explode in complexity for arbitrary effect combinations.
 
-### 1.3 Concrete syntax for C0
+### 1.3 Concrete syntax for Goop
 
-If C0 were to adopt effect types (even without resumption), the syntax should follow the existing row-polymorphism convention. C0 already has `{ x: int; y: float | .. }` for record rows. Effect rows would use the same `| ..` mechanism:
+If Goop were to adopt effect types (even without resumption), the syntax should follow the existing row-polymorphism convention. Goop already has `{ x: int; y: float | .. }` for record rows. Effect rows would use the same `| ..` mechanism:
 
 #### Effect type declarations
 
-```c0
+```goop
 (* Declare an effect *)
 effect state (s: 's) where
   val get : unit -> s
@@ -152,7 +152,7 @@ effect state (s: 's) where
 
 #### Effect rows in function types
 
-```c0
+```goop
 (* A function that uses state and may perform IO *)
 let incrementCounter () : int
   with { state<int>; io }
@@ -173,11 +173,11 @@ let readTwice () : (int, int)
 let double (x: int) : int = x * 2
 ```
 
-The effect row syntax `with { eff1; eff2 | .. }` mirrors record row syntax `{ field: type | .. }`. This is the natural extension of C0's existing design.
+The effect row syntax `with { eff1; eff2 | .. }` mirrors record row syntax `{ field: type | .. }`. This is the natural extension of Goop's existing design.
 
 #### Effect handlers (if resumption is added)
 
-```c0
+```goop
 (* Handle the state effect with a mutable cell *)
 let withCounter (initial: int) (f: unit -> 'a with { state<int> | e }) : 'a with { e } =
   let mutable cell = initial in
@@ -199,7 +199,7 @@ let result =
 
 Without resumption (capability-passing model):
 
-```c0
+```goop
 (* State handler as a record of functions *)
 effect state (s: 's) where
   val get : unit -> s
@@ -219,7 +219,7 @@ This is just Go interfaces with extra syntax. Useful, but not resumptive.
 
 ### 1.4 Type-system integration
 
-C0's type system already has row polymorphism for records. Effect rows would be a parallel row-polymorphic system:
+Goop's type system already has row polymorphism for records. Effect rows would be a parallel row-polymorphic system:
 
 - **`TFun`** currently has `From` and `To` fields. It would gain an `Effects` field: `*types.EffectRow`.
 - **`EffectRow`** would be very similar to `TRecord` internally — a list of effect names/parameterizations, plus an `Open` flag for row-polymorphic rows.
@@ -230,7 +230,7 @@ The main challenge is **effect inference at the `let` boundary**. HM generalizes
 
 Koka uses **row-polymorphic effect inference** — a function's inferred effect row is the union of all effects in its body, generalized. This works with HM and is well-understood.
 
-```c0
+```goop
 (* Inferred: f : 'a -> 'b -> 'a with { io } *)
 let f (x: 'a) (y: 'b) =
   print_line "computing";
@@ -239,9 +239,9 @@ let f (x: 'a) (y: 'b) =
 
 ### 1.5 The extern boundary problem
 
-Extern Go functions have unknown effects. C0's `extern` declarations:
+Extern Go functions have unknown effects. Goop's `extern` declarations:
 
-```c0
+```goop
 extern "go" "fmt" {
   val printf : string -> 'a list -> unit
 }
@@ -258,7 +258,7 @@ The practical answer is **(2)** for production, with **(1)** as the initial beha
 
 ### 1.6 Lowering strategies, ranked
 
-Assuming C0 adopts effect tracking (rows in types), NOT resumption:
+Assuming Goop adopts effect tracking (rows in types), NOT resumption:
 
 | Feature | Lowering | Idiomatic? |
 |---|---|---|
@@ -268,7 +268,7 @@ Assuming C0 adopts effect tracking (rows in types), NOT resumption:
 | Extern Go effects | User-declared, trusted. No runtime check. | ✓ |
 | Pure-function enforcement | Compile-time check. Emit no Go code at the Go boundary (purity is invisible to Go callers). | ✓ |
 
-If C0 adopts **limited resumption** (generators via state machines):
+If Goop adopts **limited resumption** (generators via state machines):
 
 | Feature | Lowering | Idiomatic? |
 |---|---|---|
@@ -293,7 +293,7 @@ If C0 adopts **limited resumption** (generators via state machines):
 
 ### 1.8 Comparison to other languages
 
-| Language | Effect model | Approach | C0 can borrow? |
+| Language | Effect model | Approach | Goop can borrow? |
 |---|---|---|---|
 | **OCaml 5** | Resumptive effect handlers | Runtime stack manipulation, native code | No — Go has no runtime support |
 | **Koka** | Row-polymorphic effect types + handlers | CPS transform, whole-program compilation | Borrow type system (row-polymorphic effects), not lowering |
@@ -305,13 +305,13 @@ If C0 adopts **limited resumption** (generators via state machines):
 
 ### 1.9 Recommendation: **Feasible-minimal (effect tracking only), reject resumption**
 
-**Recommendation**: Adopt effect rows (row-polymorphic effect tracking in the type system) **without resumption**. This gives 90% of the value (knowing which functions are pure vs effectful, compositional effect tracking) at 5% of the cost. It leverages C0's existing row-polymorphic infrastructure, requires zero changes to Go lowering (effects are erased), and satisfies the idiomatic-Go constraint.
+**Recommendation**: Adopt effect rows (row-polymorphic effect tracking in the type system) **without resumption**. This gives 90% of the value (knowing which functions are pure vs effectful, compositional effect tracking) at 5% of the cost. It leverages Goop's existing row-polymorphic infrastructure, requires zero changes to Go lowering (effects are erased), and satisfies the idiomatic-Go constraint.
 
-**Reject resumptive handlers**. The Go lowering for general resumption is either CPS (unidiomatic, violates core constraint) or state machines (only work for simple single-effect cases like generators). C0 already has goroutines and channels for concurrency. If generators are needed, add a `yield` keyword that lowers to Go 1.23 `iter.Seq` — a single-purpose feature, not a general effect system.
+**Reject resumptive handlers**. The Go lowering for general resumption is either CPS (unidiomatic, violates core constraint) or state machines (only work for simple single-effect cases like generators). Goop already has goroutines and channels for concurrency. If generators are needed, add a `yield` keyword that lowers to Go 1.23 `iter.Seq` — a single-purpose feature, not a general effect system.
 
 **What the minimal viable version looks like**:
 
-```c0
+```goop
 (* Phase 1: Effect rows in types, erased at runtime *)
 let readConfig (path: string) : result<config, string> with { io } =
   let bytes = File.readAllBytes path ? in
@@ -347,13 +347,13 @@ The full spectrum:
 | **Liquid types** | HM inference + refinement predicates checked with SMT | `div :: x:Int -> {v:Int | v /= 0} -> Int` | LiquidHaskell |
 | **Contract-based** | Runtime assertions on pre/post conditions | `require(v > 0)` at function entry | Eiffel, Racket, Clojure |
 
-### 2.2 The Go-lowering constraint: the single biggest obstacle for C0
+### 2.2 The Go-lowering constraint: the single biggest obstacle for Goop
 
 **Go has no dependent types, no refinement types, no SMT solver integration at runtime. Every refinement and dependency must be erased or lowered to runtime assertions.** This means:
 
 - A `Vec A 3` type must lower to a plain Go `[]A` — the length is not in the type at runtime.
 - An `int where x > 0` must lower to a plain Go `int` — the predicate is not in the type at runtime.
-- To preserve safety at the Go boundary, **runtime assertions** must be inserted at boundary crossings (C0→extern Go, extern Go→C0). But within pure C0 code, compile-time checking can erase the assertions.
+- To preserve safety at the Go boundary, **runtime assertions** must be inserted at boundary crossings (Goop→extern Go, extern Go→Goop). But within pure Goop code, compile-time checking can erase the assertions.
 
 This is exactly the LiquidHaskell model: liquid types are checked at compile time via an SMT solver, and erased at runtime. The Go lowering emits no predicate code for checked refinements — it emits runtime assertions for unchecked boundaries.
 
@@ -368,11 +368,11 @@ This is exactly the LiquidHaskell model: liquid types are checked at compile tim
 3. Discharge the VCs using Z3/SMT solver.
 4. If all VCs discharge, the program is safe. If not, report an error.
 
-This is a **two-phase** approach: infer base types, then check refinements. C0 already does HM inference in phase 1. The refinement checker would be a separate pass after type inference.
+This is a **two-phase** approach: infer base types, then check refinements. Goop already does HM inference in phase 1. The refinement checker would be a separate pass after type inference.
 
 The key constraint: **without user annotations, refinements cannot be inferred.** LiquidHaskell infers refinement types for local variables automatically (using the SMT solver to propagate constraints), but function signatures usually need annotations. This means:
 
-```c0
+```goop
 (* Without annotation: base type inferred *)
 let bad (x: int) : int = x / 0  (* HM infers int -> int *)
 
@@ -381,15 +381,15 @@ let safe (x: int) (y: int where y <> 0) : int =
   x / y
 ```
 
-C0 could adopt a **"annotate critical paths"** model: most code uses plain HM types. Functions that need refinement safety add `where` clauses to their parameter/return types. This is consistent with C0's existing philosophy of incremental adoption.
+Goop could adopt a **"annotate critical paths"** model: most code uses plain HM types. Functions that need refinement safety add `where` clauses to their parameter/return types. This is consistent with Goop's existing philosophy of incremental adoption.
 
-### 2.4 Concrete syntax for C0
+### 2.4 Concrete syntax for Goop
 
-C0 already has `where` as a reserved word (for pattern guards). Refinements would co-opt it as a type-level keyword:
+Goop already has `where` as a reserved word (for pattern guards). Refinements would co-opt it as a type-level keyword:
 
 #### Refinement types
 
-```c0
+```goop
 (* Positive integers *)
 type pos = int where it > 0
 
@@ -407,7 +407,7 @@ The `it` keyword refers to the value being constrained. This mirrors how F# uses
 
 #### Function types with refinements
 
-```c0
+```goop
 (* Division requires nonzero divisor *)
 let safeDiv (a: int) (b: int where b <> 0) : int = a / b
 
@@ -418,7 +418,7 @@ let nth (xs: 'a list) (n: int where n >= 0 && n < length xs) : 'a =
 
 #### Dependent function types (if full dependent types)
 
-```c0
+```goop
 (* Full dependent: return type depends on input value *)
 let replicate (n: int) (x: 'a) : vec<'a, n> = ...
 
@@ -426,18 +426,18 @@ let replicate (n: int) (x: 'a) : vec<'a, n> = ...
 let replicate (n: int) (x: 'a) : vec<'a, n> = ...
 ```
 
-The key question: **should C0 allow value-level identifiers in types at all?** This is what makes a type "dependent." LiquidHaskell allows it but restricts what you can write (only decidable theories: linear arithmetic, uninterpreted functions). Idris allows anything but requires totality checking.
+The key question: **should Goop allow value-level identifiers in types at all?** This is what makes a type "dependent." LiquidHaskell allows it but restricts what you can write (only decidable theories: linear arithmetic, uninterpreted functions). Idris allows anything but requires totality checking.
 
-For C0, the minimal viable approach is:
+For Goop, the minimal viable approach is:
 - Allow `where` predicates on `int`, `float`, `string`, `list` (any base type with decidable theories).
 - Allow `len`, `length`, arithmetic, comparisons in `where` clauses.
 - Do NOT allow arbitrary value-level expressions in types (no `f x` in a type — this needs dependent type checking, not just SMT).
 
 #### How `where` interacts with existing syntax
 
-C0 already uses `when` for pattern guards. There's no conflict:
+Goop already uses `when` for pattern guards. There's no conflict:
 
-```c0
+```goop
 (* `where` in a type annotation: refinement *)
 let f (x: int where x > 0) : int = x + 1
 
@@ -449,12 +449,12 @@ match x with
 
 ### 2.5 Lowering to Go
 
-Refinements are **completely erased** in the Go output — no runtime representation. At the C0→Go boundary, the compiler inserts runtime assertions for any refinement that crosses the boundary.
+Refinements are **completely erased** in the Go output — no runtime representation. At the Goop→Go boundary, the compiler inserts runtime assertions for any refinement that crosses the boundary.
 
 #### Minimal lowering (refinements only, no dependent types)
 
-```c0
-(* C0 source *)
+```goop
+(* Goop source *)
 let safeDiv (a: int) (b: int where b <> 0) : int = a / b
 ```
 
@@ -465,10 +465,10 @@ func SafeDiv(a, b int) int {
 }
 ```
 
-For extern Go functions called from C0, the compiler cannot verify the refinement. It must insert runtime assertions at the call site:
+For extern Go functions called from Goop, the compiler cannot verify the refinement. It must insert runtime assertions at the call site:
 
-```c0
-(* C0 calls extern Go *)
+```goop
+(* Goop calls extern Go *)
 extern "go" "math" {
   val sqrt : float where it >= 0.0 -> float
 }
@@ -483,7 +483,7 @@ The compiler uses the SMT solver to prove that the refinement holds at each call
 
 #### For length-indexed types (vec, fixed-size arrays)
 
-```c0
+```goop
 type vec ('a, n: int) = 'a list where len it = n
 
 let zip (a: vec<'a, n>) (b: vec<'b, n>) : vec<('a * 'b), n> =
@@ -507,18 +507,18 @@ func Zip[A, B any](a []A, b []B) []struct{First A; Second B} {
 }
 ```
 
-The `panic` is emitted only when the compiler cannot prove the refinement. For internal C0 code where proofs succeed, no runtime code is emitted.
+The `panic` is emitted only when the compiler cannot prove the refinement. For internal Goop code where proofs succeed, no runtime code is emitted.
 
 ### 2.6 The SMT solver dependency: the practical cost
 
-LiquidHaskell depends on Z3 (a ~15 MB binary with a complex C++ codebase). Adding an SMT solver dependency to the C0 compiler is a significant practical cost:
+LiquidHaskell depends on Z3 (a ~15 MB binary with a complex C++ codebase). Adding an SMT solver dependency to the Goop compiler is a significant practical cost:
 
 | Concern | Impact |
 |---|---|
-| **Build complexity** | Z3 must be installed on developer machines and CI. Or C0 bundles a WASM-compiled Z3. Either is a maintenance burden. |
+| **Build complexity** | Z3 must be installed on developer machines and CI. Or Goop bundles a WASM-compiled Z3. Either is a maintenance burden. |
 | **Compile-time cost** | Each refinement-annotated function generates VCs sent to Z3. For large codebases, this can be slow (LiquidHaskell users report minutes for large modules). |
 | **Error messages** | SMT solver failures produce counterexamples ("could not prove `x > 0` for call at line 42"). Good error messages require source mapping back from solver output — non-trivial. |
-| **Unsoundness at the boundary** | Go code can call C0's emitted Go with arbitrary values. A Go caller can pass `-1` to a function expecting `int where it >= 0`. The refinement is not enforced at the Go level. C0 must either accept this unsoundness at the FFI boundary or emit runtime assertions on all exported functions. |
+| **Unsoundness at the boundary** | Go code can call Goop's emitted Go with arbitrary values. A Go caller can pass `-1` to a function expecting `int where it >= 0`. The refinement is not enforced at the Go level. Goop must either accept this unsoundness at the FFI boundary or emit runtime assertions on all exported functions. |
 
 ### 2.7 Alternatives to an SMT solver
 
@@ -533,21 +533,21 @@ LiquidHaskell depends on Z3 (a ~15 MB binary with a complex C++ codebase). Addin
 
 ### 2.8 Full dependent types: not feasible
 
-Full dependent types (Idris/Agda style) are **reject** for C0. The reasons are structural:
+Full dependent types (Idris/Agda style) are **reject** for Goop. The reasons are structural:
 
-1. **HM inference dies.** Full dependent types require bidirectional type checking with explicit type signatures everywhere. This is not compatible with C0's inference-first design.
-2. **Go lowering has no target.** Dependent type erasure is possible (the "erasures" of Idris 2), but the erased output for complex dependent programs includes type-level computations that have no Go representation. You'd need a full dependent-type runtime — which is a VM, which C0 explicitly rejects.
-3. **The value-add is near-zero for C0's target domain.** Trading systems, infrastructure, and protocols (C0's target audience) rarely need length-indexed vectors or proof-carrying code. They need: null safety (have), exhaustive matching (have), explicit error handling (have), purity tracking (proposed above).
+1. **HM inference dies.** Full dependent types require bidirectional type checking with explicit type signatures everywhere. This is not compatible with Goop's inference-first design.
+2. **Go lowering has no target.** Dependent type erasure is possible (the "erasures" of Idris 2), but the erased output for complex dependent programs includes type-level computations that have no Go representation. You'd need a full dependent-type runtime — which is a VM, which Goop explicitly rejects.
+3. **The value-add is near-zero for Goop's target domain.** Trading systems, infrastructure, and protocols (Goop's target audience) rarely need length-indexed vectors or proof-carrying code. They need: null safety (have), exhaustive matching (have), explicit error handling (have), purity tracking (proposed above).
 
 ### 2.9 Comparison to other languages
 
-| Language | Approach | C0 can borrow? |
+| Language | Approach | Goop can borrow? |
 |---|---|---|
 | **LiquidHaskell** | Refinement types on top of Haskell; SMT-based checking; erased | Yes — this is the model. Separate pass after HM inference. |
 | **F\*** | Full dependent types + refinement types; SMT + interactive proofs | Too heavy. F* requires a dedicated IDE and proof tactics. |
 | **Idris 2** | Full dependent types, quantitative type theory | Reject — requires bidirectional checking, QTT, and a custom runtime. |
 | **OCaml** | No dependent types. GADTs give some dependent-like behavior. | GADTs could be a lighter alternative. `type _ vec = Nil : unit vec | Cons : 'a * 'n vec -> 'a ('n+1) vec` |
-| **Rust** | Const generics (`[T; N]` where N is a compile-time constant) | Const generics are a practical subset of dependent types. Go doesn't have them, but C0 could monomorphize array types at compile time (like Rust does). |
+| **Rust** | Const generics (`[T; N]` where N is a compile-time constant) | Const generics are a practical subset of dependent types. Go doesn't have them, but Goop could monomorphize array types at compile time (like Rust does). |
 | **F#** | Units of measure (`float<m>`, `float<s>`) | A lightweight form of refinement — could be added without SMT. |
 | **Whiley** | Flow typing + refinement; verifier generates bytecode with runtime checks | Interesting but niche; compiler is a research artifact. |
 
@@ -567,17 +567,17 @@ Full dependent types (Idris/Agda style) are **reject** for C0. The reasons are s
 
 - **Type-checker**: Complete rewrite. HM inference replaced with bidirectional checking. ~5,000+ lines of new checking logic.
 - **Go lowering**: Major new pipeline. Dependent erasure, const-generic monomorphization for arrays. ~3,000+ lines.
-- **Language**: Fundamentally different language at this point. Not C0 anymore.
+- **Language**: Fundamentally different language at this point. Not Goop anymore.
 
 ### 2.11 Recommendation: **Defer-indefinitely (full dependent types), feasible-minimal (lightweight refinement contracts)**
 
-**Full dependent types: reject.** The cost-to-value ratio is astronomical for C0's target domain. HM inference, Go lowering, and backward compatibility all break. This is a different language.
+**Full dependent types: reject.** The cost-to-value ratio is astronomical for Goop's target domain. HM inference, Go lowering, and backward compatibility all break. This is a different language.
 
 **Lightweight refinement contracts: feasible-minimal.** The middle ground is:
 
 1. **Add `where` clauses to type annotations** that lower to *runtime assertions only* (no SMT solver). This is Eiffel-style contracts.
 
-```c0
+```goop
 let safeDiv (a: int) (b: int where b <> 0) : int = a / b
 ```
 
@@ -592,9 +592,9 @@ func SafeDiv(a, b int) int {
 
 This is trivial to implement (~100 lines of codegen change), backward compatible, and idiomatic Go (Go code already has `if condition { panic("...") }` guards at function entry).
 
-2. **Use `requires` / `ensures` for function contracts** (leveraging C0's existing `requires` / `returns` reserved words from the grammar):
+2. **Use `requires` / `ensures` for function contracts** (leveraging Goop's existing `requires` / `returns` reserved words from the grammar):
 
-```c0
+```goop
 let sqrt (x: float) : float
   requires x >= 0.0
   ensures result >= 0.0
@@ -606,7 +606,7 @@ let sqrt (x: float) : float
 
 4. **Const generics for array types** as a separate, lighter feature:
 
-```c0
+```goop
 (* Fixed-size array, known at compile time *)
 type fixed_array ('a, const n: int) = ...  (* lowered to Go [N]T *)
 
@@ -619,7 +619,7 @@ This is Rust-style const generics, not full dependent types. It's practical, low
 
 - Dependency cost is real: Z3 is a 15MB binary that must be installed and maintained.
 - User experience: SMT error messages are notoriously bad ("counterexample: x = -1 at line 42, trace: ..."). Making them usable is a multi-year effort (see Dafny, F*).
-- The 95% use case for C0's audience (trading systems, infrastructure) is `x > 0`, `index < len`, `is_some` — simple predicates that are trivially lowered to runtime assertions.
+- The 95% use case for Goop's audience (trading systems, infrastructure) is `x > 0`, `index < len`, `is_some` — simple predicates that are trivially lowered to runtime assertions.
 - Progressive disclosure: ship runtime contracts now, add SMT later if demand materializes. The contracts are the same syntax either way — you're not painting yourself into a corner.
 
 ---
@@ -628,8 +628,8 @@ This is Rust-style const generics, not full dependent types. It's practical, low
 
 | Feature | Verdict | Reasoning (one paragraph) |
 |---|---|---|
-| **Resumptive effect system** | **Reject** | Go has no stack capture or continuations. Lowering resumptive effects requires CPS or free monads, both of which produce Go that no senior engineer would write — violating C0's core constraint. Single-purpose state machines (generators) are viable via Go 1.23 `iter.Seq`, but a general effect handler system is not. |
-| **Effect tracking (row-polymorphic, no resumption)** | **Feasible-with-effort** | Effect rows are a natural extension of C0's existing row polymorphism. They require ~200 lines of type-checker code, erase to nothing in Go, and are fully backward compatible. This gives purity tracking, effect composition, and a foundation for capability-passing to extern Go. This is the feature C0 should actually ship. |
-| **Full dependent/refinement types** | **Defer-indefinitely** | Full dependent types require bidirectional checking (killing HM inference), a proof language, and a custom runtime — all incompatible with Go lowering and C0's audience. The value-add for trading/infrastructure code is near-zero. |
+| **Resumptive effect system** | **Reject** | Go has no stack capture or continuations. Lowering resumptive effects requires CPS or free monads, both of which produce Go that no senior engineer would write — violating Goop's core constraint. Single-purpose state machines (generators) are viable via Go 1.23 `iter.Seq`, but a general effect handler system is not. |
+| **Effect tracking (row-polymorphic, no resumption)** | **Feasible-with-effort** | Effect rows are a natural extension of Goop's existing row polymorphism. They require ~200 lines of type-checker code, erase to nothing in Go, and are fully backward compatible. This gives purity tracking, effect composition, and a foundation for capability-passing to extern Go. This is the feature Goop should actually ship. |
+| **Full dependent/refinement types** | **Defer-indefinitely** | Full dependent types require bidirectional checking (killing HM inference), a proof language, and a custom runtime — all incompatible with Go lowering and Goop's audience. The value-add for trading/infrastructure code is near-zero. |
 | **Lightweight refinement contracts (runtime asserts)** | **Feasible-minimal** | `where` clauses on type annotations lowering to runtime `panic` guards is ~100 lines of codegen, fully backward compatible, idiomatic Go, and no dependency required. Ship this now. The same syntax supports future SMT-based compile-time checking if demand justifies it. |
-| **Const generics (fixed-size arrays)** | **Feasible-with-effort** | Go supports `[N]T` arrays. C0 can monomorphize compile-time-known sizes at the C0→Go boundary. This is a practical subset of dependent types that doesn't need SMT or bidirectional checking. |
+| **Const generics (fixed-size arrays)** | **Feasible-with-effort** | Go supports `[N]T` arrays. Goop can monomorphize compile-time-known sizes at the Goop→Go boundary. This is a practical subset of dependent types that doesn't need SMT or bidirectional checking. |

@@ -3,14 +3,14 @@ package nilchan
 import (
 	"testing"
 
-	"c0.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/parser"
 )
 
 func TestNilChanDetection(t *testing.T) {
 	src := `module Test
 let bad () = Chan.send ch 42 ?
 `
-	mod, err := parser.Parse("test.c0", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

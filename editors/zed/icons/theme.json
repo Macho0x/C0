@@ -1,8 +1,8 @@
 {
-  "icons": {
-    "c0": "icons/c0.svg"
-  },
-  "file_icons": {
-    ".c0": "icons/c0-file.svg"
+  "name": "Goop Icons",
+  "author": "Macho0x",
+  "themes": {},
+  "icon_definitions": {
+    ".goop": "icons/goop-file.svg"
   }
 }

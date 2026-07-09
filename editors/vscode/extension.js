@@ -1,15 +1,13 @@
 // VSCode extension entry point
-// Provides C0 language support via LSP integration
+// Provides Goop language support via LSP integration
 
 const vscode = require("vscode");
 
 function activate(context) {
-  // Register the C0 language
-  const c0Selector = { scheme: "file", language: "c0" };
+  const goopSelector = { scheme: "file", language: "goop" };
 
-  // Start the LSP client
   const serverOptions = {
-    command: "c0",
+    command: "goop",
     args: ["lsp"],
     options: {
       cwd: vscode.workspace.rootPath,
@@ -17,21 +15,21 @@ function activate(context) {
   };
 
   const clientOptions = {
-    documentSelector: [c0Selector],
+    documentSelector: [goopSelector],
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.c0"),
+      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.goop"),
     },
   };
 
   const lspClient = new vscode.LanguageClient(
-    "c0",
-    "C0 Language Server",
+    "goop",
+    "Goop Language Server",
     serverOptions,
     clientOptions,
   );
 
   context.subscriptions.push(lspClient.start());
-  console.log("C0 extension activated");
+  console.log("Goop extension activated");
 }
 
 function deactivate() {}

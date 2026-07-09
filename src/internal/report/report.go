@@ -1,4 +1,4 @@
-// Package report renders C0 errors in Lisette-style graphical format.
+// Package report renders Goop errors in Lisette-style graphical format.
 package report
 
 import (
@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// Render turns a C0 error (already containing "file:line:col: msg") into
+// Render turns a Goop error (already containing "file:line:col: msg") into
 // a Lisette-style diagnostic using the provided source text.
 // Ponytail: single function, no new error types, reuses existing locations.
 func Render(err error, src []byte) string {
@@ -67,7 +67,7 @@ func min(a, b int) int {
 	return b
 }
 
-// RenderFromFile is the convenience form used by cmd/c0.
+// RenderFromFile is the convenience form used by cmd/goop.
 func RenderFromFile(err error, filename string) string {
 	src, _ := os.ReadFile(filename)
 	return Render(err, src)

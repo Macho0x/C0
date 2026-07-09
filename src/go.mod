@@ -1,4 +1,4 @@
-module c0.dev/compiler
+module goop.dev/compiler
 
 go 1.25.0
 

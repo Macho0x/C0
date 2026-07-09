@@ -1,23 +1,23 @@
-# C0 Package Manager (v0.3.0)
+# Goop Package Manager (v0.3.0)
 
-C0 v0.3.0 adds a minimal package manager aligned with Go module paths.
+Goop v0.3.0 adds a minimal package manager aligned with Go module paths.
 
-## `c0 get`
+## `goop get`
 
-Fetch a remote C0 module and pin it in the project:
+Fetch a remote Goop module and pin it in the project:
 
 ```bash
-c0 get github.com/acme/lib
-c0 get github.com/acme/lib@v1.2.3
+goop get github.com/acme/lib
+goop get github.com/acme/lib@v1.2.3
 ```
 
 This:
 
-1. Clones the repository into `$C0_HOME/pkg/mod` (default `~/.cache/c0/pkg/mod`).
-2. Appends an entry to `c0.lock`.
-3. Adds `[dependencies]` in `c0.toml`.
+1. Clones the repository into `$GOOP_HOME/pkg/mod` (default `~/.cache/goop/pkg/mod`).
+2. Appends an entry to `goop.lock`.
+3. Adds `[dependencies]` in `goop.toml`.
 
-## `c0.lock`
+## `goop.lock`
 
 Pinned modules at the project root:
 
@@ -28,15 +28,15 @@ version = "v1.2.3"
 source = "github.com/acme/lib"
 ```
 
-The compiler prefers lock pins over floating `c0.toml` mappings.
+The compiler prefers lock pins over floating `goop.toml` mappings.
 
-## `c0.toml` dependencies
+## `goop.toml` dependencies
 
 ```toml
 module_root = "github.com/you/yourapp"
 
 [mappings]
-"std.io" = "github.com/Macho0x/C0/std/io"
+"std.io" = "github.com/Macho0x/Goop/std/io"
 
 [dependencies]
 "github.com/acme/lib" = "v1.2.3"
@@ -44,16 +44,16 @@ module_root = "github.com/you/yourapp"
 
 ## Module entry convention
 
-Remote C0 modules are discovered at:
+Remote Goop modules are discovered at:
 
-`<module>/<last-segment>/<last-segment>.c0`
+`<module>/<last-segment>/<last-segment>.goop`
 
-Example: `github.com/Macho0x/C0/std/io/io.c0`.
+Example: `github.com/Macho0x/Goop/std/io/io.goop`.
 
-## `c0 resolve`
+## `goop resolve`
 
-Print import resolution and the transitive `import c0` graph:
+Print import resolution and the transitive `import goop` graph:
 
 ```bash
-c0 resolve main.c0
+goop resolve main.goop
 ```
