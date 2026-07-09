@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="Goop logo" src="assets/goop-icon.png" width="160">
+  <img alt="Goop logo" src="assets/goop-banner.png" width="160">
 </p>
 
 <p align="center">
