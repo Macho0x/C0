@@ -2,7 +2,7 @@
   "name": "goop",
   "displayName": "Goop Language Support",
   "description": "Syntax highlighting and LSP support for Goop, a statically typed language that compiles to Go",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "goop",
   "icon": "icons/goop-icon.png",
   "repository": {
@@ -51,7 +51,7 @@
     "grammars": [
       {
         "language": "goop",
-        "scope": "source.goop",
+        "scopeName": "source.goop",
         "path": "./syntaxes/goop.tmLanguage.json"
       }
     ],
@@ -61,48 +61,48 @@
         "label": "Goop File Icons",
         "path": "./icons/goop-file-icon-theme.json"
       }
-    ]
+    ],
+    "configurationDefaults": {
+      "[goop]": {
+        "editor.semanticHighlighting.enabled": false,
+        "editor.tokenColorCustomizations": {
+          "comments": "#6A9955",
+          "keywords": "#C586C0",
+          "strings": "#CE9178",
+          "numbers": "#B5CEA8",
+          "types": "#4EC9B0",
+          "textMateRules": [
+            {
+              "scope": "entity.name.function.binding.goop",
+              "settings": { "foreground": "#DCDCAA" }
+            },
+            {
+              "scope": "constant.language.capital-identifier.goop, entity.name.type.goop",
+              "settings": { "foreground": "#4EC9B0" }
+            },
+            {
+              "scope": "entity.name.type.declaration.goop, entity.name.type.module.goop",
+              "settings": { "foreground": "#4EC9B0", "fontStyle": "bold" }
+            },
+            {
+              "scope": "storage.type.goop, support.type.goop",
+              "settings": { "foreground": "#569CD6" }
+            },
+            {
+              "scope": "keyword.operator.goop",
+              "settings": { "foreground": "#D4D4D4" }
+            },
+            {
+              "scope": "meta.embedded.block.golang",
+              "settings": { "foreground": "#9CDCFE" }
+            }
+          ]
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "node -e \"require('fs').accessSync('extension.js')\""
-  },
-  "configurationDefaults": {
-    "[goop]": {
-      "editor.semanticHighlighting.enabled": false,
-      "editor.tokenColorCustomizations": {
-        "comments": "#6A9955",
-        "keywords": "#C586C0",
-        "strings": "#CE9178",
-        "numbers": "#B5CEA8",
-        "types": "#4EC9B0",
-        "textMateRules": [
-          {
-            "scope": "entity.name.function.binding.goop",
-            "settings": { "foreground": "#DCDCAA" }
-          },
-          {
-            "scope": "constant.language.capital-identifier.goop, entity.name.type.goop",
-            "settings": { "foreground": "#4EC9B0" }
-          },
-          {
-            "scope": "entity.name.type.declaration.goop, entity.name.type.module.goop",
-            "settings": { "foreground": "#4EC9B0", "fontStyle": "bold" }
-          },
-          {
-            "scope": "storage.type.goop, support.type.goop",
-            "settings": { "foreground": "#569CD6" }
-          },
-          {
-            "scope": "keyword.operator.goop",
-            "settings": { "foreground": "#D4D4D4" }
-          },
-          {
-            "scope": "meta.embedded.block.golang",
-            "settings": { "foreground": "#9CDCFE" }
-          }
-        ]
-      }
-    }
   },
   "dependencies": {
     "vscode-languageclient": "^8.0.0"

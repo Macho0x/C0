@@ -18,6 +18,12 @@ else
 fi
 
 npx --yes @vscode/vsce package --out "$EXT_DIR/goop.vsix" >/dev/null
+
+# Remove stale versioned installs (cause duplicate grammar errors).
+for old in "$HOME/.cursor/extensions"/goop.goop-* "$HOME/.vscode/extensions"/goop.goop-*; do
+  [ -d "$old" ] && rm -rf "$old"
+done
+
 "$CLI" --install-extension "$EXT_DIR/goop.vsix" --force
 
 echo "Installed Goop extension via $CLI."
