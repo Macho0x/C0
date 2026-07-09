@@ -194,6 +194,16 @@ the parser cannot proceed.
 Parser errors indicate that the token stream does not conform to C0's
 grammar. The parser attempts error recovery to report multiple errors.
 
+### PARSE-MIG001: `open` removed (v0.3)
+
+- **Message**: `'open' is removed; use import c0 "path" or import c0 . "path"`
+- **Fix**: Replace `open std.io` with `import c0 . "std.io"`.
+
+### PARSE-MIG002: `extern "go"` removed (v0.3)
+
+- **Message**: `'extern' is removed; use import golang "path" { val ... }`
+- **Fix**: Replace `extern "go" "fmt" { val X : … }` with `import golang "fmt" { val X : … }`.
+
 ### PARSE001: Expected token
 
 - **Error code**: `PARSE001`

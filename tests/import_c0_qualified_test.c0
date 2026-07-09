@@ -1,0 +1,6 @@
+module main
+
+import io c0 "std.io"
+
+let main () =
+  io.PrintLine "import c0 qualified OK"

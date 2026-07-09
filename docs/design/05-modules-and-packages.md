@@ -8,94 +8,60 @@ Every C0 source file begins with a module declaration:
 module MyModule
 ```
 
-A module corresponds to a Go package. The module name determines:
+A module corresponds to a Go package. The module name determines the emitted Go package name and default file path.
 
-- The emitted Go package name.
-- The default file path within the project.
-- The qualifier for imports from other C0 modules.
+## Unified imports (v0.3.0)
 
-## Module naming
-
-- Module names are `PascalCase` in C0.
-- Lowered Go package names are `lowercase`.
-- Multi-word modules use `UpperCamelCase` in C0 and `lowercase` in Go (e.g., `OrderBook` → `orderbook`).
-
-## Opening modules
-
-`open` brings a module's exported names into the current scope:
+C0 uses Go-style import syntax. Legacy `open` and `extern "go"` were removed in v0.3.0.
 
 ```c0
 module Main
 
-open Std.IO
-open Math
+import (
+  golang "fmt"
+  golang "strconv" { val Atoi : string -> (int, string) }
+  c0 "std.io"
+  httpx golang "net/http"
+  orderbook c0 "github.com/you/app/orderbook"
+)
 
-let main () =
-  Console.print_line (Float.to_string Math.pi)
+import c0 . "std.list"   (* dot import: unqualified exports *)
 ```
 
-`open` does not import foreign Go packages directly. It references other C0 modules. To bind a Go package, use `extern`.
+| Form | Meaning | `{ val … }` |
+|------|---------|-------------|
+| `import golang "path"` | Go package | Optional FFI signatures |
+| `import c0 "path"` | C0 module (logical or canonical path) | Forbidden |
+| `import c0 . "path"` | Dot import (replaces `open`) | Forbidden |
+| `alias golang "path"` | Go import with local alias | Optional |
+| `alias c0 "path"` | Qualified C0 import (`alias.Name`) | Forbidden |
 
-## Import paths
+Logical paths like `"std.io"` resolve via `c0.toml` `[mappings]` or built-in defaults.
 
-The compiler maps C0 module names to import paths via the project configuration (`c0.toml`) or a default convention:
+## Inline Go
 
-- `Std.IO` → `c0.dev/std/io`
-- `MyProject.OrderBook` → `github.com/user/project/orderbook`
+`@golang { … }` embeds Go source in the current file (unchanged from v0.2):
+
+```c0
+@golang {
+  func helper() int { return 42 }
+}
+val helper : unit -> int
+```
 
 ## Visibility
 
-All top-level declarations are exported by default. Future versions may add an explicit `private` annotation.
+Top-level `private` hides bindings from other modules:
 
 ```c0
-let helper x = x + 1        (* exported: lowered to Helper *)
-let main () = ...           (* exported: lowered to Main *)
+private let helper x = x + 1
+let main () = helper 1   (* OK in same module *)
 ```
 
-## Hierarchical modules
+## Configuration
 
-C0 supports dotted module paths:
-
-```c0
-module Trading.OrderBook
-```
-
-This maps to the directory `trading/orderbook` and Go package `orderbook`.
-
-## External Go packages
-
-Use `extern` to declare bindings to Go packages:
-
-```c0
-extern "go" "fmt" {
-  val print : string -> unit
-  val printf : string -> 'a list -> unit
-}
-```
-
-In v1, `extern` declarations are trusted: the C0 compiler does not verify them against the Go package. Incorrect signatures will produce errors at Go compile time.
+See [11-package-manager.md](11-package-manager.md) for `c0 get`, `c0.lock`, and `[dependencies]`.
 
 ## Compilation unit
 
-A compilation unit is a directory containing `.c0` files that share the same module name. The compiler produces one Go package per module.
-
-## Prelude
-
-The compiler provides a small set of built-in bindings available to every C0 program without an explicit `open` statement. These bindings are in a synthetic "prelude" module that is implicitly opened in every file.
-
-Prelude bindings are shadowable: a user-defined binding with the same name overrides the prelude version in that scope.
-
-The following names are automatically in scope:
-
-| Binding | C0 type | Go lowering |
-|---|---|---|
-| `print_line` | `string -> unit` | `fmt.Println` |
-| `print` | `string -> unit` | `fmt.Print` |
-| `int_to_string` | `int -> string` | `strconv.Itoa` |
-| `float_to_string` | `float -> string` | `strconv.FormatFloat` (via `fmt.Sprintf`) |
-| `string_concat` | `string -> string -> string` | `+` operator |
-| `list_length` | `'a list -> int` | `len` (built-in) |
-| `list_append` | `'a list -> 'a list -> 'a list` | `append` (built-in) |
-| `panic_message` | `string -> 'a` | `panic` (built-in) |
-
-The legacy name `Console.print_line` is also recognised for backward compatibility and maps to `fmt.Println`.
+One Go package is emitted per C0 module file. Multi-file C0 packages are planned; v0.3 resolves transitive `import c0` for type-checking and test builds.

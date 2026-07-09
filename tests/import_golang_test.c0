@@ -1,0 +1,9 @@
+module main
+
+import golang "strings" {
+  val ToUpper : string -> string
+}
+
+let main () =
+  let chk = assert (ToUpper "hi" = "HI") in
+  print_line "import golang OK"

@@ -573,7 +573,7 @@ let result = identity (fun x -> x)
 // We use "strings.Contains" which has func(string, string) bool.
 func TestGoSigFallbackExtern(t *testing.T) {
 	src := `module Test
-extern "go" "strings" {
+import golang "strings" {
   val Contains : string -> string -> bool
 }
 
@@ -726,7 +726,7 @@ let result = add 3 4
 // work correctly.
 func TestEffectRowExternAnnotated(t *testing.T) {
 	src := `module Test
-extern "go" "strings" {
+import golang "strings" {
   val Contains : string -> string -> bool with { io }
 }
 

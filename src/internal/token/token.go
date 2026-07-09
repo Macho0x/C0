@@ -38,6 +38,8 @@ const (
 	OPEN
 	EXTERN
 	IMPORT
+	GOLANG // import golang "path"
+	C0     // import c0 "path"
 	AS
 	WHEN
 	OF
@@ -99,7 +101,7 @@ const (
 	MINUSDOT   // -.  (float subtraction)
 	SLASHDOT   // /.  (float division)
 
-	PERCENT    // %  (integer modulo)
+	PERCENT // %  (integer modulo)
 
 	// --- concurrency ---
 	CHAN  // chan type
@@ -133,6 +135,8 @@ var tokenNames = [...]string{
 	OPEN:        "open",
 	EXTERN:      "extern",
 	IMPORT:      "import",
+	GOLANG:      "golang",
+	C0:          "c0",
 	AS:          "as",
 	WHEN:        "when",
 	OF:          "of",
@@ -205,7 +209,7 @@ func (t TokenType) String() string {
 func (t TokenType) IsKeyword() bool {
 	switch t {
 	case LET, REC, MUTABLE, TYPE, MATCH, WITH, IF, THEN, ELSE, FUN,
-		MODULE, OPEN, EXTERN, IMPORT, AS, WHEN, OF, IN, AND, PANIC,
+		MODULE, OPEN, EXTERN, IMPORT, GOLANG, C0, AS, WHEN, OF, IN, AND, PANIC,
 		TRUE, FALSE, UNIT, VAL, GUARD, IS, REQUIRES, RETURNS, WHERE, PRIVATE, CHAN, GO, USING:
 		return true
 	}
@@ -285,6 +289,10 @@ func LookupKeyword(s string) TokenType {
 		return EXTERN
 	case "import":
 		return IMPORT
+	case "golang":
+		return GOLANG
+	case "c0":
+		return C0
 	case "as":
 		return AS
 	case "when":

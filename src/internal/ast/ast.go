@@ -14,14 +14,31 @@ import (
 
 // Module represents a complete C0 source file.
 type Module struct {
-	Name  string     // module path, e.g. "Trading.OrderBook"
-	Opens []OpenStmt // open directives
-	Decls []TopDecl  // top-level declarations
+	Name    string       // module path, e.g. "Trading.OrderBook"
+	Imports []ImportSpec // import directives (golang and c0)
+	Decls   []TopDecl    // top-level declarations
 }
 
-// OpenStmt is an `open Path` statement.
+// ImportKind distinguishes Go package imports from C0 module imports.
+type ImportKind int
+
+const (
+	ImportGolang ImportKind = iota // import golang "path"
+	ImportC0                       // import c0 "path"
+)
+
+// ImportSpec is one arm of an import declaration.
+// Alias is empty for default qualification, "." for dot import, or a local name.
+type ImportSpec struct {
+	Kind  ImportKind
+	Path  string // import path string literal (logical or canonical)
+	Alias string
+	Vals  []ExternVal // golang imports only: optional FFI signatures
+}
+
+// OpenStmt is a legacy `open Path` statement (parser no longer produces these).
 type OpenStmt struct {
-	Path string // dot-separated module path
+	Path string
 }
 
 // ---------------------------------------------------------------------------

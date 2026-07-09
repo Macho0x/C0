@@ -120,10 +120,10 @@ func TestImportFromGeneratedCode(t *testing.T) {
 	// Create a C0 file with open statements
 	c0Content := `module TestMod
 
-open Std.IO
+import c0 . "std.io"
 
 let greet () =
-  Console.print_line "hi"
+  print_line "hi"
 `
 	srcFile := filepath.Join(t.TempDir(), "test.c0")
 	os.WriteFile(srcFile, []byte(c0Content), 0644)

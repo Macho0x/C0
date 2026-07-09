@@ -29,14 +29,16 @@ import (
 
 // Config holds the project-wide compiler configuration.
 type Config struct {
-	ModuleRoot string            // e.g. "github.com/example/project"
-	Mappings   map[string]string // C0 module name → Go import path
+	ModuleRoot   string            // e.g. "github.com/example/project"
+	Mappings     map[string]string // C0 logical path → Go import path
+	Dependencies map[string]string // canonical path → version pin
 }
 
 // DefaultConfig returns a working config with built-in mappings.
 func DefaultConfig() *Config {
 	return &Config{
-		ModuleRoot: "",
+		ModuleRoot:   "",
+		Dependencies: make(map[string]string),
 		Mappings: map[string]string{
 			"std.io":     "github.com/Macho0x/C0/std/io",
 			"std.list":   "github.com/Macho0x/C0/std/list",
@@ -109,7 +111,7 @@ func parseConfig(data string) (*Config, error) {
 	c.Mappings = make(map[string]string) // start fresh, copy defaults if needed
 
 	lines := strings.Split(data, "\n")
-	inSection := false
+	section := ""
 	for _, raw := range lines {
 		line := strings.TrimSpace(raw)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -118,8 +120,7 @@ func parseConfig(data string) (*Config, error) {
 
 		// Section header
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			section := line[1 : len(line)-1]
-			inSection = (section == "mappings")
+			section = line[1 : len(line)-1]
 			continue
 		}
 
@@ -133,12 +134,24 @@ func parseConfig(data string) (*Config, error) {
 			val = strings.Trim(val, `"`)
 			val = strings.Trim(val, `'`)
 
-			if inSection {
+			switch section {
+			case "mappings":
 				c.Mappings[key] = val
-			} else if key == "module_root" {
-				c.ModuleRoot = val
+			case "dependencies":
+				if c.Dependencies == nil {
+					c.Dependencies = make(map[string]string)
+				}
+				c.Dependencies[key] = val
+			default:
+				if key == "module_root" {
+					c.ModuleRoot = val
+				}
 			}
 		}
+	}
+
+	if c.Dependencies == nil {
+		c.Dependencies = make(map[string]string)
 	}
 
 	// Merge built-in defaults for any mappings not explicitly overridden

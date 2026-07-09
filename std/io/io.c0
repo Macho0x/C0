@@ -1,6 +1,6 @@
 module io
 
-extern "go" "fmt" {}
+import golang "fmt"
 
 @golang {
   func printLine(msg string) {

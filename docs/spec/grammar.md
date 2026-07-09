@@ -18,19 +18,20 @@ unit     := '()'
 ## Reserved words
 
 ```
-and as else extern false fun guard if import in
-let match module mutable of open panic rec
+and as c0 else false fun golang guard if import in
+let match module mutable of panic private rec
 requires returns then true type unit val when with
 ```
 
 ## Program structure
 
 ```
-program      := module_decl opens* top_decl*
+program      := module_decl import_decl* top_decl*
 module_decl  := 'module' constr ('.' constr)*
-opens        := 'open' path
-path         := constr ('.' constr)*
-top_decl     := val_decl | type_decl | extern_decl
+import_decl  := 'import' import_spec | 'import' '(' import_spec* ')'
+import_spec  := ident? ('golang' | 'c0') '.'? string import_vals?
+import_vals  := '{' 'val' ident ':' type* '}'
+top_decl     := val_decl | type_decl | golang_embed_decl
 ```
 
 ## Value declarations

@@ -17,7 +17,7 @@ This file tracks the remaining work to make C0 a usable language. It is kept in 
 - [x] Imports and module resolution
 - [x] Standard library prelude
 - [x] Layered lambda type inference (bidirectional inference + optional `go/types` fallback)
-- [ ] Build system and package manager
+- [x] Build system and package manager (`c0 get`, `c0.lock`)
 
 ## Language features
 

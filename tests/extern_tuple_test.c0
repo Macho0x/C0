@@ -1,6 +1,6 @@
 module main
 
-extern "go" "strconv" {}
+import golang "strconv" {}
 
 @golang {
   func atoiPair(s string) (int, string) {

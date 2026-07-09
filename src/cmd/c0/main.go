@@ -27,6 +27,7 @@ import (
 	"c0.dev/compiler/internal/exhaustive"
 	lc0 "c0.dev/compiler/internal/lexer"
 	"c0.dev/compiler/internal/linear"
+	"c0.dev/compiler/internal/modresolve"
 	"c0.dev/compiler/internal/parser"
 	"c0.dev/compiler/internal/refine"
 	"c0.dev/compiler/internal/report"
@@ -111,7 +112,7 @@ func main() {
 
 	if len(filtered) < 2 && (len(filtered) == 0 || filtered[0] != "test") && filtered[0] != "lsp" && filtered[0] != "fmt" {
 		fmt.Fprintf(os.Stderr, "Usage: c0 [--no-source-map] [--color] [-i] <command> <file.c0>\n")
-		fmt.Fprintf(os.Stderr, "Commands: lex, parse, check, compile, build, test, resolve, lsp, fmt (format)\n")
+		fmt.Fprintf(os.Stderr, "Commands: lex, parse, check, compile, build, test, get, resolve, lsp, fmt (format)\n")
 		os.Exit(1)
 	}
 
@@ -124,6 +125,9 @@ func main() {
 			dir = filtered[1]
 		}
 		os.Exit(runTests(dir))
+	}
+	if cmd == "get" {
+		os.Exit(runGet(filtered[1:]))
 	}
 	if cmd == "lsp" {
 		runLSP()
@@ -204,7 +208,8 @@ func main() {
 		}
 
 		// Type checking
-		typeErrors := typecheck.Check(mod)
+		lock := loadProjectLock(file)
+		_, _, typeErrors := typecheck.CheckWithTypesForFile(mod, file, cfg, lock)
 		if len(typeErrors) > 0 {
 			fmt.Println("FAIL: type errors:")
 			for _, e := range typeErrors {
@@ -243,7 +248,7 @@ func main() {
 		}
 
 		// Type-check (for validation and to get inferred types for codegen)
-		tm, vtm, typeErrs := typecheck.CheckWithTypes(mod)
+		tm, vtm, typeErrs := typecheckModule(mod, file, cfg)
 		if len(typeErrs) > 0 {
 			fmt.Println("FAIL: type errors:")
 			for _, e := range typeErrs {
@@ -322,7 +327,7 @@ func main() {
 		}
 
 		// Type-check
-		tm, vtm, typeErrs := typecheck.CheckWithTypes(mod)
+		tm, vtm, typeErrs := typecheckModule(mod, file, cfg)
 		if len(typeErrs) > 0 {
 			fmt.Println("FAIL: type errors:")
 			for _, e := range typeErrs {
@@ -415,12 +420,47 @@ func main() {
 			fmt.Fprintf(os.Stderr, "parse error: %v\n", err)
 			os.Exit(1)
 		}
-		if len(mod.Opens) == 0 {
-			fmt.Println("(no open statements)")
+		lock := loadProjectLock(file)
+		root := modresolve.FindProjectRoot(file)
+		r := modresolve.New(cfg, lock, root)
+		if len(mod.Imports) == 0 {
+			fmt.Println("(no imports)")
 		}
-		for _, o := range mod.Opens {
-			goPath, goPkg := cfg.ResolveImport(o.Path)
-			fmt.Printf("open %-20s → %-35s (package %s)\n", o.Path, goPath, goPkg)
+		for _, spec := range mod.Imports {
+			switch spec.Kind {
+			case ast.ImportGolang:
+				alias := spec.Alias
+				if alias == "" {
+					alias = "(default)"
+				}
+				fmt.Printf("import golang %-12s %q", alias, spec.Path)
+				if len(spec.Vals) > 0 {
+					fmt.Printf(" (%d val bindings)", len(spec.Vals))
+				}
+				fmt.Println()
+			case ast.ImportC0:
+				resolved, err := r.ResolveC0Path(spec.Path)
+				if err != nil {
+					fmt.Printf("import c0 %q → ERROR: %v\n", spec.Path, err)
+					continue
+				}
+				alias := modresolve.ImportAlias(spec, resolved)
+				fmt.Printf("import c0 %-12s %q → %s (package %s)\n", alias, spec.Path, resolved.GoImportPath, resolved.PkgName)
+				if resolved.SourceFile != "" {
+					fmt.Printf("  source: %s\n", resolved.SourceFile)
+				}
+			}
+		}
+		deps, err := r.LoadModuleGraph(file, mod)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "import graph error: %v\n", err)
+			os.Exit(1)
+		}
+		if len(deps) > 1 {
+			fmt.Println("\nimport graph:")
+			for path := range deps {
+				fmt.Printf("  %s\n", path)
+			}
 		}
 
 	case "fmt":
@@ -443,7 +483,7 @@ func main() {
 
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
-		fmt.Fprintf(os.Stderr, "Commands: lex, parse, check, compile, build, test, resolve, lsp, fmt\n")
+		fmt.Fprintf(os.Stderr, "Commands: lex, parse, check, compile, build, test, get, resolve, lsp, fmt\n")
 		os.Exit(1)
 	}
 }
@@ -587,7 +627,8 @@ func (s *LSPServer) handleDocumentUpdate(params json.RawMessage) {
 			}
 		}
 
-		tm, vtm, typeErrs := typecheck.CheckWithTypes(mod)
+		lspCfg := loadProjectConfig(fileName)
+		tm, vtm, typeErrs := typecheckModule(mod, fileName, lspCfg)
 		for _, terr := range typeErrs {
 			diagnostics = append(diagnostics, diagnosticFromError(terr, src))
 		}
@@ -1049,7 +1090,7 @@ func compileC0ModuleToGo(c0Path string, cfg *config.Config) (string, string, err
 		return "", "", err
 	}
 	mod = desugar.DesugarModule(mod)
-	tm, vtm, typeErrs := typecheck.CheckWithTypes(mod)
+	tm, vtm, typeErrs := typecheckModule(mod, c0Path, cfg)
 	if len(typeErrs) > 0 {
 		return "", "", fmt.Errorf("type errors in %s: %v", c0Path, typeErrs[0])
 	}
@@ -1062,28 +1103,56 @@ func compileC0ModuleToGo(c0Path string, cfg *config.Config) (string, string, err
 	return goSrc, gen.GoFileName(), nil
 }
 
-func writeOpenDependencies(mod *ast.Module, cfg *config.Config, projectRoot, tmpDir string) (string, error) {
-	if projectRoot == "" || len(mod.Opens) == 0 {
+func writeImportDependencies(mod *ast.Module, cfg *config.Config, projectRoot, tmpDir, entryFile string) (string, error) {
+	if projectRoot == "" {
 		return "module test\n\ngo 1.22\n", nil
 	}
+	lock, _ := config.LoadLockfile(filepath.Join(projectRoot, "c0.lock"))
+	r := modresolve.New(cfg, lock, projectRoot)
+	sources := make(map[string]string)
+
+	var collect func(*ast.Module) error
+	collect = func(m *ast.Module) error {
+		for _, spec := range m.Imports {
+			if spec.Kind != ast.ImportC0 {
+				continue
+			}
+			resolved, err := r.ResolveC0Path(spec.Path)
+			if err != nil {
+				return err
+			}
+			if resolved.SourceFile == "" {
+				return fmt.Errorf("module %q not found", spec.Path)
+			}
+			if _, ok := sources[resolved.SourceFile]; ok {
+				continue
+			}
+			sources[resolved.SourceFile] = resolved.GoImportPath
+			src, err := os.ReadFile(resolved.SourceFile)
+			if err != nil {
+				return err
+			}
+			depMod, err := parser.Parse(resolved.SourceFile, src)
+			if err != nil {
+				return err
+			}
+			depMod = desugar.DesugarModule(depMod)
+			if err := collect(depMod); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := collect(mod); err != nil {
+		return "", err
+	}
+	if len(sources) == 0 {
+		return "module test\n\ngo 1.22\n", nil
+	}
+
 	var replaces []string
 	var requires []string
-	compiled := make(map[string]bool)
-	for _, o := range mod.Opens {
-		goPath, _ := cfg.ResolveImport(o.Path)
-		c0Path := localC0PathForImport(projectRoot, goPath)
-		if c0Path == "" {
-			continue
-		}
-		if _, err := os.Stat(c0Path); err != nil {
-			continue
-		}
-		abs, _ := filepath.Abs(c0Path)
-		if compiled[abs] {
-			continue
-		}
-		compiled[abs] = true
-
+	for c0Path, goPath := range sources {
 		goSrc, goFile, err := compileC0ModuleToGo(c0Path, cfg)
 		if err != nil {
 			return "", err
@@ -1096,13 +1165,14 @@ func writeOpenDependencies(mod *ast.Module, cfg *config.Config, projectRoot, tmp
 		if err := os.WriteFile(filepath.Join(depDir, goFile), []byte(goSrc), 0644); err != nil {
 			return "", err
 		}
-		depMod := fmt.Sprintf("module %s\n\ngo 1.22\n", goPath)
-		if err := os.WriteFile(filepath.Join(depDir, "go.mod"), []byte(depMod), 0644); err != nil {
+		depModContent := fmt.Sprintf("module %s\n\ngo 1.22\n", goPath)
+		if err := os.WriteFile(filepath.Join(depDir, "go.mod"), []byte(depModContent), 0644); err != nil {
 			return "", err
 		}
 		replaces = append(replaces, fmt.Sprintf("replace %s => ./deps/%s", goPath, filepath.ToSlash(rel)))
 		requires = append(requires, fmt.Sprintf("require %s v0.0.0", goPath))
 	}
+	_ = entryFile
 	goMod := "module test\n\ngo 1.22\n"
 	if len(requires) > 0 {
 		goMod += "\n" + strings.Join(requires, "\n") + "\n"
@@ -1111,6 +1181,10 @@ func writeOpenDependencies(mod *ast.Module, cfg *config.Config, projectRoot, tmp
 		goMod += "\n" + strings.Join(replaces, "\n") + "\n"
 	}
 	return goMod, nil
+}
+
+func writeOpenDependencies(mod *ast.Module, cfg *config.Config, projectRoot, tmpDir string) (string, error) {
+	return writeImportDependencies(mod, cfg, projectRoot, tmpDir, "")
 }
 
 func runTests(dir string) int {
@@ -1147,7 +1221,7 @@ func runTests(dir string) int {
 		}
 		mod = desugar.DesugarModule(mod)
 
-		tm, vtm, typeErrs := typecheck.CheckWithTypes(mod)
+		tm, vtm, typeErrs := typecheckModule(mod, file, cfg)
 		if len(typeErrs) > 0 {
 			fmt.Printf("--- FAIL: %s (type errors)\n", name)
 			for _, e := range typeErrs {
@@ -1184,7 +1258,7 @@ func runTests(dir string) int {
 		defer os.RemoveAll(tmpDir)
 
 		projectRoot := findProjectRoot(dir)
-		goMod, err := writeOpenDependencies(mod, cfg, projectRoot, tmpDir)
+		goMod, err := writeImportDependencies(mod, cfg, projectRoot, tmpDir, file)
 		if err != nil {
 			fmt.Printf("--- FAIL: %s (deps: %v)\n", name, err)
 			failed++
@@ -1256,30 +1330,67 @@ func printModule(mod *ast.Module) string {
 }
 
 // FormatModule returns a properly formatted C0 source from an AST.
-// This is the formatter used by the `c0 fmt` command.
 func FormatModule(mod *ast.Module) string {
 	var buf strings.Builder
 
-	// Module header
-	buf.WriteString(fmt.Sprintf("module %s\n", mod.Name))
-
-	// Open statements
-	for i, o := range mod.Opens {
-		if i == 0 {
-			buf.WriteString("\n")
-		}
-		buf.WriteString(fmt.Sprintf("open %s\n", o.Path))
+	if mod.Name != "" {
+		buf.WriteString(fmt.Sprintf("module %s\n", mod.Name))
 	}
 
-	// Declarations
+	if len(mod.Imports) > 0 {
+		buf.WriteString("\nimport (\n")
+		for _, spec := range mod.Imports {
+			formatImportSpec(&buf, spec)
+		}
+		buf.WriteString(")\n")
+	}
+
 	for i, d := range mod.Decls {
-		if i > 0 {
+		if i > 0 || mod.Name != "" || len(mod.Imports) > 0 {
 			buf.WriteString("\n")
 		}
 		formatDecl(&buf, d, 0)
 	}
 
 	return buf.String()
+}
+
+func formatImportSpec(buf *strings.Builder, spec ast.ImportSpec) {
+	if spec.Alias != "" && spec.Alias != "." {
+		buf.WriteString("  " + spec.Alias + " ")
+	}
+	switch spec.Kind {
+	case ast.ImportGolang:
+		buf.WriteString("golang ")
+	case ast.ImportC0:
+		buf.WriteString("c0 ")
+		if spec.Alias == "." {
+			buf.WriteString(". ")
+		}
+	}
+	buf.WriteString(fmt.Sprintf("%q", spec.Path))
+	if len(spec.Vals) > 0 {
+		buf.WriteString(" {\n")
+		for _, v := range spec.Vals {
+			buf.WriteString(fmt.Sprintf("    val %s : ...\n", v.Name))
+		}
+		buf.WriteString("  }")
+	}
+	buf.WriteString("\n")
+}
+
+func loadProjectLock(file string) *config.Lockfile {
+	root := modresolve.FindProjectRoot(file)
+	if root == "" {
+		lf, _ := config.LoadLockfile("c0.lock")
+		return lf
+	}
+	lf, _ := config.LoadLockfile(filepath.Join(root, "c0.lock"))
+	return lf
+}
+
+func typecheckModule(mod *ast.Module, file string, cfg *config.Config) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
+	return typecheck.CheckWithTypesForFile(mod, file, cfg, loadProjectLock(file))
 }
 
 func formatDecl(buf *strings.Builder, d ast.TopDecl, depth int) {

@@ -1,13 +1,14 @@
 module Main
 
-extern "go" "net/http" {}
-extern "go" "encoding/json" {}
-extern "go" "io" {}
-extern "go" "strconv" {}
-
-extern "go" "math" {
-  val Sqrt : float -> float
-}
+import (
+  golang "net/http"
+  golang "encoding/json"
+  golang "io"
+  golang "strconv"
+  golang "math" {
+    val Sqrt : float -> float
+  }
+)
 
 @golang {
   func httpGetString(url string) string {

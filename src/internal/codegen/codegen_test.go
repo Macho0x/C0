@@ -108,7 +108,7 @@ func TestCompileResult(t *testing.T) {
 
 func TestExternTupleCallCodegen(t *testing.T) {
 	src := `module main
-extern "go" "strconv" { val Atoi : string -> (int, string) }
+import golang "strconv" { val Atoi : string -> (int, string) }
 let main () = let pair = Atoi "42" in pair
 `
 	mod, err := parser.Parse("t.c0", []byte(src))

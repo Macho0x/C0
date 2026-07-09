@@ -11,7 +11,7 @@ func TestMixedBuild(t *testing.T) {
 
 	// Write a simple .c0 file
 	c0src := `module M
-extern "go" "fmt" { val Println : string -> unit }
+import golang "fmt" { val Println : string -> unit }
 let main () = Println "ok"
 `
 	if err := os.WriteFile(filepath.Join(dir, "main.c0"), []byte(c0src), 0644); err != nil {

@@ -15,22 +15,24 @@ Line comments are not provided by default; block comments are sufficient and ali
 
 - Identifiers start with a letter or underscore and continue with letters, digits, underscores, or apostrophes.
 - Type variables are written with a leading apostrophe: `'a`, `'key`.
-- Keywords include: `let`, `type`, `match`, `with`, `if`, `then`, `else`, `fun`, `module`, `open`, `import`, `extern`, `mutable`, `rec`, `and`, `in`, `as`, `when`, `requires`, `returns`, `true`, `false`, `unit`.
+- Keywords include: `let`, `type`, `match`, `with`, `if`, `then`, `else`, `fun`, `module`, `import`, `golang`, `c0`, `mutable`, `rec`, `and`, `in`, `as`, `when`, `requires`, `returns`, `true`, `false`, `unit`, `private`, `go`, `chan`.
 
 ## Modules
 
-A file begins with a module declaration:
+A file begins with a module declaration and optional imports:
 
 ```c0
 module MyModule
 
-open Std.List
-open Other.Module
+import (
+  golang "fmt"
+  c0 . "std.io"
+)
 
 let x = 1
 ```
 
-Modules map to Go packages. `open` brings names into scope without qualifying them; `import` references a Go package.
+See [05-modules-and-packages.md](../design/05-modules-and-packages.md) for import forms. Legacy `open` and `extern "go"` are parse errors in v0.3+.
 
 ## Value declarations
 

@@ -24,7 +24,7 @@ import (
 	"c0.dev/compiler/internal/active"
 	"c0.dev/compiler/internal/ast"
 	"c0.dev/compiler/internal/config"
-	"c0.dev/compiler/internal/parser"
+	"c0.dev/compiler/internal/modresolve"
 	"c0.dev/compiler/internal/prelude"
 	"c0.dev/compiler/internal/refine"
 	"c0.dev/compiler/internal/token"
@@ -77,8 +77,8 @@ type Generator struct {
 	prelude *prelude.Prelude
 
 	// extern tracking
-	externImports map[string]string // Go import path → package name
-	externNames    map[string]string // C0 name → Go qualified name (pkg.Name)
+	externImports  map[string]string   // Go import path → package name
+	externNames    map[string]string   // C0 name → Go qualified name (pkg.Name)
 	externRetTypes map[string]ast.Type // C0 extern val name → full function type
 
 	// row-polymorphic function params: funcName → field names
@@ -247,14 +247,8 @@ func (g *Generator) Generate(mod *ast.Module) (string, error) {
 	// Pre-scan: collect type and function declarations
 	g.prescan(mod)
 
-	// Resolve open statements to Go imports
-	g.resolveOpens(mod)
-
-	// Collect extern imports
-	g.collectExterns(mod)
-
-	// Map opened modules' exported names to Go package qualifiers
-	g.collectOpenExports(mod)
+	// Resolve imports (golang + c0)
+	g.collectImports(mod)
 
 	// Build the body first so we know what imports are needed
 	var body strings.Builder
@@ -278,8 +272,6 @@ func (g *Generator) Generate(mod *ast.Module) (string, error) {
 		switch d := d.(type) {
 		case *ast.LetDecl:
 			g.emitLetDecl(d)
-		case *ast.ExternDecl:
-			g.emitExternDecl(d)
 		case *ast.GolangEmbedDecl:
 			g.emitGolangEmbedDecl(d)
 		}
@@ -681,30 +673,53 @@ func (g *Generator) indentStr() string {
 // Imports
 // ---------------------------------------------------------------------------
 
-// resolveOpens resolves all `open` statements in the module to Go import paths.
-func (g *Generator) resolveOpens(mod *ast.Module) {
-	if g.cfg == nil {
-		return
+// collectImports gathers golang and c0 imports and export qualifiers.
+func (g *Generator) collectImports(mod *ast.Module) {
+	root := findProjectRootFromFile(g.srcFile)
+	var resolver *modresolve.Resolver
+	var deps map[string]*ast.Module
+	if g.cfg != nil {
+		resolver = modresolve.New(g.cfg, nil, root)
+		deps, _ = resolver.LoadModuleGraph(g.srcFile, mod)
 	}
-	for _, o := range mod.Opens {
-		goPath, goPkg := g.cfg.ResolveImport(o.Path)
-		// Skip self-imports (same package as current module)
-		if goPkg == g.goPkg {
-			continue
-		}
-		g.resolvedImports[o.Path] = goPath
-		g.importPkgs[goPath] = goPkg
-	}
-}
 
-// collectExterns gathers all extern import paths and registers name mappings.
-func (g *Generator) collectExterns(mod *ast.Module) {
+	for _, spec := range mod.Imports {
+		switch spec.Kind {
+		case ast.ImportGolang:
+			g.collectGolangImport(spec)
+		case ast.ImportC0:
+			if resolver == nil {
+				continue
+			}
+			resolved, err := resolver.ResolveC0Path(spec.Path)
+			if err != nil {
+				continue
+			}
+			alias := modresolve.ImportAlias(spec, resolved)
+			pkg := resolved.PkgName
+			if alias != "" && alias != "." {
+				pkg = alias
+			}
+			if resolved.GoImportPath != "" {
+				if alias == "." {
+					g.importPkgs[resolved.GoImportPath] = resolved.PkgName
+				} else if g.goPkg != pkg {
+					g.importPkgs[resolved.GoImportPath] = pkg
+					g.resolvedImports[spec.Path] = resolved.GoImportPath
+				}
+			}
+			if alias == "." {
+				dep := deps[resolved.GoImportPath]
+				if dep != nil {
+					g.collectDotExports(dep, resolved.PkgName)
+				}
+			}
+		}
+	}
+
 	for _, d := range mod.Decls {
-		switch d := d.(type) {
-		case *ast.ExternDecl:
-			g.collectExternDecl(d)
-		case *ast.GolangEmbedDecl:
-			for _, ev := range d.Vals {
+		if ge, ok := d.(*ast.GolangEmbedDecl); ok {
+			for _, ev := range ge.Vals {
 				g.externNames[ev.Name] = ev.Name
 				g.externRetTypes[ev.Name] = ev.Type
 				if ret := finalReturnASTType(ev.Type); ret != nil {
@@ -713,6 +728,55 @@ func (g *Generator) collectExterns(mod *ast.Module) {
 			}
 		}
 	}
+}
+
+func (g *Generator) collectGolangImport(spec ast.ImportSpec) {
+	if spec.Path != "" {
+		g.externImports[spec.Path] = packageNameFromPath2(spec.Path)
+	}
+	for _, ev := range spec.Vals {
+		pkgName := packageNameFromPath2(spec.Path)
+		var qualified string
+		if spec.Path == "" {
+			qualified = ev.Name
+		} else {
+			qualified = pkgName + "." + ev.Name
+		}
+		g.externNames[ev.Name] = qualified
+		g.externRetTypes[ev.Name] = ev.Type
+		if ret := finalReturnASTType(ev.Type); ret != nil {
+			g.scanUsedTypes(ret)
+		}
+	}
+}
+
+func (g *Generator) collectDotExports(dep *ast.Module, goPkg string) {
+	for _, d := range dep.Decls {
+		switch d := d.(type) {
+		case *ast.LetDecl:
+			if d.Private {
+				continue
+			}
+			for _, b := range d.Bindings {
+				g.openExports[b.Name] = goPkg
+			}
+		case *ast.TypeDecl:
+			if d.Private {
+				continue
+			}
+			g.openExports[d.Name] = goPkg
+		}
+	}
+}
+
+// resolveOpens is deprecated; use collectImports.
+func (g *Generator) resolveOpens(mod *ast.Module) {
+	_ = mod
+}
+
+// collectExterns is deprecated; use collectImports.
+func (g *Generator) collectExterns(mod *ast.Module) {
+	_ = mod
 }
 
 func (g *Generator) collectExternDecl(ed *ast.ExternDecl) {
@@ -778,44 +842,7 @@ func (g *Generator) externReturnTuple(funcName string) *ast.TTuple {
 }
 
 func (g *Generator) collectOpenExports(mod *ast.Module) {
-	if g.cfg == nil || len(mod.Opens) == 0 {
-		return
-	}
-	root := findProjectRootFromFile(g.srcFile)
-	if root == "" {
-		return
-	}
-	for _, o := range mod.Opens {
-		goPath, pkg := g.cfg.ResolveImport(o.Path)
-		c0Path := localC0PathForImport(root, goPath)
-		if c0Path == "" {
-			continue
-		}
-		src, err := os.ReadFile(c0Path)
-		if err != nil {
-			continue
-		}
-		depMod, err := parser.Parse(c0Path, src)
-		if err != nil {
-			continue
-		}
-		for _, d := range depMod.Decls {
-			switch d := d.(type) {
-			case *ast.LetDecl:
-				if d.Private {
-					continue
-				}
-				for _, b := range d.Bindings {
-					g.openExports[b.Name] = pkg
-				}
-			case *ast.TypeDecl:
-				if d.Private {
-					continue
-				}
-				g.openExports[d.Name] = pkg
-			}
-		}
-	}
+	_ = mod
 }
 
 func findProjectRootFromFile(srcFile string) string {

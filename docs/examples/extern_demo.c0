@@ -1,9 +1,13 @@
 module main
 
-extern "go" "strings" {
-  val ToUpper : string -> string
-  val ToLower : string -> string
-}
+import (
+  golang "strings" {
+    val ToUpper : string -> string
+    val ToLower : string -> string
+  }
+  golang "fmt"
+  golang "time"
+)
 
 @golang {
   func greet(name string) string {
@@ -15,9 +19,6 @@ extern "go" "strings" {
 }
 val greet : string -> string
 val addPrefix : string -> string -> string
-
-extern "go" "fmt" {}
-extern "go" "time" {}
 
 @golang {
   func nowString() string {

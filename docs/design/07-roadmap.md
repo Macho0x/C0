@@ -55,7 +55,8 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] `OwnedChan` linear channel wrapper (compile-time close safety via linear discharge checking).
 - [x] Built-in refinement solver (compile-time VC checking for integer arithmetic).
 - [x] Nil channel detection (flow-sensitive initialization checking).
-- [ ] Package manager (`c0 get`).
+- [x] Unified import syntax (`import golang` / `import c0`).
+- [x] Package manager (`c0 get`, `c0.lock`).
 
 ## Phase 4: Maturity
 

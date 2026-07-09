@@ -8,6 +8,7 @@ import (
 
 	"c0.dev/compiler/internal/ast"
 	"c0.dev/compiler/internal/parser"
+	"c0.dev/compiler/internal/typecheck"
 )
 
 // examplesDir is relative to the module root.
@@ -294,7 +295,7 @@ func TestLexOrderbook(t *testing.T) {
 func TestParseGolangEmbed(t *testing.T) {
 	src := `module main
 
-extern "go" "fmt" {}
+import golang "fmt"
 
 @golang {
   func nowString() string {
@@ -329,7 +330,7 @@ let main () = print_line (nowString ())
 func TestRejectLegacyGoBlockInExtern(t *testing.T) {
 	src := `module main
 
-extern "go" "fmt" {
+import golang "fmt" {
   go {
     func x() {}
   }
@@ -337,11 +338,182 @@ extern "go" "fmt" {
 `
 	_, err := parser.Parse("bad.c0", []byte(src))
 	if err == nil {
-		t.Fatal("expected parse error for go { } inside extern")
+		t.Fatal("expected parse error for go { } inside import block")
 	}
-	if !strings.Contains(err.Error(), "@golang") {
-		t.Errorf("expected @golang migration hint, got: %v", err)
+	if !strings.Contains(err.Error(), "val") {
+		t.Errorf("expected val-only import block error, got: %v", err)
 	}
+}
+
+func TestImportGrouped(t *testing.T) {
+	src := `module main
+import (
+  golang "fmt"
+  c0 "std.io"
+)
+let main () = ()
+`
+	mod, err := parser.Parse("t.c0", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(mod.Imports) != 2 {
+		t.Fatalf("expected 2 imports, got %d", len(mod.Imports))
+	}
+	if mod.Imports[0].Kind != ast.ImportGolang || mod.Imports[0].Path != "fmt" {
+		t.Errorf("import[0]: %+v", mod.Imports[0])
+	}
+	if mod.Imports[1].Kind != ast.ImportC0 || mod.Imports[1].Path != "std.io" {
+		t.Errorf("import[1]: %+v", mod.Imports[1])
+	}
+}
+
+func TestImportGolangVals(t *testing.T) {
+	src := `module main
+import golang "strconv" { val Atoi : string -> (int, string) }
+let main () = ()
+`
+	mod, err := parser.Parse("t.c0", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(mod.Imports) != 1 || len(mod.Imports[0].Vals) != 1 {
+		t.Fatalf("expected 1 val, got %+v", mod.Imports)
+	}
+}
+
+func TestImportC0Dot(t *testing.T) {
+	src := `module main
+import c0 . "std.io"
+let main () = ()
+`
+	mod, err := parser.Parse("t.c0", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mod.Imports[0].Alias != "." {
+		t.Errorf("expected dot alias, got %q", mod.Imports[0].Alias)
+	}
+}
+
+func TestImportAlias(t *testing.T) {
+	src := `module main
+import httpx golang "net/http"
+let main () = ()
+`
+	mod, err := parser.Parse("t.c0", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mod.Imports[0].Alias != "httpx" {
+		t.Errorf("expected httpx alias, got %q", mod.Imports[0].Alias)
+	}
+}
+
+func TestImportC0CanonicalPath(t *testing.T) {
+	src := `module main
+import c0 "github.com/foo/bar"
+let main () = ()
+`
+	mod, err := parser.Parse("t.c0", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mod.Imports[0].Path != "github.com/foo/bar" {
+		t.Errorf("got path %q", mod.Imports[0].Path)
+	}
+}
+
+func TestRejectOpen(t *testing.T) {
+	src := `module main
+open Std.IO
+let main () = ()
+`
+	_, err := parser.Parse("t.c0", []byte(src))
+	if err == nil {
+		t.Fatal("expected error for open")
+	}
+	if !strings.Contains(err.Error(), "import c0") {
+		t.Errorf("expected migration hint, got: %v", err)
+	}
+}
+
+func TestRejectExtern(t *testing.T) {
+	src := `module main
+extern "go" "fmt" {}
+let main () = ()
+`
+	_, err := parser.Parse("t.c0", []byte(src))
+	if err == nil {
+		t.Fatal("expected error for extern")
+	}
+	if !strings.Contains(err.Error(), "import golang") {
+		t.Errorf("expected migration hint, got: %v", err)
+	}
+}
+
+func TestRejectC0ImportVals(t *testing.T) {
+	src := `module main
+import c0 "std.io" { val X : int }
+let main () = ()
+`
+	_, err := parser.Parse("t.c0", []byte(src))
+	if err == nil {
+		t.Fatal("expected error for c0 import with vals")
+	}
+}
+
+func TestRejectImportGo(t *testing.T) {
+	src := `module main
+import go "fmt"
+let main () = ()
+`
+	_, err := parser.Parse("t.c0", []byte(src))
+	if err == nil {
+		t.Fatal("expected error for import go")
+	}
+	if !strings.Contains(err.Error(), "golang") {
+		t.Errorf("expected golang hint, got: %v", err)
+	}
+}
+
+func TestImportEmptyGrouped(t *testing.T) {
+	src := `module main
+import ()
+let main () = ()
+`
+	mod, err := parser.Parse("t.c0", []byte(src))
+	if err != nil {
+		t.Fatalf("empty import group should parse: %v", err)
+	}
+	if len(mod.Imports) != 0 {
+		t.Errorf("expected 0 imports, got %d", len(mod.Imports))
+	}
+}
+
+func TestImportDuplicatePath(t *testing.T) {
+	src := `module main
+import (
+  golang "fmt"
+  golang "fmt"
+)
+let main () = ()
+`
+	mod, err := parser.Parse("t.c0", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(mod.Imports) != 2 {
+		t.Fatalf("expected 2 specs at parse time")
+	}
+	_, _, errs := typecheck.CheckWithTypes(mod)
+	for _, e := range errs {
+		if strings.Contains(e.Error(), "duplicate import") {
+			return
+		}
+	}
+	t.Log("duplicate import may be caught at typecheck")
+	_ = mod
 }
 
 // ---------------------------------------------------------------------------

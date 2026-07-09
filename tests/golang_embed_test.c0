@@ -1,6 +1,6 @@
 module main
 
-extern "go" "strings" {
+import golang "strings" {
   val ToUpper : string -> string
 }
 

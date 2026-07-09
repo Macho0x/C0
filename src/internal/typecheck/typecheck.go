@@ -22,8 +22,10 @@ import (
 
 	"c0.dev/compiler/internal/active"
 	"c0.dev/compiler/internal/ast"
+	"c0.dev/compiler/internal/config"
 	"c0.dev/compiler/internal/exhaustive"
 	"c0.dev/compiler/internal/gosig"
+	"c0.dev/compiler/internal/modresolve"
 	"c0.dev/compiler/internal/prelude"
 	"c0.dev/compiler/internal/token"
 	"c0.dev/compiler/internal/typeinfo"
@@ -101,13 +103,13 @@ func (e *Env) InScope() map[int64]bool {
 
 // Checker holds the mutable state during type checking.
 type Checker struct {
-	env            *Env             // current environment
-	sub            types.Subst      // current substitution
-	errs           []error          // accumulated errors
-	types          typeinfo.TypeMap // maps expression AST nodes to their inferred types
-	privateNames   map[string]bool  // names marked private in the current module
+	env            *Env              // current environment
+	sub            types.Subst       // current substitution
+	errs           []error           // accumulated errors
+	types          typeinfo.TypeMap  // maps expression AST nodes to their inferred types
+	privateNames   map[string]bool   // names marked private in the current module
 	blockedNames   map[string]string // private name → defining module path
-	importedModule string           // module being checked (for error messages)
+	importedModule string            // module being checked (for error messages)
 }
 
 // pkgFromPath extracts a Go package name from an import path (last segment).
@@ -146,11 +148,34 @@ func Check(mod *ast.Module) []error {
 // resolved types for every expression node, a VarTypeMap with resolved
 // types for let-bound variables, plus any errors.
 func CheckWithTypes(mod *ast.Module) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
-	return CheckWithTypesAndDeps(mod, nil)
+	return CheckWithTypesForFile(mod, "", nil, nil)
+}
+
+// CheckWithTypesForFile type-checks mod, resolving import c0 dependencies from disk when srcFile is set.
+func CheckWithTypesForFile(mod *ast.Module, srcFile string, cfg *config.Config, lock *config.Lockfile) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
+	var deps map[string]*ast.Module
+	var resolver *modresolve.Resolver
+	if srcFile != "" {
+		if cfg == nil {
+			cfg = config.DefaultConfig()
+		}
+		root := modresolve.FindProjectRoot(srcFile)
+		resolver = modresolve.New(cfg, lock, root)
+		var graphErr error
+		deps, graphErr = resolver.LoadModuleGraph(srcFile, mod)
+		if graphErr != nil {
+			return nil, nil, []error{graphErr}
+		}
+	}
+	return checkWithDepsAndImports(mod, deps, resolver)
 }
 
 // CheckWithTypesAndDeps type-checks mod after binding exported names from dependency modules.
 func CheckWithTypesAndDeps(mod *ast.Module, deps map[string]*ast.Module) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
+	return checkWithDepsAndImports(mod, deps, nil)
+}
+
+func checkWithDepsAndImports(mod *ast.Module, deps map[string]*ast.Module, resolver *modresolve.Resolver) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
 	c := &Checker{
 		env:          NewEnv(nil),
 		sub:          types.EmptySubst(),
@@ -160,7 +185,11 @@ func CheckWithTypesAndDeps(mod *ast.Module, deps map[string]*ast.Module) (typein
 	}
 	c.initBuiltins()
 	c.importedModule = mod.Name
-	c.bindDependencyExports(deps)
+	if len(mod.Imports) > 0 {
+		c.bindImportSpecs(mod.Imports, deps, resolver)
+	} else {
+		c.bindDependencyExports(deps)
+	}
 	c.checkModule(mod)
 
 	// Apply the final substitution to all recorded types so they are fully
@@ -408,17 +437,13 @@ func (c *Checker) checkModule(mod *ast.Module) {
 	}
 	_ = typeDecls
 
-	// Second pass: check value declarations (let, extern).
+	// bindImportSpecs runs before checkModule when imports are present
+
+	// Second pass: check value declarations (let, @golang vals).
 	for _, d := range mod.Decls {
 		switch d := d.(type) {
 		case *ast.LetDecl:
 			c.checkLetDecl(d)
-		case *ast.ExternDecl:
-			if d.Lang != "go" {
-				c.errorf("only 'go' extern is supported, got %q", d.Lang)
-				continue
-			}
-			c.bindExternVals(d.Path, d.Vals)
 		case *ast.GolangEmbedDecl:
 			c.bindExternVals("", d.Vals)
 		case *ast.TypeDecl:
@@ -1746,41 +1771,98 @@ func collectPrivateNames(mod *ast.Module) map[string]bool {
 	return priv
 }
 
+func (c *Checker) bindImportSpecs(imports []ast.ImportSpec, deps map[string]*ast.Module, resolver *modresolve.Resolver) {
+	seenPaths := make(map[string]bool)
+	for _, spec := range imports {
+		if spec.Path != "" && seenPaths[spec.Path] {
+			c.errorf("duplicate import %q", spec.Path)
+		}
+		seenPaths[spec.Path] = true
+
+		switch spec.Kind {
+		case ast.ImportGolang:
+			if len(spec.Vals) > 0 {
+				c.bindExternVals(spec.Path, spec.Vals)
+			}
+		case ast.ImportC0:
+			if resolver == nil {
+				c.errorf("cannot resolve c0 import %q without source file context", spec.Path)
+				continue
+			}
+			resolved, err := resolver.ResolveC0Path(spec.Path)
+			if err != nil {
+				c.errorf("%v", err)
+				continue
+			}
+			dep := deps[resolved.GoImportPath]
+			if dep == nil {
+				c.errorf("module %q not found", spec.Path)
+				continue
+			}
+			alias := modresolve.ImportAlias(spec, resolved)
+			if alias == "." {
+				c.bindModuleExports(dep, "", true, deps, resolver)
+			} else {
+				c.bindModuleExports(dep, alias, false, deps, resolver)
+			}
+		}
+	}
+}
+
 func (c *Checker) bindDependencyExports(deps map[string]*ast.Module) {
 	if len(deps) == 0 {
 		return
 	}
-	for modName, dep := range deps {
-		priv := collectPrivateNames(dep)
-		for name := range priv {
-			c.blockedNames[name] = modName
-		}
-		depChecker := &Checker{
-			env:          NewEnv(nil),
-			sub:          types.EmptySubst(),
-			types:        make(typeinfo.TypeMap),
-			privateNames: priv,
-			blockedNames: make(map[string]string),
-		}
-		depChecker.initBuiltins()
-		depChecker.checkModule(dep)
-		for _, d := range dep.Decls {
-			switch d := d.(type) {
-			case *ast.LetDecl:
-				if d.Private {
-					continue
-				}
-				for _, b := range d.Bindings {
-					if s := depChecker.env.Lookup(b.Name); s != nil {
-						c.env.Bind(b.Name, s)
+	for _, dep := range deps {
+		c.bindModuleExports(dep, "", true, deps, nil)
+	}
+}
+
+func (c *Checker) bindModuleExports(dep *ast.Module, prefix string, unqualified bool, deps map[string]*ast.Module, resolver *modresolve.Resolver) {
+	priv := collectPrivateNames(dep)
+	for name := range priv {
+		c.blockedNames[name] = dep.Name
+	}
+	depChecker := &Checker{
+		env:          NewEnv(nil),
+		sub:          types.EmptySubst(),
+		types:        make(typeinfo.TypeMap),
+		privateNames: priv,
+		blockedNames: make(map[string]string),
+	}
+	depChecker.initBuiltins()
+	if len(dep.Imports) > 0 && resolver != nil {
+		depChecker.bindImportSpecs(dep.Imports, deps, resolver)
+	}
+	depChecker.checkModule(dep)
+	for _, d := range dep.Decls {
+		switch d := d.(type) {
+		case *ast.LetDecl:
+			if d.Private {
+				continue
+			}
+			for _, b := range d.Bindings {
+				if s := depChecker.env.Lookup(b.Name); s != nil {
+					if unqualified {
+						if existing := c.env.Lookup(b.Name); existing != nil {
+							c.errorf("import binds %q which conflicts with existing name", b.Name)
+						} else {
+							c.env.Bind(b.Name, s)
+						}
+					} else if prefix != "" {
+						c.env.Bind(prefix+"."+b.Name, s)
 					}
 				}
-			case *ast.TypeDecl:
-				if d.Private {
-					continue
-				}
-				if s := depChecker.env.Lookup(d.Name); s != nil {
+			}
+		case *ast.TypeDecl:
+			if d.Private {
+				continue
+			}
+			if s := depChecker.env.Lookup(d.Name); s != nil {
+				if unqualified {
 					c.env.Bind(d.Name, s)
+				} else if prefix != "" {
+					c.env.Bind(prefix+"."+d.Name, s)
 				}
 			}
 		}
