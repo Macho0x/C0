@@ -67,19 +67,15 @@ Reload VS Code / Zed after grammar changes.
 
 ## Editor extensions
 
-### VS Code
+### VS Code / Cursor
 
 ```bash
-cd editors/vscode && npm install
+./scripts/install-editor-extension.sh
 ```
 
-Install via **Developer: Install Extension from Location…** → `editors/vscode`.
+Then reload the window (`Developer: Reload Window`). Workspace recommendations do not install local extensions automatically.
 
-Provides:
-
-- TextMate syntax highlighting
-- `.goop` file icon (`assets/goop-icon-square.png`)
-- LSP via `goop lsp` (requires `goop` on `PATH`)
+Provides syntax highlighting, LSP via `goop lsp`, and optional **Goop File Icons** theme (`Preferences: File Icon Theme`).
 
 See [editors/vscode/README.md](editors/vscode/README.md).
 

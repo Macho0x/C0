@@ -1,0 +1,10 @@
+{
+  "iconDefinitions": {
+    "goop-file": {
+      "iconPath": "./goop-icon.png"
+    }
+  },
+  "fileExtensions": {
+    "goop": "goop-file"
+  }
+}

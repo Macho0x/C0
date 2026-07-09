@@ -2,7 +2,7 @@
   "name": "goop",
   "displayName": "Goop Language Support",
   "description": "Syntax highlighting and LSP support for Goop, a statically typed language that compiles to Go",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "goop",
   "icon": "icons/goop-icon.png",
   "repository": {
@@ -53,6 +53,13 @@
         "language": "goop",
         "scope": "source.goop",
         "path": "./syntaxes/goop.tmLanguage.json"
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "goop-file-icons",
+        "label": "Goop File Icons",
+        "path": "./icons/goop-file-icon-theme.json"
       }
     ]
   },

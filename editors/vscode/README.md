@@ -1,40 +1,63 @@
-# Install the Goop VS Code extension
+# Install the Goop VS Code / Cursor extension
 
-Syntax highlighting, `.goop` file icons, and LSP diagnostics (via `goop lsp`).
+Syntax highlighting, LSP diagnostics, and optional `.goop` file icons.
+
+## Quick install (recommended)
+
+From the repo root:
+
+```bash
+./scripts/install-editor-extension.sh
+```
+
+Then **reload the window**: `Ctrl+Shift+P` → **Developer: Reload Window**
+
+> Workspace recommendations do **not** auto-install local extensions.
+> You must run the install script once (or install manually below).
 
 ## Prerequisites
 
-1. Build the compiler and ensure `goop` is on your `PATH`:
+Build the compiler (LSP needs it):
 
 ```bash
 cd src && go build -o ../goop ./cmd/goop
-export PATH="$PWD/..:$PATH"
 ```
 
-2. Install Node dependencies for the extension (once):
+## Manual install
 
 ```bash
 cd editors/vscode
 npm install
+npx @vscode/vsce package --out goop.vsix
+cursor --install-extension goop.vsix    # or: code --install-extension goop.vsix
 ```
 
-## Install locally
+Reload the window after installing.
 
-1. Build the compiler (extension auto-detects `${workspaceFolder}/goop`):
+## What you should see
 
-```bash
-cd src && go build -o ../goop ./cmd/goop
+| Feature | How to verify |
+|---|---|
+| **Syntax highlighting** | Open any `.goop` file — keywords, `match`, strings colored |
+| **Language mode** | Bottom-right status bar shows **Goop** |
+| **LSP diagnostics** | Open a file with a type error — squiggles appear |
+| **File icon** | Optional — see below |
+
+## File icons (optional)
+
+VS Code/Cursor do not show custom file icons from the language definition alone.
+Enable the bundled icon theme:
+
+1. `Ctrl+Shift+P` → **Preferences: File Icon Theme**
+2. Choose **Goop File Icons**
+
+Or add to your user/workspace settings:
+
+```json
+"workbench.iconTheme": "goop-file-icons"
 ```
 
-2. Install extension dependencies (once):
-
-```bash
-cd editors/vscode && npm install
-```
-
-3. Open this repository in VS Code — you should be prompted to install the recommended **Goop Language Support** extension, or run **Developer: Install Extension from Location…** and select `editors/vscode`.
-
-4. Reload the window.
+> This icon theme only defines `.goop`; other files use VS Code defaults.
 
 ## Settings
 
@@ -42,26 +65,20 @@ cd editors/vscode && npm install
 |---|---|---|
 | `goop.path` | *(auto)* | Path to `goop` binary. Empty = try `goop` in workspace root, then `PATH`. |
 
-The workspace ships `.vscode/settings.json` pointing at `${workspaceFolder}/goop`.
-
-## What you should see
-
-- **Goop file icon** in the file explorer (from `assets/goop-icon-square.png`)
-- **Syntax highlighting** (keywords, `match`, `@golang` blocks, etc.)
-- **LSP diagnostics** when `goop` is found (workspace `goop` binary or `goop.path` setting)
-
-Open any `.goop` file — you should see:
+This workspace sets `"goop.path": "${workspaceFolder}/goop"` in `.vscode/settings.json`.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| No highlighting | Confirm the extension is enabled; check language mode is **Goop** (bottom-right) |
-| No icons | Reload window after install; icons require VS Code 1.64+ |
-| LSP not working | Run `which goop`; rebuild compiler; check **Output → Goop Language Server** |
-| Wrong colors after grammar change | Reload window; grammar is `syntaxes/goop.tmLanguage.json` (synced from repo root `syntaxes/`) |
+| No highlighting at all | Extension not installed — run `./scripts/install-editor-extension.sh` and reload |
+| Plain text / wrong language | Click language mode (bottom-right) → select **Goop** |
+| No LSP errors | Build `./goop`; check **Output** panel → **Goop Language Server** |
+| No file icon | Enable **Goop File Icons** theme (optional, see above) |
+| Stale colors after grammar change | Re-run install script, reload window |
 
 ## Grammar source
 
-Canonical grammar: [`../../syntaxes/goop.tmLanguage.json`](../../syntaxes/goop.tmLanguage.json).  
-After editing it, copy to `editors/vscode/syntaxes/` and `editors/zed/grammars/`.
+Canonical grammar: [`../../syntaxes/goop.tmLanguage.json`](../../syntaxes/goop.tmLanguage.json)
+
+After editing, run `../../scripts/sync-syntax.sh` and reinstall the extension.

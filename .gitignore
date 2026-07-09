@@ -49,3 +49,5 @@ codedb.snapshot
 # Node (VS Code extension)
 node_modules/
 editors/vscode/node_modules/
+*.vsix
+editors/vscode/*.vsix
