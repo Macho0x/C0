@@ -9,6 +9,25 @@ const { LanguageClient, TransportKind } = require("vscode-languageclient/node");
 let client;
 
 /**
+ * Expand VS Code-style variables in a settings path.
+ * @param {string} value
+ * @param {string | undefined} workspaceRoot
+ * @returns {string}
+ */
+function expandConfigPath(value, workspaceRoot) {
+  let v = value;
+  if (workspaceRoot) {
+    v = v.replace(/\$\{workspaceFolder\}/g, workspaceRoot);
+    v = v.replace(/\$\{workspaceFolderBasename\}/g, path.basename(workspaceRoot));
+  }
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  if (home) {
+    v = v.replace(/\$\{userHome\}/g, home);
+  }
+  return v;
+}
+
+/**
  * @param {vscode.WorkspaceConfiguration} config
  * @param {string | undefined} workspaceRoot
  * @returns {string}
@@ -16,13 +35,14 @@ let client;
 function resolveGoopPath(config, workspaceRoot) {
   const configured = config.get("path", "").trim();
   if (configured) {
-    if (path.isAbsolute(configured)) {
-      return configured;
+    const expanded = expandConfigPath(configured, workspaceRoot);
+    if (path.isAbsolute(expanded)) {
+      return expanded;
     }
     if (workspaceRoot) {
-      return path.join(workspaceRoot, configured);
+      return path.join(workspaceRoot, expanded);
     }
-    return configured;
+    return expanded;
   }
 
   const candidates = [];
