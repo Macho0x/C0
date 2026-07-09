@@ -144,6 +144,13 @@ type AliasTypeKind struct {
 
 func (*AliasTypeKind) typeKindNode() {}
 
+// NewtypeTypeKind is `type T = newtype SomeType` (a nominal wrapper).
+type NewtypeTypeKind struct {
+	Rep Type
+}
+
+func (*NewtypeTypeKind) typeKindNode() {}
+
 // OpaqueTypeKind is `type T : 1` — an opaque linear type with no body.
 type OpaqueTypeKind struct{}
 

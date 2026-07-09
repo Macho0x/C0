@@ -1,22 +1,5 @@
 // Package exhaustive implements pattern exhaustiveness and redundancy
 // checking for Goop match expressions.
-//
-// For every match expression, we verify that the patterns cover all possible
-// values of the scrutinee type. We also detect redundant (unreachable) patterns.
-//
-// Supported pattern forms:
-//   - Wildcards and variables (cover everything)
-//   - Literals (cover exactly one value)
-//   - Constructor patterns (cover one variant of an ADT)
-//   - Record patterns (cover all records with the specified fields)
-//   - Tuple patterns (cover tuples of matching arity)
-//   - List patterns ([] covers empty list; [a;b;c] covers exactly that list)
-//   - Cons patterns (cover non-empty lists)
-//   - Alias patterns (same as the inner pattern)
-//
-// Patterns with guards are treated as potentially non-matching (the guard
-// may fail), so the exhaustiveness check considers the pattern to cover its
-// case but does not treat it as "covering" for redundancy purposes.
 package exhaustive
 
 import (
@@ -25,34 +8,67 @@ import (
 
 	"goop.dev/compiler/internal/active"
 	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/token"
 )
 
-// Warning represents an exhaustiveness warning.
-type Warning struct {
-	Message string
+// Error is a structured exhaustiveness diagnostic.
+type Error struct {
+	Code string
+	Msg  string
+	Loc  token.SourceLoc
 }
 
-func (w *Warning) Error() string { return w.Message }
-
-// Check runs exhaustiveness checking on a module and returns warnings.
-func Check(mod *ast.Module) []error {
-	c := &checker{}
-	c.checkModule(mod)
-	var errs []error
-	for _, w := range c.warnings {
-		errs = append(errs, w)
+func (e *Error) Error() string {
+	prefix := e.Code + ": "
+	if e.Loc.File != "" && e.Loc.Line > 0 {
+		return fmt.Sprintf("%s:%d:%d: %s%s", e.Loc.File, e.Loc.Line, e.Loc.Column, prefix, e.Msg)
 	}
-	return errs
+	return prefix + e.Msg
+}
+
+func (e *Error) GetLoc() token.SourceLoc { return e.Loc }
+
+// Check runs exhaustiveness checking with default config (missing = error).
+func Check(mod *ast.Module) []error {
+	errs, warns := CheckWithConfig(mod, config.DefaultConfig())
+	out := append(errs, warns...)
+	return out
+}
+
+// CheckWithConfig returns fatal errors and warnings separately per config.
+func CheckWithConfig(mod *ast.Module, cfg *config.Config) (errors []error, warnings []error) {
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+	c := &checker{cfg: cfg}
+	c.checkModule(mod)
+	for _, e := range c.diagnostics {
+		if e.Code == "EXHAUST003" && cfg.Check.ExhaustMissing == config.SeverityError {
+			errors = append(errors, e)
+		} else if e.Code == "EXHAUST003" && cfg.Check.ExhaustMissing == config.SeverityWarn {
+			warnings = append(warnings, e)
+		} else if (e.Code == "EXHAUST001" || e.Code == "EXHAUST002") && cfg.Check.ExhaustRedundant == config.SeverityError {
+			errors = append(errors, e)
+		} else if (e.Code == "EXHAUST001" || e.Code == "EXHAUST002") && cfg.Check.ExhaustRedundant == config.SeverityWarn {
+			warnings = append(warnings, e)
+		} else if cfg.Check.ExhaustRedundant != config.SeverityOff || e.Code == "EXHAUST003" {
+			// EXHAUST003 with off still skipped above; redundant off skips 001/002
+			if e.Code != "EXHAUST001" && e.Code != "EXHAUST002" {
+				errors = append(errors, e)
+			}
+		}
+	}
+	return errors, warnings
 }
 
 type checker struct {
-	warnings []*Warning
+	cfg          *config.Config
+	diagnostics  []*Error
 }
 
-func (c *checker) warnf(format string, args ...any) {
-	c.warnings = append(c.warnings, &Warning{
-		Message: fmt.Sprintf(format, args...),
-	})
+func (c *checker) emit(code, msg string, loc token.SourceLoc) {
+	c.diagnostics = append(c.diagnostics, &Error{Code: code, Msg: msg, Loc: loc})
 }
 
 func (c *checker) checkModule(mod *ast.Module) {
@@ -62,10 +78,6 @@ func (c *checker) checkModule(mod *ast.Module) {
 			for _, b := range d.Bindings {
 				c.checkExprForMatch(b.Body)
 			}
-		case *ast.TypeDecl:
-			// no expressions
-		case *ast.ExternDecl:
-			// no expressions
 		}
 	}
 }
@@ -138,17 +150,54 @@ func (c *checker) checkExprForMatch(e ast.Expr) {
 		c.checkExprForMatch(e.ElseBody)
 	case *ast.ParenExpr:
 		c.checkExprForMatch(e.Inner)
+	case *ast.CompExpr:
+		for _, op := range e.Ops {
+			switch o := op.(type) {
+			case *ast.LetBangOp:
+				c.checkExprForMatch(o.Expr)
+			case *ast.LetOp:
+				c.checkExprForMatch(o.Expr)
+			case *ast.DoBangOp:
+				c.checkExprForMatch(o.Expr)
+			case *ast.ReturnOp:
+				c.checkExprForMatch(o.Expr)
+			case *ast.ReturnBangOp:
+				c.checkExprForMatch(o.Expr)
+			case *ast.BodyOp:
+				c.checkExprForMatch(o.Expr)
+			}
+		}
+	case *ast.RegionExpr:
+		for _, op := range e.Ops {
+			switch o := op.(type) {
+			case *ast.LetBangOp:
+				c.checkExprForMatch(o.Expr)
+			case *ast.LetOp:
+				c.checkExprForMatch(o.Expr)
+			case *ast.DoBangOp:
+				c.checkExprForMatch(o.Expr)
+			case *ast.ReturnOp:
+				c.checkExprForMatch(o.Expr)
+			case *ast.ReturnBangOp:
+				c.checkExprForMatch(o.Expr)
+			case *ast.BodyOp:
+				c.checkExprForMatch(o.Expr)
+			}
+		}
+	case *ast.GoExpr:
+		c.checkExprForMatch(e.Expr)
+	case *ast.SelectExpr:
+		for _, cs := range e.Cases {
+			c.checkExprForMatch(cs.Recv)
+			c.checkExprForMatch(cs.Body)
+		}
+		if e.Default != nil {
+			c.checkExprForMatch(e.Default)
+		}
 	}
 }
 
-// ---------------------------------------------------------------------------
-// ADT exhaustiveness
-// ---------------------------------------------------------------------------
-
-// checkMatch verifies that the patterns in a match expression are exhaustive
-// and there are no unreachable patterns.
 func (c *checker) checkMatch(e *ast.MatchExpr) {
-	// Also recurse into sub-expressions within arms
 	for _, arm := range e.Arms {
 		c.checkExprForMatch(arm.Body)
 		if arm.Guard != nil {
@@ -156,79 +205,47 @@ func (c *checker) checkMatch(e *ast.MatchExpr) {
 		}
 	}
 
-	// Check exhaustiveness of the patterns.
-	// We build a set of "missing" constructors or patterns, then check
-	// if each arm is redundant.
-
-	// Try to determine the scrutinee type's constructors.
-	// We don't have the typed AST, so we infer the ADT structure from the
-	// patterns themselves and from the environment.
-
-	// Collect all constructors referenced in the patterns
 	constructors := make(map[string]bool)
 	hasWildcard := false
-	covered := 0
 	for i, arm := range e.Arms {
-		// Active patterns never cover the input type — skip them
 		if cp, ok := arm.Pattern.(*ast.ConstructorPattern); ok {
 			if active.GlobalRegistry.IsActivePattern(cp.Name) {
-				covered++
 				continue
 			}
 		}
 
 		ctors := extractConstructors(arm.Pattern)
 		if len(ctors) == 0 {
-			// Wildcard or variable pattern — covers everything
 			hasWildcard = true
-			// Check if this arm is unreachable (all previous arms cover everything)
-			if i > 0 && covered > 0 {
-				// This is a simplification; real redundancy checking is more complex.
-				// For now, we only flag the obvious case: a wildcard after another wildcard.
+			if i > 0 {
 				for j := 0; j < i; j++ {
 					if extractConstructors(e.Arms[j].Pattern) == nil {
-						c.warnf("unreachable pattern: all values already matched by previous wildcard")
+						c.emit("EXHAUST001", "unreachable pattern: all values already matched by previous wildcard", e.Loc)
 						break
 					}
 				}
 			}
 		} else {
 			for _, name := range ctors {
-				// A pattern with a guard does NOT fully cover the constructor
-				// because the guard may fail, allowing subsequent patterns to
-				// still match the same constructor.
 				if arm.Guard == nil {
 					if constructors[name] {
-						c.warnf("unreachable pattern: constructor %q already covered", name)
+						c.emit("EXHAUST002", fmt.Sprintf("unreachable pattern: constructor %q already covered", name), e.Loc)
 					} else {
 						constructors[name] = true
 					}
-				} else {
-					// Guarded: don't mark as covered, so later arms for the
-					// same constructor are not flagged as redundant.
 				}
-				covered++
 			}
 		}
 	}
 
-	// If there's no wildcard, check if we know the ADT's constructors.
-	// We need to know which ADT the scrutinee belongs to. Without a typed AST,
-	// we make a best-effort guess based on the constructors used.
-
-	// Try to find the ADT name from the patterns
 	adtName := c.inferADTFromPatterns(e.Arms)
 	if adtName != "" && !hasWildcard {
-		// We identified the ADT — check if all its constructors are covered.
-		// The ADT definition is looked up from a global registry.
 		allCtors := c.getADTConstructors(adtName)
 		if len(allCtors) > 0 {
-			missing := make([]string, 0)
+			var missing []string
 			for _, ctor := range allCtors {
 				covered := false
 				for key := range constructors {
-					// Check exact match or prefix match (e.g. "Error" matches
-					// "Error.NotFound" or "Error._").
 					if key == ctor || strings.HasPrefix(key, ctor+".") {
 						covered = true
 						break
@@ -239,27 +256,23 @@ func (c *checker) checkMatch(e *ast.MatchExpr) {
 				}
 			}
 			if len(missing) > 0 {
-				c.warnf("non-exhaustive match: missing constructor(s): %s",
-					strings.Join(missing, ", "))
+				c.emit("EXHAUST003",
+					fmt.Sprintf("non-exhaustive match: missing constructor(s): %s", strings.Join(missing, ", ")),
+					e.Loc)
 			}
 		}
 	}
 }
 
-// extractConstructors returns the constructor names covered by a pattern,
-// or nil if the pattern is a wildcard/variable (covers everything).
 func extractConstructors(p ast.Pattern) []string {
 	switch p := p.(type) {
 	case *ast.WildcardPattern:
 		return nil
 	case *ast.IdentPattern:
-		return nil // variable covers everything
+		return nil
 	case *ast.LitPattern:
 		return []string{fmt.Sprintf("%v", p.Value)}
 	case *ast.ConstructorPattern:
-		// If the constructor has a payload pattern, include the payload's
-		// constructors as part of the coverage key so that different
-		// payloads are treated as different patterns.
 		if p.Arg != nil {
 			argCtors := extractConstructors(p.Arg)
 			if len(argCtors) > 0 {
@@ -269,7 +282,6 @@ func extractConstructors(p ast.Pattern) []string {
 				}
 				return result
 			}
-			// Arg is a wildcard or variable — still a distinct pattern
 			return []string{p.Name + "._"}
 		}
 		return []string{p.Name}
@@ -291,14 +303,8 @@ func extractConstructors(p ast.Pattern) []string {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// ADT registry (populated during type checking)
-// ---------------------------------------------------------------------------
-
-// ADTRegistry maps ADT names to their constructor lists.
 var ADTRegistry = make(map[string][]string)
 
-// RegisterADT adds an ADT to the global registry for exhaustiveness checking.
 func RegisterADT(name string, constructors []string) {
 	ADTRegistry[name] = constructors
 }
@@ -307,11 +313,8 @@ func (c *checker) getADTConstructors(name string) []string {
 	return ADTRegistry[name]
 }
 
-// inferADTFromPatterns attempts to determine the ADT name from the
-// constructor patterns used in match arms.  Only top-level constructors
-// (not nested in payloads) are counted.
 func (c *checker) inferADTFromPatterns(arms []ast.MatchArm) string {
-	ctorToADT := make(map[string]int) // count occurrences per constructor → ADT
+	ctorToADT := make(map[string]int)
 	for _, arm := range arms {
 		for _, name := range topLevelConstructors(arm.Pattern) {
 			for adtName, ctors := range ADTRegistry {
@@ -323,7 +326,6 @@ func (c *checker) inferADTFromPatterns(arms []ast.MatchArm) string {
 			}
 		}
 	}
-	// Return the most common ADT
 	best := ""
 	bestCount := 0
 	for adt, count := range ctorToADT {
@@ -335,23 +337,10 @@ func (c *checker) inferADTFromPatterns(arms []ast.MatchArm) string {
 	return best
 }
 
-// topLevelConstructors returns the constructor names appearing at the top
-// level of a pattern (not nested inside payloads).
 func topLevelConstructors(p ast.Pattern) []string {
 	switch p := p.(type) {
 	case *ast.ConstructorPattern:
 		return []string{p.Name}
-	case *ast.RecordPattern:
-		return []string{"<record>"}
-	case *ast.TuplePattern:
-		return []string{"<tuple>"}
-	case *ast.ListPattern:
-		if len(p.Elems) == 0 {
-			return []string{"[]"}
-		}
-		return []string{"<list>"}
-	case *ast.ConsPattern:
-		return []string{"::"}
 	case *ast.AliasPattern:
 		return topLevelConstructors(p.Pattern)
 	default:
@@ -359,17 +348,8 @@ func topLevelConstructors(p ast.Pattern) []string {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Module-level check
-// ---------------------------------------------------------------------------
-
-// CheckModule runs both type checking and exhaustiveness checking.
-// Type checking must be done first so that the ADT registry is populated.
+// CheckModule is kept for compatibility.
 func CheckModule(mod *ast.Module) (typeErrors []error, exhaustWarnings []error) {
-	// Type checking populates the registry
-	_ = mod // type checking is done separately
-
-	// Exhaustiveness
-	exhaustWarnings = Check(mod)
-	return nil, exhaustWarnings
+	errs, warns := CheckWithConfig(mod, config.DefaultConfig())
+	return nil, append(errs, warns...)
 }

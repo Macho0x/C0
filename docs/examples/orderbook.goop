@@ -1,20 +1,23 @@
 module Trading.OrderBook
 
+type order_id = newtype string
+type symbol = newtype string
+
 type Side = Buy | Sell
 
 type Order =
-  { id: string
-  ; symbol: string
+  { id: order_id
+  ; symbol: symbol
   ; side: Side
-  ; price: float
-  ; qty: int
+  ; price: float where price > 0.0
+  ; qty: int where qty > 0
   }
 
 type Fill =
-  { buyOrder: string
-  ; sellOrder: string
+  { buyOrder: order_id
+  ; sellOrder: order_id
   ; price: float
-  ; qty: int
+  ; qty: int where qty > 0
   }
 
 type Book =

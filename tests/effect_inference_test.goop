@@ -1,0 +1,7 @@
+module Main
+
+let greet () : unit with { io } =
+  print_line "effect inference ok"
+
+let main () : unit with { io } =
+  greet ()

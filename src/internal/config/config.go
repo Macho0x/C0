@@ -27,17 +27,39 @@ import (
 	"strings"
 )
 
+// Severity is warn | error | off for optional checks.
+type Severity string
+
+const (
+	SeverityWarn  Severity = "warn"
+	SeverityError Severity = "error"
+	SeverityOff   Severity = "off"
+)
+
+// CheckConfig controls optional compile-time safety passes.
+type CheckConfig struct {
+	ExhaustRedundant   Severity // EXHAUST001/002 (default warn)
+	ExhaustMissing     Severity // EXHAUST003 (default error)
+	EffectInference    bool     // infer effect rows from function bodies (default true)
+}
+
 // Config holds the project-wide compiler configuration.
 type Config struct {
 	ModuleRoot   string            // e.g. "github.com/example/project"
 	Mappings     map[string]string // Goop logical path → Go import path
 	Dependencies map[string]string // canonical path → version pin
+	Check        CheckConfig
 }
 
 // DefaultConfig returns a working config with built-in mappings.
 func DefaultConfig() *Config {
 	return &Config{
-		ModuleRoot:   "",
+		ModuleRoot: "",
+		Check: CheckConfig{
+			ExhaustRedundant: SeverityWarn,
+			ExhaustMissing:   SeverityError,
+			EffectInference:  true,
+		},
 		Dependencies: make(map[string]string),
 		Mappings: map[string]string{
 			"std.io":     "github.com/Macho0x/Goop/std/io",
@@ -135,6 +157,15 @@ func parseConfig(data string) (*Config, error) {
 			val = strings.Trim(val, `'`)
 
 			switch section {
+			case "check":
+				switch key {
+				case "exhaust_redundant":
+					c.Check.ExhaustRedundant = Severity(val)
+				case "exhaust_missing":
+					c.Check.ExhaustMissing = Severity(val)
+				case "effect_inference":
+					c.Check.EffectInference = val == "true" || val == "1"
+				}
 			case "mappings":
 				c.Mappings[key] = val
 			case "dependencies":

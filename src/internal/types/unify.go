@@ -176,6 +176,16 @@ func unify(sub Subst, t1, t2 Type) error {
 		}
 		return nil
 
+	case *TNewtype:
+		r, ok := t2.(*TNewtype)
+		if !ok {
+			return mismatch(t1, t2, "expected newtype "+l.Name)
+		}
+		if l.Name != r.Name {
+			return mismatch(t1, t2, "different newtype names")
+		}
+		return nil
+
 	case *TCon:
 		r, ok := t2.(*TCon)
 		if !ok {

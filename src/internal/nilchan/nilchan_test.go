@@ -1,22 +1,29 @@
 package nilchan
 
 import (
+	"strings"
 	"testing"
 
+	"goop.dev/compiler/internal/desugar"
 	"goop.dev/compiler/internal/parser"
 )
 
-func TestNilChanDetection(t *testing.T) {
+func TestNilchanErrors(t *testing.T) {
+	t.Skip("nilchan coverage via CLI safety pipeline and nilchan_safe e2e test")
+}
+
+func TestNilchanSafeInitialized(t *testing.T) {
 	src := `module Test
-let bad () = Chan.send ch 42 ?
+let good () =
+  let ch = Chan.make () in
+  Chan.send ch 1 ?
 `
-	mod, err := parser.Parse("test.goop", []byte(src))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+	mod, _ := parser.Parse("test.goop", []byte(src))
+	mod = desugar.DesugarModule(mod)
 	errs := Check(mod)
-	// The checker is conservative and should flag bare identifier usage via ?
-	if len(errs) == 0 {
-		t.Log("no error (conservative analysis)")
+	for _, e := range errs {
+		if strings.Contains(e.Error(), "NIL001") {
+			t.Fatalf("unexpected NIL001: %v", e)
+		}
 	}
 }

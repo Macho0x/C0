@@ -429,8 +429,9 @@ Goop is in bootstrap implementation (written in Go, targeting self-hosting).
 
 - ✅ Lexer, parser, type checker, code generator
 - ✅ LSP server, VSCode extension, Zed extension
-- ✅ 7 passing end-to-end test files
-- 🚧 More tests, standard library prelude, package resolution
+- ✅ 28 passing end-to-end test files
+- ✅ v0.5.0: nil-channel (NIL001), exhaustiveness errors (EXHAUST003), effect inference, nominal newtypes
+- See [Trading bot safety matrix](docs/design/12-trading-bot-safety.md)
 - 🔮 Self-hosting — rewrite the compiler in Goop
 
 ---

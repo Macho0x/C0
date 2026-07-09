@@ -1,0 +1,13 @@
+module Main
+
+type order_id = newtype string
+type symbol = newtype string
+
+let oid = OrderId "ord-42"
+let sym = Symbol "BTC-USD"
+
+let useIds (id: order_id) (s: symbol) : unit with { io } =
+  print_line "branded ids ok"
+
+let main () : unit with { io } =
+  useIds oid sym

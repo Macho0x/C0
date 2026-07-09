@@ -52,6 +52,7 @@ type Generator struct {
 	adts           map[string]*ast.TypeDecl // ADT declarations
 	records        map[string]*ast.TypeDecl // record declarations
 	opaqueTypes    map[string]*ast.TypeDecl // opaque (linear) type declarations
+	newtypes       map[string]*ast.TypeDecl // nominal newtype declarations
 	usedOption     map[string]string        // Go type name → element Go type
 	usedResult     map[string][]string      // Go type name → [okGoType, errGoType]
 	usedTuple      map[string][]string      // Go type name → field Go type names
@@ -122,6 +123,7 @@ func NewGenerator(srcFile string, cfg *config.Config) *Generator {
 		adts:             make(map[string]*ast.TypeDecl),
 		records:          make(map[string]*ast.TypeDecl),
 		opaqueTypes:      make(map[string]*ast.TypeDecl),
+		newtypes:         make(map[string]*ast.TypeDecl),
 		usedOption:       make(map[string]string),
 		usedResult:       make(map[string][]string),
 		usedTuple:        make(map[string][]string),
@@ -264,6 +266,8 @@ func (g *Generator) Generate(mod *ast.Module) (string, error) {
 	g.emitRecordTypes()
 	// ADT type definitions
 	g.emitADTTypes()
+	// Nominal newtype definitions
+	g.emitNewtypeTypes()
 	// Opaque type definitions (linear types erased in Go)
 	g.emitOpaqueTypes()
 
@@ -325,6 +329,10 @@ func (g *Generator) prescan(mod *ast.Module) {
 				g.goopToGo[d.Name] = goName
 			case *ast.AliasTypeKind:
 				// Aliases map to their underlying type
+			case *ast.NewtypeTypeKind:
+				g.newtypes[d.Name] = d
+				goName := newtypeGoName(d.Name)
+				g.goopToGo[d.Name] = goName
 			}
 		case *ast.LetDecl:
 			for _, b := range d.Bindings {
@@ -1101,14 +1109,12 @@ func (g *Generator) emitADTTypes() {
 		goName := g.goName(td.Name)
 		iface := "is" + goName
 
-		// Interface
 		g.emitf("type %s interface {\n", goName)
 		g.indent++
 		g.emitf("%s()\n", iface)
 		g.indent--
 		g.emitf("}\n\n")
 
-		// One struct per variant
 		for _, c := range ak.Cases {
 			varName := goName + exported(c.Name)
 			g.emitf("type %s struct {\n", varName)
@@ -1120,10 +1126,20 @@ func (g *Generator) emitADTTypes() {
 			g.emitf("}\n\n")
 
 			g.emitf("func (%s) %s() {}\n\n", varName, iface)
-
-			// Constructor
 			g.emitConstructorFunc(goName, varName, c)
 		}
+	}
+}
+
+func (g *Generator) emitNewtypeTypes() {
+	for _, td := range g.newtypes {
+		nk, ok := td.Kind.(*ast.NewtypeTypeKind)
+		if !ok {
+			continue
+		}
+		goName := newtypeGoName(td.Name)
+		rep := g.typeToGo(nk.Rep)
+		g.emitf("type %s %s\n\n", goName, rep)
 	}
 }
 
@@ -1311,7 +1327,9 @@ func (g *Generator) emitLetDecl(d *ast.LetDecl) {
 			}
 		}
 
-		if len(realParams) == 0 && !isCompoundExpr(b.Body) {
+		hasFunParams := len(b.Params) > 0
+
+		if !hasFunParams && !isCompoundExpr(b.Body) {
 			// Simple value binding
 			if d.Mutable {
 				g.emitf("var %s = ", funcName)
@@ -1320,11 +1338,11 @@ func (g *Generator) emitLetDecl(d *ast.LetDecl) {
 			}
 			g.emitExpr(b.Body, false)
 			g.buf.WriteString("\n\n")
-		} else if len(realParams) == 0 && g.isChanMakeExpr(b.Body) {
+		} else if !hasFunParams && g.isChanMakeExpr(b.Body) {
 			// let ch = Chan.make () → ch := C0ChanMake()
 			g.usedChan = true
 			g.emitf("%s := C0ChanMake()\n", funcName)
-		} else if len(realParams) == 0 {
+		} else if !hasFunParams {
 			// Compound value binding: emit as a func that returns the value
 			g.emitf("func %s()", funcName)
 			retType := ""
@@ -1401,11 +1419,25 @@ func (g *Generator) emitLetDecl(d *ast.LetDecl) {
 }
 
 func isCompoundExpr(e ast.Expr) bool {
-	switch e.(type) {
-	case *ast.LitExpr, *ast.IdentExpr:
+	switch e := e.(type) {
+	case *ast.LitExpr, *ast.IdentExpr, *ast.ConstructorExpr:
 		return false
+	case *ast.AppExpr:
+		if _, ok := e.Func.(*ast.ConstructorExpr); ok {
+			return false
+		}
 	}
 	return true
+}
+
+func newtypeGoName(name string) string {
+	parts := strings.Split(name, "_")
+	for i, p := range parts {
+		if p != "" {
+			parts[i] = exported(p)
+		}
+	}
+	return strings.Join(parts, "")
 }
 
 // isChanMakeExpr checks whether an expression is a Chan.make () or OwnedChan.make () call.

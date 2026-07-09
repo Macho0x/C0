@@ -19,14 +19,13 @@ import (
 	"strconv"
 	"strings"
 
+	"goop.dev/compiler/internal/checkpipeline"
 	"goop.dev/compiler/internal/ast"
 	"goop.dev/compiler/internal/codegen"
 	"goop.dev/compiler/internal/color"
 	"goop.dev/compiler/internal/config"
 	"goop.dev/compiler/internal/desugar"
-	"goop.dev/compiler/internal/exhaustive"
 	lc0 "goop.dev/compiler/internal/lexer"
-	"goop.dev/compiler/internal/linear"
 	"goop.dev/compiler/internal/modresolve"
 	"goop.dev/compiler/internal/parser"
 	"goop.dev/compiler/internal/refine"
@@ -194,22 +193,8 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Register ADTs from type declarations for exhaustiveness checking
-		for _, d := range mod.Decls {
-			if td, ok := d.(*ast.TypeDecl); ok {
-				if adt, ok := td.Kind.(*ast.ADTTypeKind); ok {
-					var ctors []string
-					for _, c := range adt.Cases {
-						ctors = append(ctors, c.Name)
-					}
-					exhaustive.RegisterADT(td.Name, ctors)
-				}
-			}
-		}
-
-		// Type checking
 		lock := loadProjectLock(file)
-		_, _, typeErrors := typecheck.CheckWithTypesForFile(mod, file, cfg, lock)
+		tm, _, typeErrors := typecheck.CheckWithTypesForFile(mod, file, cfg, lock)
 		if len(typeErrors) > 0 {
 			fmt.Println("FAIL: type errors:")
 			for _, e := range typeErrors {
@@ -218,22 +203,11 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Linear discharge checking
-		linearTypes := buildLinearTypes(mod)
-		linearErrors := linear.Check(mod, linearTypes)
-		if len(linearErrors) > 0 {
-			fmt.Println("FAIL: linear discharge errors:")
-			for _, e := range linearErrors {
-				fmt.Print(report.Render(e, src))
-			}
+		if _, warns, fatal := runSafetyChecks(mod, tm, src, cfg); fatal {
 			os.Exit(1)
-		}
-
-		// Exhaustiveness checking
-		exhaustWarnings := exhaustive.Check(mod)
-		if len(exhaustWarnings) > 0 {
-			fmt.Println("WARN: exhaustiveness warnings:")
-			for _, w := range exhaustWarnings {
+		} else if len(warns) > 0 {
+			fmt.Println("WARN: safety warnings:")
+			for _, w := range warns {
 				fmt.Print(report.Render(w, src))
 			}
 		}
@@ -257,27 +231,13 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Linear discharge checking
-		linearTypes := buildLinearTypes(mod)
-		if linearErrs := linear.Check(mod, linearTypes); len(linearErrs) > 0 {
-			fmt.Println("FAIL: linear discharge errors:")
-			for _, e := range linearErrs {
-				fmt.Print(report.Render(e, src))
-			}
+		// Safety checks (linear, nilchan, refine, exhaust)
+		proven, warns, fatal := runSafetyChecks(mod, tm, src, cfg)
+		if fatal {
 			os.Exit(1)
 		}
-
-		// Refinement contract checking (compile-time VC generation)
-		proven, refineWarnings, refineErrs := refine.CheckRefinements(mod, tm)
-		for _, w := range refineWarnings {
+		for _, w := range warns {
 			fmt.Fprintf(os.Stderr, "WARNING: %v\n", w)
-		}
-		if len(refineErrs) > 0 {
-			fmt.Println("FAIL: refinement errors:")
-			for _, e := range refineErrs {
-				fmt.Print(report.Render(e, src))
-			}
-			os.Exit(1)
 		}
 
 		// Generate Go code
@@ -336,27 +296,13 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Linear discharge checking
-		linearTypes := buildLinearTypes(mod)
-		if linearErrs := linear.Check(mod, linearTypes); len(linearErrs) > 0 {
-			fmt.Println("FAIL: linear discharge errors:")
-			for _, e := range linearErrs {
-				fmt.Print(report.Render(e, src))
-			}
+		// Safety checks (linear, nilchan, refine, exhaust)
+		proven, warns, fatal := runSafetyChecks(mod, tm, src, cfg)
+		if fatal {
 			os.Exit(1)
 		}
-
-		// Refinement contract checking (compile-time VC generation)
-		proven, refineWarnings, refineErrs := refine.CheckRefinements(mod, tm)
-		for _, w := range refineWarnings {
+		for _, w := range warns {
 			fmt.Fprintf(os.Stderr, "WARNING: %v\n", w)
-		}
-		if len(refineErrs) > 0 {
-			fmt.Println("FAIL: refinement errors:")
-			for _, e := range refineErrs {
-				fmt.Print(report.Render(e, src))
-			}
-			os.Exit(1)
 		}
 
 		// Generate Go code
@@ -614,29 +560,13 @@ func (s *LSPServer) handleDocumentUpdate(params json.RawMessage) {
 	} else {
 		mod = desugar.DesugarModule(mod)
 
-		// Register ADTs for exhaustiveness checking
-		for _, d := range mod.Decls {
-			if td, ok := d.(*ast.TypeDecl); ok {
-				if adt, ok := td.Kind.(*ast.ADTTypeKind); ok {
-					var ctors []string
-					for _, c := range adt.Cases {
-						ctors = append(ctors, c.Name)
-					}
-					exhaustive.RegisterADT(td.Name, ctors)
-				}
-			}
-		}
-
 		lspCfg := loadProjectConfig(fileName)
 		tm, vtm, typeErrs := typecheckModule(mod, fileName, lspCfg)
 		for _, terr := range typeErrs {
 			diagnostics = append(diagnostics, diagnosticFromError(terr, src))
 		}
 
-		// Linear discharge checking
-		linearTypes := buildLinearTypes(mod)
-		linearErrors := linear.Check(mod, linearTypes)
-		for _, terr := range linearErrors {
+		for _, terr := range lspSafetyDiagnostics(mod, tm, lspCfg) {
 			diagnostics = append(diagnostics, diagnosticFromError(terr, src))
 		}
 
@@ -1231,6 +1161,12 @@ func runTests(dir string) int {
 			continue
 		}
 
+		if _, _, fatal := runSafetyChecks(mod, tm, src, cfg); fatal {
+			fmt.Printf("--- FAIL: %s (safety errors)\n", name)
+			failed++
+			continue
+		}
+
 		gen := codegen.NewGenerator(file, cfg)
 		gen.SetTypeMap(tm, vtm)
 		goSrc, err := gen.Generate(mod)
@@ -1689,6 +1625,70 @@ func typeStr(t ast.Type) string {
 	default:
 		return "<type>"
 	}
+}
+
+// runSafetyChecks runs linear, nil-channel, refinement, and exhaustiveness passes.
+// Returns proven refinement sites for codegen, non-fatal warnings, and whether any fatal error occurred.
+func runSafetyChecks(mod *ast.Module, tm typeinfo.TypeMap, src []byte, cfg *config.Config) (proven refine.ProvenSites, warnings []error, fatal bool) {
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+	checkpipeline.RegisterADTsFromModule(mod)
+	linearTypes := buildLinearTypes(mod)
+	r := checkpipeline.Run(mod, tm, linearTypes, cfg)
+
+	if len(r.LinearErrors) > 0 {
+		fmt.Println("FAIL: linear discharge errors:")
+		for _, e := range r.LinearErrors {
+			fmt.Print(report.Render(e, src))
+		}
+		fatal = true
+	}
+	if len(r.NilchanErrors) > 0 {
+		fmt.Println("FAIL: nil-channel errors:")
+		for _, e := range r.NilchanErrors {
+			fmt.Print(report.Render(e, src))
+		}
+		fatal = true
+	}
+	warnings = append(warnings, r.RefineWarnings...)
+	if len(r.RefineErrors) > 0 {
+		fmt.Println("FAIL: refinement errors:")
+		for _, e := range r.RefineErrors {
+			fmt.Print(report.Render(e, src))
+		}
+		fatal = true
+	}
+	if len(r.ExhaustErrors) > 0 {
+		fmt.Println("FAIL: exhaustiveness errors:")
+		for _, e := range r.ExhaustErrors {
+			fmt.Print(report.Render(e, src))
+		}
+		fatal = true
+	}
+	warnings = append(warnings, r.ExhaustWarns...)
+	return r.RefineProven, warnings, fatal
+}
+
+// lspSafetyDiagnostics returns safety check diagnostics for the LSP (errors only).
+func lspSafetyDiagnostics(mod *ast.Module, tm typeinfo.TypeMap, cfg *config.Config) []error {
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+	checkpipeline.RegisterADTsFromModule(mod)
+	linearTypes := buildLinearTypes(mod)
+	r := checkpipeline.Run(mod, tm, linearTypes, cfg)
+	var out []error
+	out = append(out, r.LinearErrors...)
+	out = append(out, r.NilchanErrors...)
+	out = append(out, r.RefineErrors...)
+	out = append(out, r.ExhaustErrors...)
+	for _, w := range r.ExhaustWarns {
+		if cfg.Check.ExhaustRedundant == config.SeverityError {
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // buildLinearTypes extracts the set of linear type names from a module.

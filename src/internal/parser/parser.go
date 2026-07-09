@@ -573,6 +573,11 @@ func (p *Parser) parseTypeBinding() *ast.TypeDecl {
 				return d
 			}
 		}
+		if p.cur().Type == token.NEWTYPE {
+			p.advance()
+			d.Kind = &ast.NewtypeTypeKind{Rep: p.parseType()}
+			return d
+		}
 		d.Kind = &ast.AliasTypeKind{Alias: p.parseType()}
 	}
 	return d
