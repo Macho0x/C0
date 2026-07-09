@@ -201,18 +201,17 @@ func TestParseOrderbook(t *testing.T) {
 	if mod.Name != "Trading.OrderBook" {
 		t.Errorf("expected Trading.OrderBook, got %q", mod.Name)
 	}
-	if len(mod.Decls) < 8 {
-		t.Fatalf("expected at least 8 decls, got %d", len(mod.Decls))
+	// type order_id / symbol newtypes, then Side
+	if len(mod.Decls) < 10 {
+		t.Fatalf("expected at least 10 decls, got %d", len(mod.Decls))
 	}
 
-	// type Side = Buy | Sell
-	td, ok := mod.Decls[0].(*ast.TypeDecl)
+	td, ok := mod.Decls[2].(*ast.TypeDecl)
 	if !ok || td.Name != "Side" {
 		t.Error("expected type Side")
 	}
 
-	// type Order = { ... }
-	td2, ok := mod.Decls[1].(*ast.TypeDecl)
+	td2, ok := mod.Decls[3].(*ast.TypeDecl)
 	if !ok || td2.Name != "Order" {
 		t.Error("expected type Order")
 	}
@@ -222,13 +221,12 @@ func TestParseOrderbook(t *testing.T) {
 	}
 
 	// let emptyBook : book = { bids = []; asks = [] }
-	ld, ok := mod.Decls[4].(*ast.LetDecl)
+	ld, ok := mod.Decls[6].(*ast.LetDecl)
 	if !ok || ld.Bindings[0].Name != "emptyBook" {
 		t.Error("expected let emptyBook")
 	}
 
-	// let rec insertBy ...
-	ld2, ok := mod.Decls[6].(*ast.LetDecl)
+	ld2, ok := mod.Decls[8].(*ast.LetDecl)
 	if !ok || !ld2.Rec {
 		t.Error("expected rec let insertBy")
 	}
@@ -249,7 +247,7 @@ func TestParseOrderbook(t *testing.T) {
 	}
 
 	// let addOrder ...
-	ld3, ok := mod.Decls[7].(*ast.LetDecl)
+	ld3, ok := mod.Decls[9].(*ast.LetDecl)
 	if !ok || ld3.Bindings[0].Name != "addOrder" {
 		t.Error("expected let addOrder")
 	}
@@ -266,7 +264,7 @@ func TestParseOrderbook(t *testing.T) {
 	}
 
 	// let bestBid ...
-	ld4, ok := mod.Decls[8].(*ast.LetDecl)
+	ld4, ok := mod.Decls[10].(*ast.LetDecl)
 	if !ok || ld4.Bindings[0].Name != "bestBid" {
 		t.Error("expected let bestBid")
 	}

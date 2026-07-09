@@ -103,13 +103,14 @@ func (e *Env) InScope() map[int64]bool {
 
 // Checker holds the mutable state during type checking.
 type Checker struct {
-	env            *Env              // current environment
-	sub            types.Subst       // current substitution
-	errs           []error           // accumulated errors
-	types          typeinfo.TypeMap  // maps expression AST nodes to their inferred types
-	privateNames   map[string]bool   // names marked private in the current module
-	blockedNames   map[string]string // private name → defining module path
-	importedModule string            // module being checked (for error messages)
+	env              *Env              // current environment
+	sub              types.Subst       // current substitution
+	errs             []error           // accumulated errors
+	types            typeinfo.TypeMap  // maps expression AST nodes to their inferred types
+	privateNames     map[string]bool   // names marked private in the current module
+	blockedNames     map[string]string // private name → defining module path
+	importedModule   string            // module being checked (for error messages)
+	effectInference  bool              // infer effect rows from bodies when true
 }
 
 // pkgFromPath extracts a Go package name from an import path (last segment).
@@ -155,10 +156,10 @@ func CheckWithTypes(mod *ast.Module) (typeinfo.TypeMap, typeinfo.VarTypeMap, []e
 func CheckWithTypesForFile(mod *ast.Module, srcFile string, cfg *config.Config, lock *config.Lockfile) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
 	var deps map[string]*ast.Module
 	var resolver *modresolve.Resolver
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
 	if srcFile != "" {
-		if cfg == nil {
-			cfg = config.DefaultConfig()
-		}
 		root := modresolve.FindProjectRoot(srcFile)
 		resolver = modresolve.New(cfg, lock, root)
 		var graphErr error
@@ -167,21 +168,25 @@ func CheckWithTypesForFile(mod *ast.Module, srcFile string, cfg *config.Config, 
 			return nil, nil, []error{graphErr}
 		}
 	}
-	return checkWithDepsAndImports(mod, deps, resolver)
+	return checkWithDepsAndImports(mod, deps, resolver, cfg)
 }
 
 // CheckWithTypesAndDeps type-checks mod after binding exported names from dependency modules.
 func CheckWithTypesAndDeps(mod *ast.Module, deps map[string]*ast.Module) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
-	return checkWithDepsAndImports(mod, deps, nil)
+	return checkWithDepsAndImports(mod, deps, nil, config.DefaultConfig())
 }
 
-func checkWithDepsAndImports(mod *ast.Module, deps map[string]*ast.Module, resolver *modresolve.Resolver) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
+func checkWithDepsAndImports(mod *ast.Module, deps map[string]*ast.Module, resolver *modresolve.Resolver, cfg *config.Config) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
 	c := &Checker{
-		env:          NewEnv(nil),
-		sub:          types.EmptySubst(),
-		types:        make(typeinfo.TypeMap),
-		privateNames: make(map[string]bool),
-		blockedNames: make(map[string]string),
+		env:             NewEnv(nil),
+		sub:             types.EmptySubst(),
+		types:           make(typeinfo.TypeMap),
+		privateNames:    make(map[string]bool),
+		blockedNames:    make(map[string]string),
+		effectInference: cfg.Check.EffectInference,
 	}
 	c.initBuiltins()
 	c.importedModule = mod.Name
@@ -401,9 +406,11 @@ func (c *Checker) initBuiltins() {
 	// These are shadowable — user definitions in the same scope override them.
 	pre := prelude.Default()
 	for _, b := range pre.Bindings {
-		// Bind in the base environment; user definitions will shadow these
-		// because they are added to a nested scope during checking.
-		c.env.Bind(b.Name, b.Scheme)
+		scheme := b.Scheme
+		if b.Effects != nil {
+			scheme = attachSchemeEffects(scheme, *b.Effects)
+		}
+		c.env.Bind(b.Name, scheme)
 	}
 
 	// Register owned_chan as a built-in linear type for type annotations.
@@ -518,6 +525,13 @@ func (c *Checker) convertTypeDecl(td *ast.TypeDecl) *types.Scheme {
 	case *ast.AliasTypeKind:
 		t := c.convertASTType(k.Alias)
 		return types.Mono(t)
+
+	case *ast.NewtypeTypeKind:
+		rep := c.convertASTType(k.Rep)
+		nt := &types.TNewtype{Name: td.Name, Rep: rep}
+		ctor := newtypeCtorName(td.Name)
+		c.env.Bind(ctor, types.Mono(&types.TFun{From: rep, To: nt}))
+		return types.Mono(nt)
 	}
 	return types.Mono(types.Unit)
 }
@@ -783,6 +797,7 @@ func (c *Checker) checkBinding(b ast.LetBinding) types.Type {
 		}
 	}
 
+	result = c.finishBindingEffects(b, result)
 	return result
 }
 

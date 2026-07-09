@@ -235,6 +235,21 @@ func (a *TAdt) LookupVariant(name string) *Variant {
 }
 
 // ---------------------------------------------------------------------------
+// Nominal newtypes
+// ---------------------------------------------------------------------------
+
+// TNewtype is a nominal wrapper around a representation type.
+// Unlike aliases, TNewtype does not unify with its Rep except via constructors.
+type TNewtype struct {
+	Name string
+	Rep  Type
+}
+
+func (n *TNewtype) String() string {
+	return n.Name
+}
+
+// ---------------------------------------------------------------------------
 // Type constructors (built-in generics: list, option, result)
 // ---------------------------------------------------------------------------
 
@@ -395,6 +410,8 @@ func Apply(s Subst, t Type) Type {
 			}
 		}
 		return &TAdt{Name: t.Name, Params: params, Variants: variants, Linear: t.Linear}
+	case *TNewtype:
+		return &TNewtype{Name: t.Name, Rep: Apply(s, t.Rep)}
 	case *TCon:
 		args := make([]Type, len(t.Args))
 		for i, a := range t.Args {
@@ -440,6 +457,8 @@ func freeVars(t Type, fv map[int64]bool) {
 		for _, p := range t.Params {
 			freeVars(p, fv)
 		}
+	case *TNewtype:
+		freeVars(t.Rep, fv)
 	case *TCon:
 		for _, a := range t.Args {
 			freeVars(a, fv)

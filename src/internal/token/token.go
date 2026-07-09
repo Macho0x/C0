@@ -55,6 +55,7 @@ const (
 	REQUIRES
 	RETURNS
 	WHERE
+	NEWTYPE // newtype keyword for nominal wrappers
 
 	PRIVATE // private visibility modifier
 
@@ -152,6 +153,7 @@ var tokenNames = [...]string{
 	REQUIRES:    "requires",
 	RETURNS:     "returns",
 	WHERE:       "where",
+	NEWTYPE:     "newtype",
 	PRIVATE:     "private",
 	LPAREN:      "(",
 	RPAREN:      ")",
@@ -323,6 +325,8 @@ func LookupKeyword(s string) TokenType {
 		return RETURNS
 	case "where":
 		return WHERE
+	case "newtype":
+		return NEWTYPE
 	case "private":
 		return PRIVATE
 	case "not":

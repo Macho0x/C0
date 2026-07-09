@@ -1,7 +1,14 @@
 module Trading.AllMidsBot
 
-(* DESIGN SKETCH — full bot logic is documented in git history and trading docs.
-   This stub verifies the module path and naming conventions compile. *)
+type symbol = newtype string
 
-let main () =
-  print_line "Trading.AllMidsBot design sketch"
+let midPrice (sym: symbol) : float =
+  100.0
+
+let decide (px: float) : string =
+  if px > 100.0 then "sell" else "buy"
+
+let main () : unit with { io } =
+  let sym = Symbol "BTC-USD" in
+  let px = midPrice sym in
+  print_line (decide px)

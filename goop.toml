@@ -3,6 +3,11 @@
 
 module_root = "github.com/Macho0x/Goop"
 
+[check]
+exhaust_redundant = "warn"
+exhaust_missing = "error"
+effect_inference = true
+
 [mappings]
 "std.io"     = "github.com/Macho0x/Goop/std/io"
 "std.list"   = "github.com/Macho0x/Goop/std/list"

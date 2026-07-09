@@ -1,7 +1,18 @@
-module Trading.SimpleBot
+module Trading.SimpleHLBot
 
-(* DESIGN SKETCH — full bot logic is documented in git history and trading docs.
-   This stub verifies the module path and naming conventions compile. *)
+type order_id = newtype string
 
-let main () =
-  print_line "Trading.SimpleBot design sketch"
+type OrderAck =
+  | Filled
+  | Rejected
+  | PartialFill
+
+let handle (ack: OrderAck) : string =
+  match ack with
+  | Filled -> "filled"
+  | Rejected -> "rejected"
+  | PartialFill -> "partial"
+
+let main () : unit with { io } =
+  let oid = OrderId "hl-1" in
+  print_line (handle Filled)

@@ -20,6 +20,7 @@ type Binding struct {
 	Name     string        // user‑visible name, e.g. "print_line"
 	Scheme   *types.Scheme // type scheme
 	Lowering Lowering      // how to emit Go code for a call
+	Effects  *[]string     // nil = unknown; non-nil lists effect tags for the outermost function
 }
 
 // Lowering describes how a call to a prelude function is lowered to Go.
@@ -59,77 +60,87 @@ func Default() *Prelude {
 		ImportMap: make(map[string]string),
 	}
 
+	ioEff := []string{"io"}
+	asyncEff := []string{"async"}
+	panicEff := []string{"panic"}
+	pureEff := []string{}
+
 	// print_line : string -> unit
-	p.add("print_line",
+	p.addWithEffects("print_line",
 		types.Mono(&types.TFun{From: types.String, To: types.Unit}),
 		Lowering{Func: "fmt.Println", Pkg: "fmt"},
+		&ioEff,
 	)
 
 	// print : string -> unit
-	p.add("print",
+	p.addWithEffects("print",
 		types.Mono(&types.TFun{From: types.String, To: types.Unit}),
 		Lowering{Func: "fmt.Print", Pkg: "fmt"},
+		&ioEff,
 	)
 
 	// int_to_string : int -> string
-	p.add("int_to_string",
+	p.addWithEffects("int_to_string",
 		types.Mono(&types.TFun{From: types.Int, To: types.String}),
 		Lowering{Func: "strconv.Itoa", Pkg: "strconv"},
+		&pureEff,
 	)
 
 	// float_to_string : float -> string
-	p.add("float_to_string",
+	p.addWithEffects("float_to_string",
 		types.Mono(&types.TFun{From: types.Float, To: types.String}),
 		Lowering{Func: "fmt.Sprintf", Pkg: "fmt", Wrap: "fmt.Sprintf"},
+		&pureEff,
 	)
 
 	// string_concat : string -> string -> string
-	p.add("string_concat",
+	p.addWithEffects("string_concat",
 		types.Mono(&types.TFun{
 			From: types.String,
 			To:   &types.TFun{From: types.String, To: types.String},
 		}),
 		Lowering{Operator: "+"},
+		&pureEff,
 	)
 
 	// list_length : 'a list -> int
 	listA := types.ListType(a)
-	p.add("list_length",
+	p.addWithEffects("list_length",
 		types.Mono(&types.TFun{From: listA, To: types.Int}),
-		Lowering{Func: "len", Pkg: ""}, // built-in, no import
+		Lowering{Func: "len", Pkg: ""},
+		&pureEff,
 	)
 
 	// list_append : 'a list -> 'a list -> 'a list
-	p.add("list_append",
+	p.addWithEffects("list_append",
 		types.Mono(&types.TFun{
 			From: listA,
 			To:   &types.TFun{From: listA, To: listA},
 		}),
-		Lowering{Func: "append", Pkg: ""}, // built-in, no import
+		Lowering{Func: "append", Pkg: ""},
+		&pureEff,
 	)
 
 	// panic_message : string -> 'a
-	p.add("panic_message",
+	p.addWithEffects("panic_message",
 		types.Mono(&types.TFun{From: types.String, To: b}),
-		Lowering{Func: "panic", Pkg: ""}, // built-in, no import
+		Lowering{Func: "panic", Pkg: ""},
+		&panicEff,
 	)
 
-	// Also bind Console.print_line for backward compatibility with existing
-	// examples.  This is a convenience alias that maps to the same lowering
-	// as print_line.
-	p.add("Console.print_line",
+	p.addWithEffects("Console.print_line",
 		types.Mono(&types.TFun{From: types.String, To: types.Unit}),
 		Lowering{Func: "fmt.Println", Pkg: "fmt"},
+		&ioEff,
 	)
 
-	// assert : bool -> unit
-	p.add("assert",
+	p.addWithEffects("assert",
 		types.Mono(&types.TFun{From: types.Bool, To: types.Unit}),
 		Lowering{Custom: "assert"},
+		&panicEff,
 	)
 
-	// assert_equal : 'a -> 'a -> unit  (polymorphic equality for basic types)
-	p.add("assert_equal",
+	p.addWithEffects("assert_equal",
 		&types.Scheme{
 			Vars: []*types.TVar{a},
 			Type: &types.TFun{
@@ -138,18 +149,18 @@ func Default() *Prelude {
 			},
 		},
 		Lowering{Custom: "assert_equal"},
+		&panicEff,
 	)
 
-	// chanMake: unit -> 'a chan
-	p.add("Chan.make",
+	p.addWithEffects("Chan.make",
 		&types.Scheme{
 			Vars: []*types.TVar{a},
 			Type: &types.TFun{From: types.Unit, To: &types.TChan{Elem: a}},
 		},
 		Lowering{Custom: "chan_make"},
+		&pureEff,
 	)
-	// chanSend: 'a chan -> 'a -> unit
-	p.add("Chan.send",
+	p.addWithEffects("Chan.send",
 		&types.Scheme{
 			Vars: []*types.TVar{a},
 			Type: &types.TFun{
@@ -158,35 +169,35 @@ func Default() *Prelude {
 			},
 		},
 		Lowering{Custom: "chan_send"},
+		&asyncEff,
 	)
-	// chanRecv: 'a chan -> 'a
-	p.add("Chan.recv",
+	p.addWithEffects("Chan.recv",
 		&types.Scheme{
 			Vars: []*types.TVar{a},
 			Type: &types.TFun{From: &types.TChan{Elem: a}, To: a},
 		},
 		Lowering{Custom: "chan_recv"},
+		&asyncEff,
 	)
-	// chanClose: 'a chan -> unit
-	p.add("Chan.close",
+	p.addWithEffects("Chan.close",
 		&types.Scheme{
 			Vars: []*types.TVar{a},
 			Type: &types.TFun{From: &types.TChan{Elem: a}, To: types.Unit},
 		},
 		Lowering{Custom: "chan_close"},
+		&asyncEff,
 	)
 
-	// OwnedChan.make: unit -> 'a owned_chan
-	p.add("OwnedChan.make",
+	p.addWithEffects("OwnedChan.make",
 		&types.Scheme{
 			Vars: []*types.TVar{a},
 			Type: &types.TFun{From: types.Unit, To: &types.TAdt{Name: "owned_chan", Params: []types.Type{a}}},
 		},
 		Lowering{Custom: "owned_chan_make"},
+		&pureEff,
 	)
 
-	// OwnedChan.send: 'a owned_chan -> 'a -> unit
-	p.add("OwnedChan.send",
+	p.addWithEffects("OwnedChan.send",
 		&types.Scheme{
 			Vars: []*types.TVar{a},
 			Type: &types.TFun{
@@ -195,10 +206,10 @@ func Default() *Prelude {
 			},
 		},
 		Lowering{Custom: "owned_chan_send"},
+		&asyncEff,
 	)
 
-	// OwnedChan.recv: 'a owned_chan -> 'a
-	p.add("OwnedChan.recv",
+	p.addWithEffects("OwnedChan.recv",
 		&types.Scheme{
 			Vars: []*types.TVar{a},
 			Type: &types.TFun{
@@ -207,10 +218,10 @@ func Default() *Prelude {
 			},
 		},
 		Lowering{Custom: "owned_chan_recv"},
+		&asyncEff,
 	)
 
-	// OwnedChan.close: 'a owned_chan -> unit
-	p.add("OwnedChan.close",
+	p.addWithEffects("OwnedChan.close",
 		&types.Scheme{
 			Vars: []*types.TVar{a},
 			Type: &types.TFun{
@@ -219,30 +230,31 @@ func Default() *Prelude {
 			},
 		},
 		Lowering{Custom: "owned_chan_close"},
+		&asyncEff,
 	)
 
-	// http_get_string : string -> string
-	p.add("http_get_string",
+	p.addWithEffects("http_get_string",
 		types.Mono(&types.TFun{From: types.String, To: types.String}),
 		Lowering{Custom: "http_get_string"},
+		&ioEff,
 	)
 
-	// json_extract_floats : string -> int -> float list
-	p.add("json_extract_floats",
+	p.addWithEffects("json_extract_floats",
 		types.Mono(&types.TFun{
 			From: types.String,
 			To:   &types.TFun{From: types.Int, To: types.ListType(types.Float)},
 		}),
 		Lowering{Custom: "json_extract_floats"},
+		&pureEff,
 	)
 
-	// json_extract_strings : string -> int -> string list
-	p.add("json_extract_strings",
+	p.addWithEffects("json_extract_strings",
 		types.Mono(&types.TFun{
 			From: types.String,
 			To:   &types.TFun{From: types.Int, To: types.ListType(types.String)},
 		}),
 		Lowering{Custom: "json_extract_strings"},
+		&pureEff,
 	)
 
 	_ = a
@@ -251,10 +263,15 @@ func Default() *Prelude {
 }
 
 func (p *Prelude) add(name string, scheme *types.Scheme, lower Lowering) {
+	p.addWithEffects(name, scheme, lower, nil)
+}
+
+func (p *Prelude) addWithEffects(name string, scheme *types.Scheme, lower Lowering, effects *[]string) {
 	p.Bindings = append(p.Bindings, Binding{
 		Name:     name,
 		Scheme:   scheme,
 		Lowering: lower,
+		Effects:  effects,
 	})
 	if lower.Pkg != "" {
 		p.ImportMap[lower.Pkg] = lower.Pkg

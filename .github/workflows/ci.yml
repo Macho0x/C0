@@ -33,3 +33,9 @@ jobs:
       - name: End-to-end tests
         run: |
           /tmp/goop test ../tests/
+
+      - name: Check all examples
+        run: |
+          for f in ../docs/examples/*.goop; do
+            /tmp/goop check "$f"
+          done
