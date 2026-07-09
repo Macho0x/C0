@@ -64,20 +64,20 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] IDE support (LSP) - full implementation with diagnostics, hover, definition, completion
 - [x] Formatter (`goop fmt` command)
 - [ ] Comprehensive standard library.
-- [ ] Documentation generator.
+- [ ] Documentation generator (`goop doc` — not started).
 - [ ] Stable 1.0 release.
 
 ## Documentation
 
-- [x] README
+- [x] README (safety-first layout; Go interop and inline `@golang` sections)
 - [x] Design documents
 - [x] Specification drafts
-- [x] Examples
+- [x] Examples (`docs/examples/`; CI checks all files)
 - [x] `goop.toml` project configuration
 - [x] Package manager guide (`docs/design/11-package-manager.md`)
-- [ ] Language tutorial
-- [ ] Standard library reference
-- [ ] Contributing guide
+- [~] Language tutorial — README + examples + design docs; no dedicated tutorial series yet
+- [~] Standard library reference — prelude and `std.*` sources; no generated API reference
+- [~] Contributing guide — `CONTRIBUTING.md` (build, test, PR workflow); to be expanded
 
 ## Deferred or rejected
 

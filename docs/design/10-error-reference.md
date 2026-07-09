@@ -1016,7 +1016,7 @@ code).
 ### EXHAUST003: Non-exhaustive match
 
 - **Error code**: `EXHAUST003`
-- **Severity**: Warning
+- **Severity**: Error (fatal on `goop check` / `goop build` by default)
 - **Message**: `non-exhaustive match: missing constructor(s): %s`
 - **Example**: `test.goop:8:3: non-exhaustive match: missing constructor(s): Blue, Green`
 - **Trigger**: A match expression does not cover all possible constructors

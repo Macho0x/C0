@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="Goop logo" src="assets/goop-banner.png" width="160">
+  <img alt="Goop banner" src="assets/goop-banner.png" width="680">
 </p>
 
 <p align="center">
@@ -15,313 +15,186 @@
 <h1 align="center">Goop</h1>
 
 <p align="center">
-  <strong>OCaml's type system. Go's runtime. No compromises.</strong><br>
-  A statically typed language with algebraic data types, pattern matching,<br>
-  linear types, and compile-time race detection — that compiles to readable Go.
+  <strong>Catch production bugs before <code>go build</code>.</strong><br>
+  OCaml-style types and pattern matching on a Go runtime — with compile-time<br>
+  exhaustiveness, effect tracking, newtypes, and data-race detection.
 </p>
 
 <p align="center">
-  <a href="#examples">Examples</a> •
-  <a href="#what-goop-catches-that-go-doesnt">Compile-time safety</a> •
-  <a href="#side-by-side-with-go">Go comparison</a> •
+  <a href="#what-goop-catches">Compile-time safety</a> •
+  <a href="#go-interop">Go interop</a> •
+  <a href="#inline-go">Inline Go</a> •
   <a href="#getting-started">Getting Started</a> •
-  <a href="#faq">FAQ</a>
+  <a href="#documentation">Docs</a>
 </p>
 
 ---
 
-## Examples
+## What Goop catches
 
-### Algebraic data types + pattern matching
+Goop is not “Go with nicer syntax.” The compiler runs a unified safety pipeline on every `goop check`, `goop build`, and LSP diagnostic — before your code reaches `go build`.
+
+| Check | Code | What it prevents |
+|---|---|---|
+| Exhaustive `match` | EXHAUST003 | Unhandled ADT variants in trading bots and HTTP handlers |
+| Effect rows | UNIFY018 / UNIFY019 | Pure functions secretly doing IO or spawning goroutines |
+| Nominal newtypes | type error | Swapping `order_id` and `symbol` (both `string` in Go) |
+| Nil channels | NIL001 | Sends/receives on channels before initialization |
+| Goroutine sharing | linear pass | `mutable` variables captured by `go` while still in scope |
+| Refinement contracts | refine pass | Division by zero and similar arithmetic VCs |
+
+Full matrix: [Trading bot safety](docs/design/12-trading-bot-safety.md) · [Error reference](docs/design/10-error-reference.md)
+
+### Non-exhaustive match (EXHAUST003)
+
+```goop
+type OrderAck =
+  | Filled of { order_id: string; qty: int }
+  | Rejected of { reason: string }
+  | PartialFill of { order_id: string; filled: int; remaining: int }
+
+let handleAck (ack: OrderAck) : string =
+  match ack with
+  | Filled { order_id; qty } -> order_id
+  | Rejected { reason } -> reason
+  (* forgot PartialFill — Go compiles; Goop does not *)
+```
+
+```
+FAIL: exhaustiveness errors:
+✕ EXHAUST003: non-exhaustive match: missing constructor(s): PartialFill
+╭─[handler.goop:8:3]
+  7 │ let handleAck (ack: OrderAck) : string =
+> 8 │   match ack with
+  ·   ╰── EXHAUST003: non-exhaustive match: missing constructor(s): PartialFill
+  9 │   | Filled { order_id; qty } -> order_id
+╰────
+```
+
+See [`tests/trading_order_ack_test.goop`](tests/trading_order_ack_test.goop) for the correct version.
+
+### Effect inference (UNIFY018)
+
+Functions default to pure unless you declare effects. The compiler infers what the body actually does:
+
+```goop
+let helper () : unit with { } =
+  print_line "needs io"   (* compile error *)
+
+let main () : unit with { io } =
+  helper ()
+```
+
+```
+✕ UNIFY018: function declared pure `with {}` but body uses effects: io
+```
+
+Annotate IO helpers with `with { io }`, async code with `with { async }`, or both: `with { async; io }`.
+
+### Nominal newtypes
+
+Brand trading IDs so raw strings cannot slip through:
+
+```goop
+type order_id = newtype string
+type symbol = newtype string
+
+let place (sym: symbol) (oid: order_id) : string =
+  "order on branded ids"
+```
+
+Assigning a bare string to `order_id` is rejected:
+
+```
+type mismatch: got order_id, expected string (expected primitive type)
+```
+
+Example: [`docs/examples/newtype_trading.goop`](docs/examples/newtype_trading.goop)
+
+### Data races at compile time
+
+```goop
+let race () : unit with { async; io } =
+  let mutable counter = 0 in
+  let ignored = go (fun () -> print_line (int_to_string counter)) in
+  print_line (int_to_string counter)   (* still in scope — rejected *)
+```
+
+```
+FAIL: linear discharge errors:
+potential data race: mutable variable "counter" captured by goroutine
+is still accessible in spawning scope
+```
+
+Go’s race detector only fires at runtime, in tests that actually hit the interleaving. Goop flags the pattern at compile time. Good patterns: [`docs/examples/race_detection.goop`](docs/examples/race_detection.goop)
+
+---
+
+## Go interop
+
+Use any Go package from Goop. Mixed `.goop` + `.go` projects work in the same module — migrate file by file.
 
 ```goop
 module main
 
-type Shape =
-  | Circle of { radius: float }
-  | Rect of { width: float; height: float }
-  | Point
-
-let area (s: Shape) : float =
-  match s with
-  | Circle { radius } -> 3.14159 *. radius *. radius
-  | Rect { width; height } -> width *. height
-  | Point -> 0.0
-
-let main () =
-  print_line (int_to_string (area (Circle { radius = 2.0 })))
-```
-
-**The compiler checks that every `match` is exhaustive.** Add a `Triangle` variant to `shape` and the compiler tells you every single `match` that needs updating. No runtime surprises. No "we forgot to handle that case" at 2 AM.
-
-**The compiler catches dead code.** Switch the order so `Point` comes first with a wildcard `_` and you'll get an "unreachable pattern" error. Every pattern is checked for redundancy.
-
-### Compare to Go: same semantics, no boilerplate
-
-This Goop type:
-
-```goop
-type http_response =
-  | Ok of { body: string; status: int }
-  | Redirect of { url: string }
-  | ClientError of { code: int; message: string }
-  | ServerError of { code: int; message: string }
-```
-
-Expresses what Go makes you write in **33 lines** of manual tag fields, zero values, and hope:
-
-```go
-type HttpResponseType int
-const (
-    HttpResponseTypeOk HttpResponseType = iota
-    HttpResponseTypeRedirect
-    HttpResponseTypeClientError
-    HttpResponseTypeServerError
-)
-type HttpResponse struct {
-    Type          HttpResponseType
-    Body          string  // only Ok — zero value when not Ok
-    Status        int     // only Ok — zero value when not Ok
-    Url           string  // only Redirect
-    ClientCode    int     // only ClientError
-    ClientMessage string  // only ClientError
-    ServerCode    int     // only ServerError
-    ServerMessage string  // only ServerError
-}
-// plus 4 Is*() methods
-// plus hope you never access Body on a Redirect
-```
-
-**6 lines of Goop. 33 lines of Go. Nothing is optional. Nothing can be accessed wrong.**
-
-### Exhaustiveness checking prevents production bugs
-
-```goop
-match response with
-| Ok { body; status } ->
-    process_body body status
-| ClientError { code; message } ->
-    log_error code message
-(* Whoops — forgot Redirect and ServerError! *)
-```
-
-**Goop won't compile this.** The compiler reports:
-
-```
-Error: Non-exhaustive pattern match
-  --> examples/handler.goop:10:3
-  |
-5 |   match response with
-  |         ^^^^^^^^
-  |
-  The following patterns are not covered:
-  - Redirect { url }
-  - ServerError { code; message }
-```
-
-In Go, this would compile silently. You'd find it in production when the first redirect response arrives.
-
-### Recursive functions with let rec
-
-```goop
-let factorial (n: int) : int =
-  let rec loop (acc: int) (m: int) : int =
-    match m <= 1 with
-    | true -> acc
-    | false -> loop (acc * m) (m - 1)
-  in
-  loop 1 n
-
-let main () =
-  assert (factorial 5 = 120)
-```
-
-### Higher-order functions
-
-```goop
-let double (x: int) : int = x + x
-let apply (f: int -> int) (x: int) : int = f x
-let compose (f: int -> int) (g: int -> int) (x: int) : int = f (g x)
-
-let main () =
-  let chk1 = assert (apply double 5 = 10) in
-  assert (compose double double 3 = 12)
-```
-
-### Records with field access
-
-```goop
-type point = { x: int; y: int }
-
-let makePoint (x: int) (y: int) : point = { x = x; y = y }
-let distance (p: point) (q: point) : bool =
-  p.x = q.x && p.y = q.y
-
-let main () =
-  let p = makePoint 3 4 in
-  let chk1 = assert (p.x = 3) in
-  assert (p.y = 4)
-```
-
-### Pattern guards and conditional matching
-
-```goop
-type opt_int = | Some of int | None
-
-let describe (x: opt_int) : string =
-  match x with
-  | Some n when n > 100 -> "big"
-  | Some n when n > 0 -> "positive"
-  | Some _ -> "zero or negative"
-  | None -> "none"
-
-let main () =
-  let chk1 = assert (describe (Some 500) = "big") in
-  assert (describe None = "none")
-```
-
-### Active patterns for custom matching logic
-
-```goop
-module ActivePatternTest
-
-let (|Positive|_|) (n: int) : int option =
-  if n > 0 then Some n else None
-
-let describe (n: int) : string =
-  match n with
-  | Positive _ -> "positive"
-  | _ -> "other"
-
-let main () =
-  assert (describe 5 = "positive")
-```
-
-### Channels and goroutines
-
-```goop
-module Main
-
-let main () =
-  let ch = Chan.make () in
-  let _ = go (fun () -> Chan.send ch 42) in
-  let v = Chan.recv ch in
-  assert (v = 42)
-```
-
-### Computation expressions (result, region)
-
-```goop
-type parse_error = InvalidFormat of string | OutOfRange
-
-let parseAndValidate (input: string) : (int * string) result =
-  result {
-    let! n = parse input;
-    let! validated = validate n;
-    return validated
+import (
+  golang "strings" {
+    val ToUpper : string -> string
+    val ToLower : string -> string
   }
+  golang "fmt"
+  goop . "std.io"
+)
+
+let main () : unit with { io } =
+  print_line (ToUpper "hello from Goop")
 ```
 
-### Refinement types
+- **`import golang "path"`** — import-only; use with `@golang` blocks or generated bindings.
+- **`import golang "path" { val F : ... }`** — declare signatures for Go functions you call from Goop.
+- **`import goop "my/pkg"`** — other Goop modules in the same project.
 
-```goop
-let safeDiv (a: int) (b: int where b <> 0) : int =
-  a / b
-```
-
-The compiler verifies (or inserts a runtime check) that `b` is never zero when `safeDiv` is called.
+Full example: [`docs/examples/extern_demo.goop`](docs/examples/extern_demo.goop)
 
 ---
 
-## What Goop catches that Go doesn't
+## Inline Go
 
-Goop's type system is not just "Go with nicer syntax." It catches entire classes of bugs that Go silently ships to production. Here's what the compiler finds before your code ever runs:
-
-### 🚫 Data races at compile time
+Embed multi-statement Go without changing the compiler. Declare bindings with `@golang { ... }` and expose them to Goop with `val` signatures:
 
 ```goop
-let main () =
-  let mutable counter = 0 in
-  let _ = go (fun () -> counter <- counter + 1) in
-  counter <- counter + 1
+@golang {
+  func greet(name string) string {
+    return "Hello, " + name + "!"
+  }
+}
+val greet : string -> string
+
+let main () : unit with { io } =
+  print_line (greet "Goop")
 ```
 
-**Goop rejects this.** The linear type checker detects that `mutable` variable `counter` is captured by a goroutine closure while still accessible in the spawning scope. Result:
-
-```
-Error: potential data race — mutable variable "counter" captured by
-       goroutine is still accessible in spawning scope
-  --> examples/race.goop:4:16
-  |
-4 |   let _ = go (fun () -> counter <- counter + 1) in
-  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  |                captured here
-5 |   counter <- counter + 1
-  |   ^^^^^^^^^^^^^^^^^^^^^^^
-  |   also accessible here
-```
-
-Go's race detector only catches this at **runtime** — and only in tests that actually trigger the concurrent access. Goop catches it at **compile time**, always.
-
-### 🚫 Non-exhaustive pattern matching
-
-Add a variant to an ADT, miss updating a `match`, and Goop refuses to compile. In Go, this is silent — you find it when the production server panics on the unhandled case.
-
-### 🚫 Nil pointer dereferences
-
-No `nil`. No `null`. No billion-dollar mistake. Every value is always initialized. Every `match` is always exhaustive. The type `option` and `result` replace nullable pointers, and the compiler enforces that you handle both cases.
-
-### 🚫 Unused results and resources
-
-Linear types (`type handle : 1`) ensure resources are used exactly once. A channel handle can't be duplicated. A file descriptor can't be forgotten. The compiler tracks ownership and complains if you:
-- Use a linear value twice
-- Throw away a linear value without consuming it
-- Close a channel while it's still in use
-
-### 🚫 Unreachable patterns and dead code
-
-```goop
-match x with
-| true -> "yes"
-| false -> "no"
-| true -> "wait, what?"
-```
-
-Goop rejects the third arm — `true` is unreachable after `false`. Dead code can't hide.
-
-### 🚫 Refinement type violations
-
-```goop
-let divide (numerator: int) (denominator: int where denominator <> 0) : int =
-  numerator / denominator
-```
-
-The compiler tracks that `denominator` is non-zero through branches, function calls, and assignments. Unproven refinements get runtime guards — the same way Rust inserts bounds checks, but documented in the type.
+Same file can mix `import golang`, `@golang` blocks, and pure Goop logic. See [`docs/examples/extern_demo.goop`](docs/examples/extern_demo.goop).
 
 ---
 
-## Side-by-side with Go
+## Language features (condensed)
 
-| Capability | Go | Goop |
-|---|---|---|
-| **Sum types** | Manual tag fields with unused zero values | `type T = A of T1 \| B of T2` |
-| **Pattern matching** | `switch` on brittle tag checks | `match` with destructuring, guards, exhaustiveness |
-| **Nil safety** | Pointer semantics, `nil` everywhere | No nil — `option`/`result` types enforced by compiler |
-| **Data race detection** | Runtime race detector (flaky, slow) | Compile-time linear type analysis |
-| **Generics** | Type parameters (Go 1.18+) | Parametric polymorphism with full inference |
-| **Variable syntax** | `var x T = v` / `x := v` | `let x = v` — types always inferred |
-| **Error handling** | `if err != nil` everywhere | `result { ... }` computation expressions |
-| **Resource tracking** | Manual or defer | Linear types — compiler tracks ownership |
-| **Mutation control** | Everything mutable by default | `mutable` keyword — immutability is default |
-| **Boilerplate per sum type** | ~8 lines overhead per variant | Zero — variants are just constructors |
+| Area | Highlights |
+|---|---|
+| **Types** | ADTs, records, tuples, lists, `option` / `result`, parametric polymorphism |
+| **Control** | Exhaustive `match`, guards, active patterns, `?` propagation, `result { }` / `async { }` |
+| **Safety** | Effect rows, linear resources (`owned_chan`), refinements (`where`), nil-channel analysis |
+| **Concurrency** | `go`, `chan`, `select`, compile-time sharing analysis on `mutable` |
+| **Interop** | `import golang`, `import goop`, `@golang` embed blocks |
+
+More examples: [`docs/examples/`](docs/examples/) — ADTs, channels, refinements, trading bots, package manager demo.
 
 ---
 
 ## What the generated Go looks like
 
-Goop's core constraint: **the output must be readable by any Go programmer who has never seen Goop.**
-
-Goop → Go:
+Goop lowers to idiomatic Go — interface sum types, type switches, no runtime library:
 
 ```goop
 type option = | Some of { value: int } | None
@@ -332,15 +205,7 @@ let map_option (opt: option) (f: int -> int) : option =
   | None -> None
 ```
 
-Generates:
-
 ```go
-type Option interface { isOption() }
-type OptionSome struct { Value int }
-func (OptionSome) isOption() {}
-type OptionNone struct{}
-func (OptionNone) isOption() {}
-
 func mapOption(opt Option, f func(int) int) Option {
     switch o := opt.(type) {
     case OptionSome:
@@ -353,18 +218,7 @@ func mapOption(opt Option, f func(int) int) Option {
 }
 ```
 
-Interface-based sum types. Go type switches for pattern matching. No runtime library. No reflection. No generated code comments telling you not to edit it. Just plain Go patterns that experienced engineers use every day.
-
----
-
-## Code reduction
-
-| Pattern | Go (lines) | Goop (lines) | Savings |
-|---|---|---|---|
-| Sum type with 4 payload variants | 33 | 6 | **82%** |
-| Exhaustive pattern match on 4 variants | 25 | 10 | **60%** |
-| Error handling pipeline (3 ops) | 30 | 10 | **67%** |
-| Record with field access | 12 | 3 | **75%** |
+Details: [Go lowering strategy](docs/design/04-go-lowering.md)
 
 ---
 
@@ -372,79 +226,56 @@ Interface-based sum types. Go type switches for pattern matching. No runtime lib
 
 ```bash
 # Build the compiler
-cd src && go build ./cmd/goop
+cd src && go build -o ../goop ./cmd/goop
 
-# Check a file parses and type-checks
-./goop check hello.goop
+# Type-check a file
+../goop check hello.goop
 
 # Run tests
-./goop test
+../goop test ../tests/
 
-# Start the LSP server
-./goop lsp
+# LSP (for editors)
+../goop lsp
 ```
+
+Configure features in `goop.toml` (effect inference, check severities, etc.). See [package manager guide](docs/design/11-package-manager.md).
 
 ---
 
 ## FAQ
 
-### Is this production ready?
+**Is this production-ready?** Early bootstrap. The compiler, type checker, codegen, LSP, and 28+ e2e tests are real; we are not claiming production load readiness yet.
 
-Goop is in early bootstrap. The compiler works for single-file programs with full type checking and Go code generation. Not ready for production loads yet, but the type system and code generator are under active development. What works today:
+**How is this different from Borgo or Dingo?** Goop is a full compiler (lex → parse → infer → safety passes → Go codegen), with ML-family syntax and compile-time safety aimed at gradual migration to Go.
 
-- ✅ Full lexer, parser, type checker with Hindley-Milner inference
-- ✅ Code generator emitting idiomatic Go (interface sum types, type switches)
-- ✅ Exhaustiveness checking on pattern matches
-- ✅ Linear type analysis (data race detection, resource tracking)
-- ✅ Computation expressions (`result { ... }`, `region { ... }`)
-- ✅ Effects tracking, refinement types, active patterns
-- ✅ Channels, goroutines, and owned channels
-- ✅ Extern Go interop — call any Go library, mixed `.goop` + `.go` projects
-- ✅ LSP server with real-time diagnostics
-- ✅ VSCode and Zed extensions
+**Do I need OCaml?** No. If you know pattern matching from Rust, Swift, or Kotlin, the syntax will feel familiar.
 
-### How is this different from Borgo or Dingo?
-
-**Borgo** (Rust-like → Go) and **Dingo** (enhanced Go → Go) transpile with similar safety goals. Goop differs by using OCaml/F#-family syntax — not for novelty, but because ML languages have spent 50 years perfecting algebraic types, pattern matching, and type inference. Goop brings that heritage to Go rather than reinventing it.
-
-The key differentiator: **Goop is a proper compiler, not a transpiler.** It does full lexical analysis, parsing, type inference, and code generation. It understands your program well enough to catch data races, unreachable patterns, and refinement violations at compile time — not just when tests happen to trigger them.
-
-### Do I need to learn OCaml?
-
-No. Goop's syntax is small and regular. If you know pattern matching from Rust, Swift, or Kotlin, you already know Goop.
-
-### Can I migrate gradually?
-
-Yes. Goop supports mixed `.goop` + `.go` projects in the same directory. Existing `go.mod` files and hand-written Go code coexist with Goop sources. Migrate file by file, function by function.
-
-### Do I need to learn a new standard library?
-
-No. Goop compiles to Go. Use `import golang "fmt" { val Println : string -> unit }` for Go bindings, or `import golang "fmt"` for import-only. Embed multi-step Go with `@golang { … }` — no compiler changes needed.
+**Do I need a new stdlib?** No. Call Go via `import golang` or use shipped `std.*` modules (`std.io`, `std.list`, …).
 
 ---
 
 ## Status
 
-Goop is in bootstrap implementation (written in Go, targeting self-hosting).
+**v0.5.1** — README and documentation status refresh; safety-first positioning.
 
-- ✅ Lexer, parser, type checker, code generator
-- ✅ LSP server, VSCode extension, Zed extension
-- ✅ 28 passing end-to-end test files
-- ✅ v0.5.0: nil-channel (NIL001), exhaustiveness errors (EXHAUST003), effect inference, nominal newtypes
-- See [Trading bot safety matrix](docs/design/12-trading-bot-safety.md)
-- 🔮 Self-hosting — rewrite the compiler in Goop
+- Unified safety pipeline (`runSafetyChecks`) on check / build / LSP
+- NIL001, EXHAUST003 (error), effect inference, nominal newtypes
+- [Trading bot safety matrix](docs/design/12-trading-bot-safety.md)
+- 🔮 Self-hosting compiler in Goop
 
 ---
 
 ## Documentation
 
-- [Language overview](docs/design/01-overview.md)
-- [Type system](docs/design/02-type-system.md)
-- [Syntax](docs/design/03-syntax.md)
-- [Go lowering strategy](docs/design/04-go-lowering.md)
-- [Effects and safety](docs/design/06-effects-and-safety.md)
-- [Grammar](docs/spec/grammar.md)
-- [Examples](docs/examples/)
+| Resource | Status |
+|---|---|
+| [Design docs](docs/design/) | Current |
+| [Examples](docs/examples/) | Runnable; CI checks all |
+| [Grammar](docs/spec/grammar.md) | Draft |
+| Language tutorial | In progress (examples + README; no dedicated track yet) |
+| Standard library reference | In progress (prelude + `std.*` sources; no generated API docs) |
+| [Contributing](CONTRIBUTING.md) | Started |
+| Documentation generator (`goop doc`) | Not started |
 
 ---
 

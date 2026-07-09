@@ -1,19 +1,8 @@
-0.5.0
+0.5.1
 
-## Features
-- Nil-channel analysis (NIL001) wired into check/compile/build/LSP
-- Non-exhaustive match is a compile error (EXHAUST003)
-- Effect rows on prelude builtins; body effect inference
-- Nominal newtypes (`type T = newtype U`) for branded trading IDs
-- Trading safety design doc and expanded examples
-
-## Breaking changes
-- EXHAUST003 now fails `goop check`
-- NIL001 fails check when channel used before init
-- Functions with `with {}` cannot call IO without error
-- Existing code may need `with { io }` on functions using print_line
-
-## Migration
-- Add `with { io }` to mains/helpers that print
-- Add missing match arms for ADTs
-- Use `type foo = newtype string` for order IDs and symbols
+## Documentation and README
+- README repositioned: compile-time safety first, then Go interop and `@golang`
+- Real diagnostic examples (EXHAUST003, UNIFY018, linear race, newtypes)
+- CONTRIBUTING.md with build, test, and PR basics
+- TODO and roadmap updated for doc generator, tutorial, stdlib ref, contributing status
+- EXHAUST003 severity corrected in error reference (error, not warning)

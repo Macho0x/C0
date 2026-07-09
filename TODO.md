@@ -60,19 +60,19 @@ This file tracks the remaining work to make Goop a usable language. It is kept i
 - [x] LSP server (features: diagnostics, hover, definition, completion)
 - [x] Formatter (`goop fmt` command)
 - [x] Test runner
-- [ ] Documentation generator
+- [ ] Documentation generator (`goop doc` — not started)
 
 ## Documentation
 
-- [x] README
+- [x] README (safety-first layout; interop and `@golang` sections)
 - [x] Design documents
 - [x] Specification drafts
-- [x] Examples
+- [x] Examples (`docs/examples/`; CI `goop check` on all files)
 - [x] `goop.toml` project configuration
 - [x] Package manager (`goop get`, `goop.lock`; see `docs/design/11-package-manager.md`)
-- [ ] Language tutorial
-- [ ] Standard library reference
-- [ ] Contributing guide
+- [~] Language tutorial — README + examples + design docs; no step-by-step tutorial track yet
+- [~] Standard library reference — prelude and `std.*` modules in tree; no generated API reference
+- [~] Contributing guide — [CONTRIBUTING.md](CONTRIBUTING.md) (build/test/PR basics); expand as project matures
 
 ## Long term
 
