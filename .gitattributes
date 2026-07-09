@@ -1,10 +1,6 @@
-# Map .goop files for GitHub Linguist.
-#
-# Goop is not in github-linguist/linguist yet — see docs/github-linguist/README.md
-# for the submission package. Until that PR merges, F# gives reasonable highlighting
-# for match/let/ADTs (approximate, not Goop-accurate).
-#
-# After Linguist merge, replace with:
+# After Linguist PR #8062 merges, switch to:
 #   *.goop linguist-language=Goop linguist-detectable=true
+#
+# Until then, F# gives approximate highlighting (Goop grammar pending merge).
 
 *.goop linguist-language=F# linguist-detectable=true

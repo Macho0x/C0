@@ -91,7 +91,7 @@
         },
         {
           "comment": "type name in declaration",
-          "match": "\\b(type)\\b(\\s+)([a-z_][a-zA-Z0-9_']*)",
+          "match": "\\b(type)\\b(\\s+)([A-Za-z_][a-zA-Z0-9_']*)",
           "captures": {
             "1": { "name": "keyword.goop" },
             "3": { "name": "entity.name.type.declaration.goop" }
