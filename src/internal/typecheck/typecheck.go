@@ -1270,6 +1270,17 @@ func (c *Checker) inferAsMatch(e *ast.AsMatchExpr) types.Type {
 }
 
 func (c *Checker) inferGo(e *ast.GoExpr) types.Type {
+	seen := make(map[string]bool)
+	for _, name := range e.Moved {
+		if seen[name] {
+			c.errorfAt(e.Loc, "duplicate name %q in go move list", name)
+			continue
+		}
+		seen[name] = true
+		if c.env.Lookup(name) == nil {
+			c.errorfAt(e.Loc, "unknown variable %q in go move list", name)
+		}
+	}
 	exprType := c.infer(e.Expr)
 	expected := &types.TFun{From: types.Unit, To: types.Unit}
 	c.unify(exprType, expected)

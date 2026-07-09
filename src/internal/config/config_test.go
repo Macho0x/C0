@@ -162,3 +162,26 @@ func TestC0TomlAtProjectRoot(t *testing.T) {
 	}
 	_ = strings.Join
 }
+
+func TestCheckConfigSeverities(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "goop.toml")
+	content := `
+[check]
+concurrent = "warn"
+refinement_unproven = "off"
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Check.Concurrent != config.SeverityWarn {
+		t.Errorf("concurrent: got %q", cfg.Check.Concurrent)
+	}
+	if cfg.Check.RefinementUnproven != config.SeverityOff {
+		t.Errorf("refinement_unproven: got %q", cfg.Check.RefinementUnproven)
+	}
+}

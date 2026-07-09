@@ -203,7 +203,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		if _, warns, fatal := runSafetyChecks(mod, tm, src, cfg); fatal {
+		if _, _, warns, fatal := runSafetyChecks(mod, tm, src, cfg); fatal {
 			os.Exit(1)
 		} else if len(warns) > 0 {
 			fmt.Println("WARN: safety warnings:")
@@ -232,7 +232,7 @@ func main() {
 		}
 
 		// Safety checks (linear, nilchan, refine, exhaust)
-		proven, warns, fatal := runSafetyChecks(mod, tm, src, cfg)
+		proven, funcProven, warns, fatal := runSafetyChecks(mod, tm, src, cfg)
 		if fatal {
 			os.Exit(1)
 		}
@@ -244,6 +244,7 @@ func main() {
 		gen := codegen.NewGenerator(file, cfg)
 		gen.SetTypeMap(tm, vtm)
 		gen.SetProvenSites(proven)
+		gen.SetRefinementMeta(funcProven)
 		goSrc, err := gen.Generate(mod)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "codegen error: %v\n", err)
@@ -297,7 +298,7 @@ func main() {
 		}
 
 		// Safety checks (linear, nilchan, refine, exhaust)
-		proven, warns, fatal := runSafetyChecks(mod, tm, src, cfg)
+		proven, funcProven, warns, fatal := runSafetyChecks(mod, tm, src, cfg)
 		if fatal {
 			os.Exit(1)
 		}
@@ -309,6 +310,7 @@ func main() {
 		gen := codegen.NewGenerator(file, cfg)
 		gen.SetTypeMap(tm, vtm)
 		gen.SetProvenSites(proven)
+		gen.SetRefinementMeta(funcProven)
 		goSrc, err := gen.Generate(mod)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "codegen error: %v\n", err)
@@ -1161,14 +1163,20 @@ func runTests(dir string) int {
 			continue
 		}
 
-		if _, _, fatal := runSafetyChecks(mod, tm, src, cfg); fatal {
+		proven, funcProven, warns, fatal := runSafetyChecks(mod, tm, src, cfg)
+		if fatal {
 			fmt.Printf("--- FAIL: %s (safety errors)\n", name)
 			failed++
 			continue
 		}
+		for _, w := range warns {
+			fmt.Printf("    WARNING: %v\n", w)
+		}
 
 		gen := codegen.NewGenerator(file, cfg)
 		gen.SetTypeMap(tm, vtm)
+		gen.SetProvenSites(proven)
+		gen.SetRefinementMeta(funcProven)
 		goSrc, err := gen.Generate(mod)
 		if err != nil {
 			fmt.Printf("--- FAIL: %s (codegen: %v)\n", name, err)
@@ -1629,7 +1637,7 @@ func typeStr(t ast.Type) string {
 
 // runSafetyChecks runs linear, nil-channel, refinement, and exhaustiveness passes.
 // Returns proven refinement sites for codegen, non-fatal warnings, and whether any fatal error occurred.
-func runSafetyChecks(mod *ast.Module, tm typeinfo.TypeMap, src []byte, cfg *config.Config) (proven refine.ProvenSites, warnings []error, fatal bool) {
+func runSafetyChecks(mod *ast.Module, tm typeinfo.TypeMap, src []byte, cfg *config.Config) (proven refine.ProvenSites, funcAllProven map[string]bool, warnings []error, fatal bool) {
 	if cfg == nil {
 		cfg = config.DefaultConfig()
 	}
@@ -1644,6 +1652,7 @@ func runSafetyChecks(mod *ast.Module, tm typeinfo.TypeMap, src []byte, cfg *conf
 		}
 		fatal = true
 	}
+	warnings = append(warnings, r.LinearWarnings...)
 	if len(r.NilchanErrors) > 0 {
 		fmt.Println("FAIL: nil-channel errors:")
 		for _, e := range r.NilchanErrors {
@@ -1667,7 +1676,7 @@ func runSafetyChecks(mod *ast.Module, tm typeinfo.TypeMap, src []byte, cfg *conf
 		fatal = true
 	}
 	warnings = append(warnings, r.ExhaustWarns...)
-	return r.RefineProven, warnings, fatal
+	return r.RefineProven, r.RefineFuncProven, warnings, fatal
 }
 
 // lspSafetyDiagnostics returns safety check diagnostics for the LSP (errors only).
@@ -1683,6 +1692,16 @@ func lspSafetyDiagnostics(mod *ast.Module, tm typeinfo.TypeMap, cfg *config.Conf
 	out = append(out, r.NilchanErrors...)
 	out = append(out, r.RefineErrors...)
 	out = append(out, r.ExhaustErrors...)
+	for _, w := range r.LinearWarnings {
+		if cfg.Check.Concurrent == config.SeverityError {
+			out = append(out, w)
+		}
+	}
+	for _, w := range r.RefineWarnings {
+		if cfg.Check.RefinementUnproven == config.SeverityError {
+			out = append(out, w)
+		}
+	}
 	for _, w := range r.ExhaustWarns {
 		if cfg.Check.ExhaustRedundant == config.SeverityError {
 			out = append(out, w)

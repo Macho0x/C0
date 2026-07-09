@@ -101,9 +101,9 @@ Effect rows impose zero runtime cost. They are validated at compile time and era
 
 ## Refinement contract evaluation
 
-`where` clauses on types are runtime assertions. They do not affect compile-time type checking beyond the structure of the type itself.
+`where` clauses on types are checked at compile time by a built-in refinement solver when possible (REFINE001–003). Proven call sites skip runtime guards in generated Go; unproven call sites emit guards; disproven sites are compile errors. Exported functions always retain entry guards for FFI safety.
 
-### Parameter refinements (preconditions)
+There is no external SMT solver (Z3 deferred). Simple integer arithmetic VCs are handled by interval analysis.
 
 For `f (x: T where P) : U`, the compiler inserts a check at function entry:
 
@@ -124,10 +124,6 @@ defer func() {
 ```
 
 The identifier `result` in `Q` refers to the function's return value (lowered to a Go named return parameter).
-
-### No compile-time verification
-
-There is no SMT solver. Refinements are checked only at runtime. This is by design (see `docs/design/08-deferred-features-analysis.md`).
 
 ## Linear type discharge
 

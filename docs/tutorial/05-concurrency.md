@@ -47,6 +47,30 @@ let race () : unit with { async; io } =
 
 Good patterns (capture without post-`go` use): [`race_detection.goop`](../examples/race_detection.goop).
 
+## `go (move ...)`
+
+When a `mutable` binding is transferred into a goroutine and the parent no longer uses it, suppress race warnings explicitly:
+
+```goop
+let launch () : unit with { async; io } =
+  let mutable counter = 0 in
+  let dummy = go (move counter) (fun () -> print_line (int_to_string counter)) in
+  ()
+```
+
+See [`go_move.goop`](../examples/go_move.goop).
+
+## Linear `go` handoff
+
+Linear resources (`owned_chan`, `type handle : 1`) can be handed off to a goroutine — the parent scope discharges the variable. See [`linear_go_handoff.goop`](../examples/linear_go_handoff.goop).
+
+Configure race severity in `goop.toml`:
+
+```toml
+[check]
+concurrent = "error"   # warn | error | off
+```
+
 ## Owned channels
 
 Linear `owned_chan` types enforce close safety. See [`owned_chan.goop`](../examples/owned_chan.goop) and [`linear.goop`](../examples/linear.goop).

@@ -12,6 +12,7 @@ import (
 	"goop.dev/compiler/internal/config"
 	"goop.dev/compiler/internal/desugar"
 	"goop.dev/compiler/internal/parser"
+	"goop.dev/compiler/internal/refine"
 	"goop.dev/compiler/internal/typecheck"
 )
 
@@ -568,4 +569,31 @@ let main () =
 	if !strings.Contains(string(out), "channel closed") {
 		t.Errorf("expected 'channel closed' in output, got %q", string(out))
 	}
+}
+
+func TestRefinementCallSiteGuards(t *testing.T) {
+	mod := mustParse(t, "refinement_solving.goop")
+	tm, vtm, errs := typecheck.CheckWithTypes(mod)
+	if len(errs) > 0 {
+		t.Fatalf("typecheck: %v", errs)
+	}
+	proven, funcProven, _, refineErrs := refine.CheckRefinements(mod, tm, config.DefaultConfig())
+	if len(refineErrs) > 0 {
+		t.Fatalf("refine: %v", refineErrs)
+	}
+	gen := codegen.NewGenerator("refinement_solving.goop", config.DefaultConfig())
+	gen.SetTypeMap(tm, vtm)
+	gen.SetProvenSites(proven)
+	gen.SetRefinementMeta(funcProven)
+	goSrc, err := gen.Generate(mod)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if !strings.Contains(goSrc, "precondition violated") {
+		t.Error("expected entry or call-site precondition guard")
+	}
+	if strings.Contains(goSrc, "func() int {\n\tif !(y != 0)") {
+		t.Error("proven compute call should not wrap in guarded IIFE for y != 0")
+	}
+	_ = funcProven
 }

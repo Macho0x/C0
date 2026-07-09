@@ -16,17 +16,17 @@
 //
 // Goroutine sharing analysis: extends the linear checker to detect potential
 // data races when `mutable` variables are captured by `go` closures while
-// still accessible in the spawning scope. The analysis is CONSERVATIVE:
-// it flags all mutable captures by goroutines, even if the spawning scope
-// never accesses the variable after the `go` expression. This is sound
-// (no false negatives) but may produce false positives. A future version
-// can add flow-sensitive liveness analysis to suppress false positives.
+// still accessible in the spawning scope. Flow-sensitive liveness suppresses
+// false positives when the spawning scope does not access the variable after `go`.
+// Linear variables captured by `go` are handed off to the goroutine.
 package linear
 
 import (
 	"fmt"
+	"strings"
 
 	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/config"
 )
 
 // Error represents a linear discharge error.
@@ -39,15 +39,34 @@ func (e *Error) Error() string { return e.Message }
 // Check runs linear discharge checking on a module, using linearTypes to
 // identify which type names are linear. Returns a list of errors.
 func Check(mod *ast.Module, linearTypes map[string]bool) []error {
+	errs, _ := CheckWithConfig(mod, linearTypes, config.DefaultConfig())
+	return errs
+}
+
+// CheckWithConfig runs linear checking and splits concurrent race diagnostics
+// into errors or warnings per cfg.Check.Concurrent.
+func CheckWithConfig(mod *ast.Module, linearTypes map[string]bool, cfg *config.Config) (errors []error, warnings []error) {
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
 	c := &checker{
 		linearTypes: linearTypes,
 	}
 	c.checkModule(mod)
-	var errs []error
 	for _, e := range c.errors {
-		errs = append(errs, e)
+		if isConcurrentRace(e.Message) && cfg.Check.Concurrent != config.SeverityError {
+			if cfg.Check.Concurrent == config.SeverityWarn {
+				warnings = append(warnings, e)
+			}
+			continue
+		}
+		errors = append(errors, e)
 	}
-	return errs
+	return errors, warnings
+}
+
+func isConcurrentRace(msg string) bool {
+	return strings.Contains(msg, "LINEAR006:") || strings.Contains(msg, "LINEAR007:")
 }
 
 // ---------------------------------------------------------------------------
@@ -65,6 +84,9 @@ type checker struct {
 	accessedAfterGo   map[string]bool // mutable vars accessed after a go in current scope
 	goSeenInSeq       bool            // sequential go seen in current binding body
 	borrowVarName     string          // when set, useVar treats this variable as a borrow (no discharge)
+	inGoHandoff       bool            // checking closure body handed off to goroutine
+	goLinearCaptures  map[string]bool // linear vars handed to current go closure
+	movedVars         map[string]bool // vars explicitly moved into current go closure
 }
 
 func (c *checker) errf(format string, args ...any) {
@@ -399,13 +421,20 @@ func (c *checker) checkExpr(e ast.Expr) {
 			}
 		}
 
+		if c.inGoHandoff {
+			for name := range c.goLinearCaptures {
+				c.live[name] = true
+			}
+		}
+
 		c.checkExpr(e.Body)
 		c.checkDischarged("lambda")
 
-		// Lambda doesn't add linear variables or mutability to outer scope
-		c.live = savedLive
-		c.allLinear = savedAll
-		c.mutableVars = savedMutable
+		if !c.inGoHandoff {
+			c.live = savedLive
+			c.allLinear = savedAll
+			c.mutableVars = savedMutable
+		}
 
 	case *ast.GuardExpr:
 		// guard: just check sub-expressions
@@ -460,8 +489,17 @@ func (c *checker) checkExpr(e ast.Expr) {
 		c.checkExpr(e.Inner)
 
 	case *ast.GoExpr:
+		c.goLinearCaptures = make(map[string]bool)
+		c.movedVars = make(map[string]bool)
+		for _, name := range e.Moved {
+			c.movedVars[name] = true
+		}
 		c.checkGoCaptures(e.Expr)
+		c.inGoHandoff = true
 		c.checkExpr(e.Expr)
+		c.inGoHandoff = false
+		c.goLinearCaptures = nil
+		c.movedVars = nil
 		c.goSeenInSeq = true
 
 	case *ast.SelectExpr:
@@ -582,13 +620,28 @@ func (c *checker) checkGoCaptures(closure ast.Expr) {
 	}
 	captures := c.collectFreeVars(funExpr.Body, locals)
 
-	// Filter to only mutable variables, and check for race conditions.
+	for name := range c.movedVars {
+		if c.allLinear[name] && c.live[name] {
+			delete(c.live, name)
+			c.goLinearCaptures[name] = true
+		}
+	}
+
+	// Mutable race and linear handoff for captured variables.
 	for name := range captures {
+		if c.allLinear[name] && c.live[name] {
+			delete(c.live, name)
+			c.goLinearCaptures[name] = true
+		}
+		if c.movedVars[name] {
+			delete(c.pendingGoRace, name)
+			continue
+		}
 		if !c.mutableVars[name] {
 			continue
 		}
 		if c.goroutineCaptured[name] {
-			c.errf("potential data race: mutable variable %q shared between multiple goroutines", name)
+			c.errf("LINEAR006: potential data race: mutable variable %q shared between multiple goroutines", name)
 		} else {
 			c.pendingGoRace[name] = true
 		}
@@ -599,7 +652,7 @@ func (c *checker) checkGoCaptures(closure ast.Expr) {
 func (c *checker) flushGoRaceChecks() {
 	for name := range c.pendingGoRace {
 		if c.accessedAfterGo[name] {
-			c.errf("potential data race: mutable variable %q captured by goroutine is still accessible in spawning scope", name)
+			c.errf("LINEAR007: potential data race: mutable variable %q captured by goroutine is still accessible in spawning scope", name)
 		}
 	}
 	c.pendingGoRace = make(map[string]bool)

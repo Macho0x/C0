@@ -53,7 +53,11 @@ This file tracks the remaining work to make Goop a usable language. It is kept i
 - [x] Runtime-safe `Chan.close` (closed flag wrapper, clear panic messages)
 - [x] `OwnedChan` linear channel wrapper (compile-time close safety via linear discharge checking)
 - [x] Built-in refinement solver (compile-time VC checking for integer arithmetic)
-- [x] Nil channel detection (flow-sensitive initialization checking)
+- [x] Refinement call-site codegen (proven VCs skip guards; exported entry guards)
+- [x] Arithmetic refinement solver extensions
+- [x] Linear `go` handoff for owned resources
+- [x] `go (move ...)` syntax for explicit goroutine transfer
+- [x] `goop.toml` severities: `concurrent`, `refinement_unproven`
 
 ## Tooling
 

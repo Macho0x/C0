@@ -498,3 +498,33 @@ let main () = print_line "test"
 	errs := linear.Check(mod, ownedChanLinearTypes())
 	assertNoErrors(t, errs)
 }
+
+func TestLinearGoHandoff_NoError(t *testing.T) {
+	src := `module Test
+
+let worker (ch: int owned_chan) : unit =
+  go (fun () ->
+    let _u = OwnedChan.send ch 1 in
+    OwnedChan.close ch
+  )
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, ownedChanLinearTypes())
+	assertNoErrors(t, errs)
+}
+
+func TestGoMove_SuppressesRace(t *testing.T) {
+	src := `module Test
+
+let ok () : unit =
+  let mutable counter = 0 in
+  go (move counter) (fun () -> let v = counter in ())
+
+let main () = print_line "test"
+`
+	mod := mustParse(t, src)
+	errs := linear.Check(mod, linearTypes(mod))
+	assertNoErrors(t, errs)
+}

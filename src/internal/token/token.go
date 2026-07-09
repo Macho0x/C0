@@ -107,6 +107,7 @@ const (
 	// --- concurrency ---
 	CHAN  // chan type
 	GO    // go keyword
+	MOVE  // move keyword (go move list)
 	USING // using keyword
 
 	tokenCount // internal count
@@ -196,6 +197,7 @@ var tokenNames = [...]string{
 	PERCENT:     "%",
 	CHAN:        "chan",
 	GO:          "go",
+	MOVE:        "move",
 	USING:       "using",
 }
 
@@ -212,7 +214,7 @@ func (t TokenType) IsKeyword() bool {
 	switch t {
 	case LET, REC, MUTABLE, TYPE, MATCH, WITH, IF, THEN, ELSE, FUN,
 		MODULE, OPEN, EXTERN, IMPORT, GOLANG, GOOP, AS, WHEN, OF, IN, AND, PANIC,
-		TRUE, FALSE, UNIT, VAL, GUARD, IS, REQUIRES, RETURNS, WHERE, PRIVATE, CHAN, GO, USING:
+		TRUE, FALSE, UNIT, VAL, GUARD, IS, REQUIRES, RETURNS, WHERE, PRIVATE, CHAN, GO, MOVE, USING:
 		return true
 	}
 	return false
@@ -335,6 +337,8 @@ func LookupKeyword(s string) TokenType {
 		return CHAN
 	case "go":
 		return GO
+	case "move":
+		return MOVE
 	case "using":
 		return USING
 	}

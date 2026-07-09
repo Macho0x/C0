@@ -1,0 +1,11 @@
+module Main
+
+let run (ch: int owned_chan) : unit =
+  let dummy = go (fun () ->
+    let u1 = OwnedChan.send ch 7 in
+    OwnedChan.close ch
+  ) in
+  ()
+
+let main () =
+  run (OwnedChan.make ())

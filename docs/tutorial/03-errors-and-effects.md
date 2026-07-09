@@ -38,7 +38,7 @@ function declared pure `with {}` but body uses effects: io
 `goop.toml` enables body effect inference by default:
 
 ```toml
-[effects]
+[check]
 effect_inference = true
 ```
 

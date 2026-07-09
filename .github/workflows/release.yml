@@ -48,7 +48,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: Goop ${{ steps.version.outputs.version }}
-          body_path: VERSION
+          body_path: RELEASE_NOTES.md
           files: |
             src/goop-linux-amd64
             src/goop-darwin-amd64

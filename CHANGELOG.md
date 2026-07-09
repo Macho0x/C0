@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0
+
+### Compile-time safety
+- Refinement call-site codegen: proven VCs skip guards; unproven emit call-site checks; exported entry guards for FFI
+- Arithmetic refinement solver (interval arithmetic, overflow-safe)
+- Linear `go` handoff for owned resources
+- `go (move ...)` syntax for explicit goroutine transfer
+- `goop.toml`: `concurrent` and `refinement_unproven` severity knobs
+
+### Examples & docs
+- `go_move.goop`, `linear_go_handoff.goop`, extended `refinement_solving.goop`
+- Tutorial and README updated for new check config keys
+
 ## 0.5.5-dev
 
 ### README

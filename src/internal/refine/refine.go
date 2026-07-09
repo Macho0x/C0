@@ -44,6 +44,10 @@ func Check(pred ast.Expr, constraints []ast.Expr) Result {
 		}
 	}
 
+	if r := constraintImplies(constraints, pred); r != Unknown {
+		return r
+	}
+
 	return checkRec(pred, ivals, neqs)
 }
 
@@ -262,6 +266,16 @@ func reverseOp(op token.TokenType) token.TokenType {
 // --- comparison helpers ---
 
 func checkComparison(left ast.Expr, op token.TokenType, right ast.Expr, ivals map[string]ivl) Result {
+	if lit, ok := int64FromExpr(right); ok {
+		if iv, ok := evalExprInterval(left, ivals); ok {
+			return checkIntervalAgainstOp(iv, op, lit)
+		}
+	}
+	if lit, ok := int64FromExpr(left); ok {
+		if iv, ok := evalExprInterval(right, ivals); ok {
+			return checkIntervalAgainstOp(iv, reverseOp(op), lit)
+		}
+	}
 	if ident, ok := left.(*ast.IdentExpr); ok {
 		if rhs, ok := int64FromExpr(right); ok {
 			if iv, ok := ivals[ident.Name]; ok && iv.valid() {
@@ -341,6 +355,16 @@ func checkIntervalAgainstOp(iv ivl, op token.TokenType, rhs int64) Result {
 }
 
 func checkInequality(left, right ast.Expr, ivals map[string]ivl, neqs map[string]map[int64]bool) Result {
+	if lit, ok := int64FromExpr(right); ok {
+		if iv, ok := evalExprInterval(left, ivals); ok {
+			if iv.lo > lit || iv.hi < lit {
+				return Proven
+			}
+			if iv.lo == lit && iv.hi == lit {
+				return Disproven
+			}
+		}
+	}
 	if ident, ok := left.(*ast.IdentExpr); ok {
 		if rhs, ok := int64FromExpr(right); ok {
 			if iv, ok := ivals[ident.Name]; ok && iv.valid() {
@@ -393,8 +417,144 @@ func checkEquality(left, right ast.Expr, ivals map[string]ivl, neqs map[string]m
 	return Unknown
 }
 
-func checkArithmeticPred(e *ast.BinaryExpr, ivals map[string]ivl) Result {
+func constraintImplies(constraints []ast.Expr, pred ast.Expr) Result {
+	predBin, ok := pred.(*ast.BinaryExpr)
+	if !ok {
+		return Unknown
+	}
+	for _, c := range constraints {
+		cBin, ok := c.(*ast.BinaryExpr)
+		if !ok {
+			continue
+		}
+		// a > b  implies  (a - b) > 0
+		if predBin.Op == token.GT {
+			if z, ok := int64FromExpr(predBin.Right); ok && z == 0 {
+				if sub, ok := predBin.Left.(*ast.BinaryExpr); ok && sub.Op == token.MINUS {
+					if ai, ok := sub.Left.(*ast.IdentExpr); ok {
+						if bi, ok := sub.Right.(*ast.IdentExpr); ok {
+							if cBin.Op == token.GT && identEqual(cBin.Left, ai) && identEqual(cBin.Right, bi) {
+								return Proven
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 	return Unknown
+}
+
+func identEqual(e ast.Expr, id *ast.IdentExpr) bool {
+	ie, ok := e.(*ast.IdentExpr)
+	return ok && ie.Name == id.Name
+}
+
+func checkArithmeticPred(e *ast.BinaryExpr, ivals map[string]ivl) Result {
+	iv, ok := evalExprInterval(e, ivals)
+	if !ok {
+		return Unknown
+	}
+	if iv.lo > 0 || iv.hi < 0 {
+		return Proven
+	}
+	if iv.lo == 0 && iv.hi == 0 {
+		return Disproven
+	}
+	return Unknown
+}
+
+// evalExprInterval returns a sound interval for simple arithmetic expressions.
+func evalExprInterval(e ast.Expr, ivals map[string]ivl) (ivl, bool) {
+	switch e := e.(type) {
+	case *ast.IdentExpr:
+		if iv, ok := ivals[e.Name]; ok && iv.valid() {
+			return iv, true
+		}
+		return unbounded(), true
+
+	case *ast.LitExpr:
+		if v, ok := int64FromValue(e.Value); ok {
+			return ivl{lo: v, hi: v, set: true}, true
+		}
+		return ivl{}, false
+
+	case *ast.ParenExpr:
+		return evalExprInterval(e.Inner, ivals)
+
+	case *ast.BinaryExpr:
+		left, okL := evalExprInterval(e.Left, ivals)
+		right, okR := evalExprInterval(e.Right, ivals)
+		if !okL || !okR {
+			return ivl{}, false
+		}
+		switch e.Op {
+		case token.PLUS:
+			return addInterval(left, right), true
+		case token.MINUS:
+			return subInterval(left, right), true
+		case token.STAR:
+			return mulInterval(left, right), true
+		}
+	}
+	return ivl{}, false
+}
+
+func addInterval(a, b ivl) ivl {
+	return ivl{lo: satAdd(a.lo, b.lo), hi: satAdd(a.hi, b.hi), set: true}
+}
+
+func subInterval(a, b ivl) ivl {
+	return ivl{lo: satSub(a.lo, b.hi), hi: satSub(a.hi, b.lo), set: true}
+}
+
+func satAdd(x, y int64) int64 {
+	if y > 0 && x > math.MaxInt64-y {
+		return math.MaxInt64
+	}
+	if y < 0 && x < math.MinInt64-y {
+		return math.MinInt64
+	}
+	return x + y
+}
+
+func satSub(x, y int64) int64 {
+	return satAdd(x, -y)
+}
+
+func mulInterval(a, b ivl) ivl {
+	cands := []int64{
+		satMul(a.lo, b.lo), satMul(a.lo, b.hi), satMul(a.hi, b.lo), satMul(a.hi, b.hi),
+	}
+	lo, hi := cands[0], cands[0]
+	for _, v := range cands[1:] {
+		if v < lo {
+			lo = v
+		}
+		if v > hi {
+			hi = v
+		}
+	}
+	return ivl{lo: lo, hi: hi, set: true}
+}
+
+func satMul(x, y int64) int64 {
+	if x == 0 || y == 0 {
+		return 0
+	}
+	if x > 0 && y > 0 && x > math.MaxInt64/y {
+		return math.MaxInt64
+	}
+	if x < 0 && y < 0 && x < math.MaxInt64/y {
+		return math.MaxInt64
+	}
+	if x > 0 && y < 0 && y < math.MinInt64/x {
+		return math.MinInt64
+	}
+	if x < 0 && y > 0 && x < math.MinInt64/y {
+		return math.MinInt64
+	}
+	return x * y
 }
 
 // --- expression equality (shallow structural comparison) ---

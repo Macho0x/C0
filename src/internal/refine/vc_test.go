@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/config"
 	"goop.dev/compiler/internal/parser"
 	"goop.dev/compiler/internal/desugar"
 	"goop.dev/compiler/internal/typecheck"
@@ -42,7 +43,7 @@ let compute (x: int) (y: int) : int =
     0
 `
 	mod, tm := testMod(t, src)
-	proven, warnings, errs := CheckRefinements(mod, tm)
+	proven, _, warnings, errs := CheckRefinements(mod, tm, config.DefaultConfig())
 	if len(errs) > 0 {
 		for _, e := range errs {
 			t.Errorf("unexpected error: %v", e)
@@ -69,7 +70,7 @@ let risky (x: int) (y: int) : int =
   safeDiv x y
 `
 	mod, tm := testMod(t, src)
-	proven, warnings, errs := CheckRefinements(mod, tm)
+	proven, _, warnings, errs := CheckRefinements(mod, tm, config.DefaultConfig())
 	if len(errs) > 0 {
 		for _, e := range errs {
 			t.Errorf("unexpected error: %v", e)
@@ -104,7 +105,7 @@ let bad (x: int) : int =
     0
 `
 	mod, tm := testMod(t, src)
-	_, warnings, errs := CheckRefinements(mod, tm)
+	_, _, warnings, errs := CheckRefinements(mod, tm, config.DefaultConfig())
 
 	// The call safeDiv 100 x in the then-branch has x = 0 as constraint
 	// x <> 0 with x = 0 should be Disproven

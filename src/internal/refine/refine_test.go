@@ -237,6 +237,59 @@ func TestCheck_LiteralPred(t *testing.T) {
 	}
 }
 
+func TestCheck_ArithmeticSubtract(t *testing.T) {
+	pred := binOp(
+		binOp(ident("a"), token.MINUS, ident("b")),
+		token.GT,
+		intLit(0),
+	)
+	constraints := []ast.Expr{
+		binOp(ident("a"), token.GT, ident("b")),
+	}
+	if got := Check(pred, constraints); got != Proven {
+		t.Errorf("a - b > 0 with a > b: got %v, want Proven", got)
+	}
+}
+
+func TestCheck_ArithmeticMulNeq(t *testing.T) {
+	pred := binOp(
+		binOp(ident("x"), token.STAR, intLit(2)),
+		token.DIAMOND,
+		intLit(0),
+	)
+	constraints := []ast.Expr{
+		binOp(ident("x"), token.DIAMOND, intLit(0)),
+	}
+	// x <> 0 does not prove x*2 <> 0 without interval info — expect Unknown
+	if got := Check(pred, constraints); got != Unknown {
+		t.Errorf("x * 2 <> 0 with x <> 0: got %v, want Unknown", got)
+	}
+}
+
+func TestCheck_ArithmeticMulNeqProven(t *testing.T) {
+	pred := binOp(
+		binOp(ident("x"), token.STAR, intLit(2)),
+		token.DIAMOND,
+		intLit(0),
+	)
+	constraints := []ast.Expr{
+		binOp(ident("x"), token.GT, intLit(0)),
+	}
+	if got := Check(pred, constraints); got != Proven {
+		t.Errorf("x * 2 <> 0 with x > 0: got %v, want Proven", got)
+	}
+}
+
+func TestCheck_ArithmeticNonZero(t *testing.T) {
+	pred := binOp(ident("x"), token.PLUS, intLit(1))
+	constraints := []ast.Expr{
+		binOp(ident("x"), token.GEQ, intLit(0)),
+	}
+	if got := Check(pred, constraints); got != Proven {
+		t.Errorf("x + 1 as nonzero with x >= 0: got %v, want Proven", got)
+	}
+}
+
 func TestCheck_ReversedComparison(t *testing.T) {
 	// x > 0 with constraint 0 < x → Proven (reversed comparison)
 	pred := binOp(ident("x"), token.GT, intLit(0))

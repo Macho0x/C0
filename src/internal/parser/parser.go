@@ -112,6 +112,16 @@ func (p *Parser) errorf(format string, args ...any) error {
 	return err
 }
 
+func (p *Parser) parseIdentName() string {
+	tok := p.cur()
+	if tok.Type != token.IDENT {
+		p.errorf("expected identifier, got %s", tok.Type)
+		return "_"
+	}
+	p.advance()
+	return tok.Lexeme
+}
+
 // parseGoBlock parses a `go { … }` block inside an extern declaration.
 // It reads the raw Go source text between braces, uses source byte offsets
 // to advance the parser position past all tokens inside the block INCLUDING
@@ -1024,7 +1034,18 @@ func (p *Parser) parsePrefix() ast.Expr {
 	// --- concurrency ---
 	case token.GO:
 		goTok := p.advance()
-		return &ast.GoExpr{Expr: p.parseExpr(0), Loc: goTok.Loc}
+		var moved []string
+		if p.cur().Type == token.LPAREN && p.peek().Type == token.MOVE {
+			p.advance() // (
+			p.advance() // move
+			moved = append(moved, p.parseIdentName())
+			for p.cur().Type == token.COMMA {
+				p.advance()
+				moved = append(moved, p.parseIdentName())
+			}
+			p.expect(token.RPAREN)
+		}
+		return &ast.GoExpr{Moved: moved, Expr: p.parseExpr(0), Loc: goTok.Loc}
 
 	case token.USING:
 		usingTok := p.advance()

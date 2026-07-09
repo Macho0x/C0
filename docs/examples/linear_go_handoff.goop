@@ -1,0 +1,13 @@
+module main
+
+(* Linear resources can be handed off to a goroutine via go. *)
+
+let worker (ch: int owned_chan) : unit =
+  let dummy = go (fun () ->
+    let u1 = OwnedChan.send ch 1 in
+    OwnedChan.close ch
+  ) in
+  ()
+
+let main () =
+  worker (OwnedChan.make ())

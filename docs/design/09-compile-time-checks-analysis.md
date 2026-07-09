@@ -86,7 +86,7 @@ This gradual path means Goop ships compile-time refinement checking for simple c
 
 **Build a built-in constraint solver for simple arithmetic refinements (integer linear arithmetic, comparisons, boolean combinations) first — no external dependency, covers ~80% of practical refinements.** This is ~1000 lines of Go code, no new dependencies, and produces actionable error messages by construction (failures point to the unsatisfiable expression directly). Defer Z3 integration until user demand materializes and the error-message problem is solved. The existing `where` clause infrastructure (parser, AST, codegen) is already in place; this just adds a compile-time proof pass that can skip emitting `panic` guards for proven-safe call sites. Runtime assertions remain the fallback for unproven or complex refinements — gradual, zero-risk adoption.
 
-**Effort estimate**: ~1000-1500 LoC for constraint solver + VC generation; no new dependencies. If Z3 integration is added later: +500 LoC + 15 MB binary dependency.
+**Status: Implemented (v0.6.0).** Refinement call-site guards, arithmetic solver, linear go handoff, `go (move ...)`, and `goop.toml` severities are implemented. Z3/SMT integration and static deadlock detection remain deferred. Channel-mediated race tracking is documented as a limitation.
 
 ---
 

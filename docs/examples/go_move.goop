@@ -1,0 +1,12 @@
+module main
+
+(* go (move x) transfers a mutable binding into the goroutine,
+   suppressing data-race warnings when the parent no longer uses x. *)
+
+let launch () : unit =
+  let mutable counter = 0 in
+  let dummy = go (move counter) (fun () -> ()) in
+  ()
+
+let main () =
+  launch ()

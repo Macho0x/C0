@@ -11,5 +11,11 @@ let compute (x: int) (y: int) : int =
 let risky (x: int) (y: int) : int =
   safeDiv x y      (* unproven: no context -> runtime check emitted *)
 
+let offsetOk (base: int) (off: int) : int =
+  if base + off > 0 then
+    base + off
+  else
+    0
+
 let main () =
   print_line (int_to_string (compute 100 5))

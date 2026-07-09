@@ -38,9 +38,11 @@ const (
 
 // CheckConfig controls optional compile-time safety passes.
 type CheckConfig struct {
-	ExhaustRedundant   Severity // EXHAUST001/002 (default warn)
-	ExhaustMissing     Severity // EXHAUST003 (default error)
-	EffectInference    bool     // infer effect rows from function bodies (default true)
+	ExhaustRedundant    Severity // EXHAUST001/002 (default warn)
+	ExhaustMissing      Severity // EXHAUST003 (default error)
+	EffectInference     bool     // infer effect rows from function bodies (default true)
+	Concurrent          Severity // LINEAR006/007 (default error)
+	RefinementUnproven  Severity // REFINE002 (default warn)
 }
 
 // Config holds the project-wide compiler configuration.
@@ -56,9 +58,11 @@ func DefaultConfig() *Config {
 	return &Config{
 		ModuleRoot: "",
 		Check: CheckConfig{
-			ExhaustRedundant: SeverityWarn,
-			ExhaustMissing:   SeverityError,
-			EffectInference:  true,
+			ExhaustRedundant:   SeverityWarn,
+			ExhaustMissing:     SeverityError,
+			EffectInference:    true,
+			Concurrent:         SeverityError,
+			RefinementUnproven: SeverityWarn,
 		},
 		Dependencies: make(map[string]string),
 		Mappings: map[string]string{
@@ -165,6 +169,10 @@ func parseConfig(data string) (*Config, error) {
 					c.Check.ExhaustMissing = Severity(val)
 				case "effect_inference":
 					c.Check.EffectInference = val == "true" || val == "1"
+				case "concurrent":
+					c.Check.Concurrent = Severity(val)
+				case "refinement_unproven":
+					c.Check.RefinementUnproven = Severity(val)
 				}
 			case "mappings":
 				c.Mappings[key] = val

@@ -13,21 +13,23 @@ import (
 
 // Result holds outcomes from all safety passes.
 type Result struct {
-	LinearErrors   []error
-	NilchanErrors  []error
-	RefineProven   refine.ProvenSites
-	RefineWarnings []error
-	RefineErrors   []error
-	ExhaustErrors  []error
-	ExhaustWarns   []error
+	LinearErrors     []error
+	LinearWarnings   []error
+	NilchanErrors    []error
+	RefineProven     refine.ProvenSites
+	RefineFuncProven map[string]bool
+	RefineWarnings   []error
+	RefineErrors     []error
+	ExhaustErrors    []error
+	ExhaustWarns     []error
 }
 
 // Run executes linear, nil-channel, refinement, and exhaustiveness checks.
 func Run(mod *ast.Module, tm typeinfo.TypeMap, linearTypes map[string]bool, cfg *config.Config) Result {
 	var r Result
-	r.LinearErrors = linear.Check(mod, linearTypes)
+	r.LinearErrors, r.LinearWarnings = linear.CheckWithConfig(mod, linearTypes, cfg)
 	r.NilchanErrors = nilchan.Check(mod)
-	r.RefineProven, r.RefineWarnings, r.RefineErrors = refine.CheckRefinements(mod, tm)
+	r.RefineProven, r.RefineFuncProven, r.RefineWarnings, r.RefineErrors = refine.CheckRefinements(mod, tm, cfg)
 	exErrs, exWarns := exhaustive.CheckWithConfig(mod, cfg)
 	r.ExhaustErrors = exErrs
 	r.ExhaustWarns = exWarns

@@ -1,0 +1,12 @@
+module Main
+
+let safeDiv (a: int) (b: int where b <> 0) : int = a / b
+
+let compute (x: int) (y: int) : int =
+  if y <> 0 then
+    safeDiv x y
+  else
+    0
+
+let main () =
+  print_line (int_to_string (compute 10 2))

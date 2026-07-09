@@ -54,6 +54,9 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] Runtime-safe `Chan.close` (closed flag wrapper, clear panic messages).
 - [x] `OwnedChan` linear channel wrapper (compile-time close safety via linear discharge checking).
 - [x] Built-in refinement solver (compile-time VC checking for integer arithmetic).
+- [x] Refinement call-site codegen (proven VCs skip guards).
+- [x] `go (move ...)` syntax and linear `go` handoff.
+- [x] `goop.toml` check severities (`concurrent`, `refinement_unproven`).
 - [x] Nil channel detection (flow-sensitive initialization checking).
 - [x] Unified import syntax (`import golang` / `import goop`).
 - [x] Package manager (`goop get`, `goop.lock`).

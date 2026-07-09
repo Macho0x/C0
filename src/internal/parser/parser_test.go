@@ -461,6 +461,49 @@ let main () = ()
 	}
 }
 
+func TestParseGoMove(t *testing.T) {
+	src := `module main
+let main () =
+  let mutable x = 0 in
+  go (move x) (fun () -> x)
+`
+	mod, err := parser.Parse("t.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var found *ast.GoExpr
+	var walk func(ast.Expr)
+	walk = func(e ast.Expr) {
+		if e == nil {
+			return
+		}
+		if g, ok := e.(*ast.GoExpr); ok {
+			found = g
+		}
+		switch e := e.(type) {
+		case *ast.LetInExpr:
+			for _, b := range e.Bindings {
+				walk(b.Body)
+			}
+			walk(e.Body)
+		case *ast.FunExpr:
+			walk(e.Body)
+		case *ast.ParenExpr:
+			walk(e.Inner)
+		}
+	}
+	for _, d := range mod.Decls {
+		if ld, ok := d.(*ast.LetDecl); ok {
+			for _, b := range ld.Bindings {
+				walk(b.Body)
+			}
+		}
+	}
+	if found == nil || len(found.Moved) != 1 || found.Moved[0] != "x" {
+		t.Fatalf("expected go (move x), got %+v", found)
+	}
+}
+
 func TestRejectImportGo(t *testing.T) {
 	src := `module main
 import go "fmt"

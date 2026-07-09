@@ -94,6 +94,8 @@ type Generator struct {
 
 	// refinement contract tracking
 	provenSites      refine.ProvenSites        // call sites proven safe by refinement solver
+	funcAllProven    map[string]bool           // functions with all call sites proven
+	funcPrivate      map[string]bool           // private function names
 	refinementParams map[string][]refinedParam // func name → refinement-annotated params
 }
 
@@ -133,6 +135,8 @@ func NewGenerator(srcFile string, cfg *config.Config) *Generator {
 		goopToGo:           make(map[string]string),
 		goToGoop:           make(map[string]string),
 		refinementParams: make(map[string][]refinedParam),
+		funcAllProven:    make(map[string]bool),
+		funcPrivate:      make(map[string]bool),
 	}
 }
 
@@ -164,6 +168,11 @@ func (g *Generator) SetTypeMap(tm typeinfo.TypeMap, vtm typeinfo.VarTypeMap) {
 // compile time, so codegen can skip emitting runtime panic guards for them.
 func (g *Generator) SetProvenSites(proven refine.ProvenSites) {
 	g.provenSites = proven
+}
+
+// SetRefinementMeta stores per-function refinement metadata from the checker.
+func (g *Generator) SetRefinementMeta(funcAllProven map[string]bool) {
+	g.funcAllProven = funcAllProven
 }
 
 // typeOf returns the inferred type for an expression node, or nil if
@@ -1311,8 +1320,7 @@ func (g *Generator) emitLetDecl(d *ast.LetDecl) {
 	for _, b := range d.Bindings {
 		g.currentFunc = b.Name
 		funcName := b.Name
-		// Keep `main` as `main` for Go entry point (handled by being lowercase)
-		_ = funcName
+		g.funcPrivate[funcName] = d.Private
 
 		// Record source mapping: we don't have the AST source location directly,
 		// so we use the current Go output position and approximate Goop line from
@@ -1401,9 +1409,12 @@ func (g *Generator) emitLetDecl(d *ast.LetDecl) {
 				g.refinementParams[funcName] = refined
 			}
 
-			// Emit precondition checks for each parameter (runtime safety net)
-			for _, rp := range refined {
-				g.emitPreconditionCheck(funcName, rp.name, rp.rt)
+			// Emit precondition checks for exported functions or when not all call sites proven.
+			emitEntryGuards := g.shouldEmitEntryGuards(funcName, d.Private)
+			if emitEntryGuards {
+				for _, rp := range refined {
+					g.emitPreconditionCheck(funcName, rp.name, rp.rt)
+				}
 			}
 
 			if hasReturn {
@@ -2018,6 +2029,13 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 			return
 		}
 	}
+
+	if g.needsCallSiteGuards(e, funcName, args) && !isStmt {
+		g.emitGuardedCallExpr(funcExpr, args, funcName, e)
+		return
+	}
+
+	g.emitCallSiteRefinementGuards(e, funcName, args)
 
 	g.emitExpr(funcExpr, false)
 	g.buf.WriteString("(")
@@ -3266,15 +3284,100 @@ func (g *Generator) emitActiveMatch(e *ast.MatchExpr) {
 //
 //	if !(<pred>) { panic("<func>: precondition violated: <pred text>") }
 func (g *Generator) emitPreconditionCheck(funcName, paramName string, rt *ast.RefinementType) {
+	g.emitRefinementGuard(funcName, rt.Pred, "precondition violated")
+}
+
+// needsCallSiteGuards reports whether unproven refinement checks must be emitted.
+func (g *Generator) needsCallSiteGuards(app *ast.AppExpr, funcName string, args []ast.Expr) bool {
+	if funcName == "" || g.provenSites[app] {
+		return false
+	}
+	refined, ok := g.refinementParams[funcName]
+	if !ok || len(refined) == 0 {
+		return false
+	}
+	paramCount := g.funcParamCount[funcName]
+	if paramCount > 0 && len(args) < paramCount {
+		return false
+	}
+	return true
+}
+
+// emitGuardedCallExpr wraps a call in an IIFE when guards are needed in expression position.
+func (g *Generator) emitGuardedCallExpr(funcExpr ast.Expr, args []ast.Expr, funcName string, app *ast.AppExpr) {
+	retGo := g.funcRetType[funcName]
+	unitRet := retGo == "" || retGo == "struct{}"
+	if unitRet {
+		g.buf.WriteString("(func() {\n")
+	} else {
+		g.buf.WriteString("(func() " + retGo + " {\n")
+	}
+	g.indent++
+	g.emitCallSiteRefinementGuards(app, funcName, args)
+	if !unitRet {
+		g.buf.WriteString("return ")
+	}
+	g.emitExpr(funcExpr, false)
+	g.buf.WriteString("(")
+	for i, arg := range args {
+		if i > 0 {
+			g.buf.WriteString(", ")
+		}
+		g.emitExpr(arg.(ast.Expr), false)
+	}
+	g.buf.WriteString(")")
+	if unitRet {
+		g.buf.WriteString("\n")
+	}
+	g.indent--
+	g.buf.WriteString("\n})()")
+}
+
+// emitCallSiteRefinementGuards emits inline checks before a call when refinements
+// were not proven at compile time.
+func (g *Generator) emitCallSiteRefinementGuards(app *ast.AppExpr, funcName string, args []ast.Expr) {
+	if !g.needsCallSiteGuards(app, funcName, args) {
+		return
+	}
+	refined := g.refinementParams[funcName]
+	for _, rp := range refined {
+		if rp.index >= len(args) {
+			continue
+		}
+		actualArg := args[rp.index]
+		pred := refine.SubstituteIdent(rp.rt.Pred, rp.name, actualArg)
+		g.emitRefinementGuard(funcName, pred, "precondition violated")
+	}
+}
+
+func (g *Generator) shouldEmitEntryGuards(funcName string, isPrivate bool) bool {
+	if !isPrivate && isExportedGoopName(funcName) {
+		return true
+	}
+	if g.funcAllProven != nil && !g.funcAllProven[funcName] {
+		return true
+	}
+	return false
+}
+
+func isExportedGoopName(name string) bool {
+	if name == "" {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(name)
+	return unicode.IsUpper(r)
+}
+
+func (g *Generator) emitRefinementGuard(funcName string, pred ast.Expr, kind string) {
 	var predBuf strings.Builder
 	origBuf := g.buf
 	g.buf = predBuf
-	g.emitExpr(rt.Pred, false)
+	g.emitExpr(pred, false)
 	predGo := g.buf.String()
 	g.buf = origBuf
 
-	g.emitf("if !(%s) { panic(\"%s: precondition violated: %s\") }\n",
-		predGo, funcName, g.predicateSource(rt))
+	g.emitf("if !(%s) { panic(\"%s: %s: %s\") }\n",
+		predGo, funcName, kind, g.exprToSource(pred))
 }
 
 // emitPostconditionCheck emits a defer check for a return type refinement:

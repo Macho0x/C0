@@ -1,9 +1,8 @@
 package refine
 
 import (
-	"fmt"
-
 	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/config"
 	"goop.dev/compiler/internal/token"
 	"goop.dev/compiler/internal/typeinfo"
 )
@@ -11,10 +10,29 @@ import (
 // CheckRefinements walks a module's function bodies and checks refinement
 // contracts at each call site. Returns:
 //   - provenSites: call-site AST nodes whose refinements have been proven.
+//   - funcAllProven: functions whose every refinement call site was proven.
 //   - warnings: unproven refinements (runtime check will be emitted).
 //   - errors: disproven refinements (compile error).
-func CheckRefinements(mod *ast.Module, tm typeinfo.TypeMap) (ProvenSites, []error, []error) {
+func CheckRefinements(mod *ast.Module, tm typeinfo.TypeMap, cfg *config.Config) (ProvenSites, map[string]bool, []error, []error) {
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+	provenSites, funcAllProven, warnings, errs := checkRefinements(mod, tm)
+	switch cfg.Check.RefinementUnproven {
+	case config.SeverityOff:
+		warnings = nil
+	case config.SeverityError:
+		errs = append(errs, warnings...)
+		warnings = nil
+	}
+	return provenSites, funcAllProven, warnings, errs
+}
+
+func checkRefinements(mod *ast.Module, tm typeinfo.TypeMap) (ProvenSites, map[string]bool, []error, []error) {
 	provenSites := make(ProvenSites)
+	funcAllProven := make(map[string]bool)
+	funcCallTotal := make(map[string]int)
+	funcCallProven := make(map[string]int)
 	var warnings []error
 	var errs []error
 
@@ -42,6 +60,7 @@ func CheckRefinements(mod *ast.Module, tm typeinfo.TypeMap) (ProvenSites, []erro
 			}
 			if hasRefinement {
 				funcInfo[b.Name] = fd
+				funcAllProven[b.Name] = true // no calls yet; entry guard may be skipped
 			}
 		}
 	}
@@ -59,16 +78,24 @@ func CheckRefinements(mod *ast.Module, tm typeinfo.TypeMap) (ProvenSites, []erro
 				continue
 			}
 			pctx := &pathCtx{
-				constraints: nil,
-				funcInfo:    funcInfo,
-				proven:      provenSites,
-				tm:          tm,
+				constraints:    nil,
+				funcInfo:       funcInfo,
+				proven:         provenSites,
+				tm:             tm,
+				funcCallTotal:  funcCallTotal,
+				funcCallProven: funcCallProven,
 			}
 			walkExpr(b.Body, pctx, &warnings, &errs)
 		}
 	}
 
-	return provenSites, warnings, errs
+	for name := range funcInfo {
+		total := funcCallTotal[name]
+		proven := funcCallProven[name]
+		funcAllProven[name] = total == 0 || proven == total
+	}
+
+	return provenSites, funcAllProven, warnings, errs
 }
 
 // funcDef stores information about a function with refinement-annotated params.
@@ -80,10 +107,12 @@ type funcDef struct {
 
 // pathCtx tracks the current path condition during AST traversal.
 type pathCtx struct {
-	constraints []ast.Expr
-	funcInfo    map[string]*funcDef
-	proven      ProvenSites
-	tm          typeinfo.TypeMap
+	constraints     []ast.Expr
+	funcInfo        map[string]*funcDef
+	proven          ProvenSites
+	tm              typeinfo.TypeMap
+	funcCallTotal   map[string]int
+	funcCallProven  map[string]int
 }
 
 // walkExpr recursively walks an expression, tracking path conditions.
@@ -149,25 +178,27 @@ func walkExpr(e ast.Expr, ctx *pathCtx, warnings *[]error, errs *[]error) {
 			}
 			actualArg := args[paramIdx].(ast.Expr)
 			paramName := fd.params[paramIdx].Name
-			pred := substituteIdent(rt.Pred, paramName, actualArg)
+			pred := SubstituteIdent(rt.Pred, paramName, actualArg)
 
 			result := Check(pred, ctx.constraints)
 			switch result {
 			case Disproven:
-				*errs = append(*errs, fmt.Errorf("refinement violated: cannot satisfy %s at %s",
-					ast.ExprString(rt.Pred), locString(e)))
+				*errs = append(*errs, refineDisproven(rt, e))
 				allProven = false
 			case Unknown:
-				*warnings = append(*warnings, fmt.Errorf("could not prove refinement %s at %s — runtime check emitted",
-					ast.ExprString(rt.Pred), locString(e)))
+				*warnings = append(*warnings, refineUnproven(rt, e))
 				allProven = false
 			case Proven:
 				// proven — no error, no warning
 			}
 		}
 
-		if allProven && len(fd.refinements) > 0 {
-			ctx.proven[e] = true
+		if len(fd.refinements) > 0 {
+			ctx.funcCallTotal[funcName]++
+			if allProven {
+				ctx.funcCallProven[funcName]++
+				ctx.proven[e] = true
+			}
 		}
 
 	case *ast.BinaryExpr:
@@ -301,10 +332,12 @@ func (ctx *pathCtx) withConstraint(c ast.Expr) *pathCtx {
 	copy(newConstraints, ctx.constraints)
 	newConstraints[len(ctx.constraints)] = c
 	return &pathCtx{
-		constraints: newConstraints,
-		funcInfo:    ctx.funcInfo,
-		proven:      ctx.proven,
-		tm:          ctx.tm,
+		constraints:    newConstraints,
+		funcInfo:       ctx.funcInfo,
+		proven:         ctx.proven,
+		tm:             ctx.tm,
+		funcCallTotal:  ctx.funcCallTotal,
+		funcCallProven: ctx.funcCallProven,
 	}
 }
 
@@ -317,10 +350,12 @@ func (ctx *pathCtx) withConstraints(cs []ast.Expr) *pathCtx {
 	copy(newConstraints, ctx.constraints)
 	copy(newConstraints[len(ctx.constraints):], cs)
 	return &pathCtx{
-		constraints: newConstraints,
-		funcInfo:    ctx.funcInfo,
-		proven:      ctx.proven,
-		tm:          ctx.tm,
+		constraints:    newConstraints,
+		funcInfo:       ctx.funcInfo,
+		proven:         ctx.proven,
+		tm:             ctx.tm,
+		funcCallTotal:  ctx.funcCallTotal,
+		funcCallProven: ctx.funcCallProven,
 	}
 }
 
@@ -353,66 +388,6 @@ func collectArgs(app *ast.AppExpr) []ast.Expr {
 	return result
 }
 
-// substituteIdent replaces all occurrences of an identifier with an expression.
-func substituteIdent(e ast.Expr, name string, replacement ast.Expr) ast.Expr {
-	if e == nil {
-		return nil
-	}
-	switch e := e.(type) {
-	case *ast.IdentExpr:
-		if e.Name == name {
-			return cloneExpr(replacement)
-		}
-		return e
-
-	case *ast.BinaryExpr:
-		return &ast.BinaryExpr{
-			Left:  substituteIdent(e.Left, name, replacement),
-			Op:    e.Op,
-			Right: substituteIdent(e.Right, name, replacement),
-		}
-
-	case *ast.ParenExpr:
-		return &ast.ParenExpr{
-			Inner: substituteIdent(e.Inner, name, replacement),
-		}
-
-	case *ast.AppExpr:
-		return &ast.AppExpr{
-			Func: substituteIdent(e.Func, name, replacement),
-			Arg:  substituteIdent(e.Arg, name, replacement),
-		}
-
-	case *ast.FieldAccessExpr:
-		return &ast.FieldAccessExpr{
-			Left:  substituteIdent(e.Left, name, replacement),
-			Field: e.Field,
-		}
-	}
-	return e
-}
-
-// cloneExpr creates a shallow copy of an expression for substitution.
-func cloneExpr(e ast.Expr) ast.Expr {
-	if e == nil {
-		return nil
-	}
-	// Since we're only dealing with simple expressions in predicates
-	// (identifiers, literals, binary ops), a shallow copy is sufficient
-	// because we never modify the original.
-	switch e := e.(type) {
-	case *ast.IdentExpr:
-		return &ast.IdentExpr{Name: e.Name}
-	case *ast.LitExpr:
-		return &ast.LitExpr{Value: e.Value, Kind: e.Kind}
-	case *ast.BinaryExpr:
-		return &ast.BinaryExpr{Left: e.Left, Op: e.Op, Right: e.Right}
-	case *ast.ParenExpr:
-		return &ast.ParenExpr{Inner: e.Inner}
-	}
-	return e
-}
-
 // negateExpr creates a negated version of a boolean expression.
 // For now handles simple cases; Unknown/unhandled returns nil (which means "don't add a constraint").
 func negateExpr(e ast.Expr) ast.Expr {
@@ -436,6 +411,26 @@ func negateExpr(e ast.Expr) ast.Expr {
 			return &ast.BinaryExpr{Left: e.Left, Op: token.GT, Right: e.Right}
 		case token.GEQ:
 			return &ast.BinaryExpr{Left: e.Left, Op: token.LT, Right: e.Right}
+		case token.AMPAMP:
+			// De Morgan: !(a && b) => !a || !b
+			nl := negateExpr(e.Left)
+			nr := negateExpr(e.Right)
+			if nl == nil || nr == nil {
+				return nil
+			}
+			return &ast.BinaryExpr{Left: nl, Op: token.PIPEPIPE, Right: nr}
+		case token.PIPEPIPE:
+			// De Morgan: !(a || b) => !a && !b
+			nl := negateExpr(e.Left)
+			nr := negateExpr(e.Right)
+			if nl == nil || nr == nil {
+				return nil
+			}
+			return &ast.BinaryExpr{Left: nl, Op: token.AMPAMP, Right: nr}
+		}
+	case *ast.ParenExpr:
+		if inner := negateExpr(e.Inner); inner != nil {
+			return &ast.ParenExpr{Inner: inner}
 		}
 	case *ast.IdentExpr:
 		// not x → x == false? For simplicity, "not x" → x == 0
@@ -479,19 +474,3 @@ func patternConstraints(p ast.Pattern, scrutinee ast.Expr) []ast.Expr {
 	return nil
 }
 
-// locString returns a human-readable location string from an AST node.
-func locString(e ast.Expr) string {
-	switch e := e.(type) {
-	case *ast.AppExpr:
-		return fmt.Sprintf("line %d", e.Loc.Line)
-	case *ast.BinaryExpr:
-		return fmt.Sprintf("line %d", e.Loc.Line)
-	case *ast.IfExpr:
-		return fmt.Sprintf("line %d", e.Loc.Line)
-	case *ast.IdentExpr:
-		return fmt.Sprintf("line %d", e.Loc.Line)
-	case *ast.LitExpr:
-		return fmt.Sprintf("line %d", e.Loc.Line)
-	}
-	return "<unknown location>"
-}

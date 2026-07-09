@@ -518,10 +518,11 @@ type BodyOp struct {
 
 func (*BodyOp) compOpNode() {}
 
-// GoExpr is a `go expr` expression.
+// GoExpr is a `go expr` or `go (move x, ...) expr` expression.
 type GoExpr struct {
-	Expr Expr
-	Loc  token.SourceLoc // source location
+	Moved []string        // optional move list
+	Expr  Expr
+	Loc   token.SourceLoc // source location
 }
 
 func (*GoExpr) exprNode() {}
@@ -812,6 +813,9 @@ func ExprString(e Expr) string {
 		}
 		return e.Builder + " { " + strings.Join(ops, "; ") + " }"
 	case *GoExpr:
+		if len(e.Moved) > 0 {
+			return "go (move " + strings.Join(e.Moved, ", ") + ") " + ExprString(e.Expr)
+		}
 		return "go " + ExprString(e.Expr)
 	case *SelectExpr:
 		cases := make([]string, len(e.Cases))

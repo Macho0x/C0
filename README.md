@@ -48,7 +48,7 @@ Goop targets **compile-time** checks that Go leaves to runtime tests, panics, or
 | Effect tracking in types | ❌ | ❌ | ✅ (F#) | ✅ (`with { io }`) |
 | Nil channel misuse | ❌ (blocks/panics at runtime) | N/A | N/A | ✅ (NIL001) |
 | Data race detection | ⚠️ runtime (`-race`) | ✅ (borrow checker) | ❌ | ✅ (linear pass, conservative) |
-| Refinement / contract checks | ❌ | ⚠️ limited | ⚠️ limited | ⚠️ proven compile-time; runtime guard fallback |
+| Refinement / contract checks | ❌ | ⚠️ limited | ⚠️ limited | ✅ compile-time VC + call-site guards |
 | Native Go stdlib + deploy model | ✅ | ❌ | ❌ | ✅ |
 
 ✅ compile-time · ⚠️ partial or runtime · ❌ not available
@@ -86,8 +86,8 @@ Goop is not “Go with nicer syntax.” The compiler runs a unified safety pipel
 | Effect rows | UNIFY018 / UNIFY019 | Pure functions secretly doing IO or spawning goroutines |
 | Nominal newtypes | type error | Swapping `order_id` and `symbol` (both `string` in Go) |
 | Nil channels | NIL001 | Sends/receives on channels before initialization |
-| Goroutine sharing | linear pass | `mutable` variables captured by `go` while still in scope |
-| Refinement contracts | refine pass | Division by zero and similar arithmetic VCs |
+| Goroutine sharing | linear pass (LINEAR006/007) | `mutable` captured by `go`; use `go (move x)` to transfer |
+| Refinement contracts | refine pass (REFINE001–002) | Proven VCs skip guards; unproven emit call-site checks |
 
 Full matrix: [Trading bot safety](docs/design/12-trading-bot-safety.md) · [Error reference](docs/design/10-error-reference.md)
 
@@ -172,7 +172,7 @@ potential data race: mutable variable "counter" captured by goroutine
 is still accessible in spawning scope
 ```
 
-Go’s race detector only fires at runtime, in tests that actually hit the interleaving. Goop flags the pattern at compile time. Good patterns: [`docs/examples/race_detection.goop`](docs/examples/race_detection.goop)
+Go’s race detector only fires at runtime. Goop flags the pattern at compile time. Use `go (move counter)` when the parent no longer needs a mutable binding. Examples: [`race_detection.goop`](docs/examples/race_detection.goop) · [`go_move.goop`](docs/examples/go_move.goop)
 
 ---
 
@@ -284,7 +284,18 @@ cd src && go build -o ../goop ./cmd/goop
 ../goop lsp
 ```
 
-Configure features in `goop.toml` (effect inference, check severities, etc.). See [package manager guide](docs/design/11-package-manager.md).
+Configure checks in `goop.toml`:
+
+```toml
+[check]
+exhaust_redundant = "warn"
+exhaust_missing = "error"
+effect_inference = true
+concurrent = "error"          # LINEAR006/007: warn | error | off
+refinement_unproven = "warn"  # REFINE002: warn | error | off
+```
+
+See [package manager guide](docs/design/11-package-manager.md).
 
 ---
 
@@ -302,7 +313,7 @@ Configure features in `goop.toml` (effect inference, check severities, etc.). Se
 
 ## Status
 
-**v0.5.5** — README safety comparison matrices and banner fix for GitHub dark mode.
+**v0.6.0** — Refinement call-site guards, arithmetic VC solver, linear `go` handoff, `go (move ...)`, and `goop.toml` check severities.
 
 - Language comparison table (Go / Rust / OCaml / F# / Goop) on README
 - Trading bot safety summary (Go vs Goop compile-time checks)

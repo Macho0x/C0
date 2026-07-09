@@ -7,6 +7,8 @@ module_root = "github.com/Macho0x/Goop"
 exhaust_redundant = "warn"
 exhaust_missing = "error"
 effect_inference = true
+concurrent = "error"
+refinement_unproven = "warn"
 
 [mappings]
 "std.io"     = "github.com/Macho0x/Goop/std/io"
