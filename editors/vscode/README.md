@@ -20,12 +20,31 @@ npm install
 
 ## Install locally
 
-1. Open VS Code.
-2. Run **Developer: Install Extension from Location…**
-3. Select this directory: `editors/vscode`
+1. Build the compiler (extension auto-detects `${workspaceFolder}/goop`):
+
+```bash
+cd src && go build -o ../goop ./cmd/goop
+```
+
+2. Install extension dependencies (once):
+
+```bash
+cd editors/vscode && npm install
+```
+
+3. Open this repository in VS Code — you should be prompted to install the recommended **Goop Language Support** extension, or run **Developer: Install Extension from Location…** and select `editors/vscode`.
+
 4. Reload the window.
 
-Open any `.goop` file — you should see:
+## Settings
+
+| Setting | Default | Description |
+|---|---|---|
+| `goop.path` | *(auto)* | Path to `goop` binary. Empty = try `goop` in workspace root, then `PATH`. |
+
+The workspace ships `.vscode/settings.json` pointing at `${workspaceFolder}/goop`.
+
+## What you should see
 
 - **Goop icon** in the file explorer (from `assets/goop-icon-square.png`)
 - **Syntax highlighting** (keywords, `match`, `@golang` blocks, etc.)
