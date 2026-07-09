@@ -41,7 +41,7 @@ Reload the window after installing.
 | **Syntax highlighting** | Open any `.goop` file — keywords, `match`, strings colored |
 | **Language mode** | Bottom-right status bar shows **Goop** |
 | **LSP diagnostics** | Open a file with a type error — squiggles appear |
-| **File icon** | Optional — see below |
+| **File icon** | Optional — **Preferences: File Icon Theme** → **Goop File Icons** (uses transparent-corner icon) |
 
 ## File icons (optional)
 
