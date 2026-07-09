@@ -1,6 +1,6 @@
 id = "goop"
 name = "Goop"
-version = "0.1.0"
+version = "0.1.1"
 schema_version = 1
 
 [grammars.goop]

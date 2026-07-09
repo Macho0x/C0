@@ -3,7 +3,7 @@
 
 Goop:
   type: programming
-  color: "#3d8f3d"
+  color: "#62c52e"
   extensions:
   - ".goop"
   tm_scope: source.goop

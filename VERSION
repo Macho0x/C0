@@ -1,14 +1,1 @@
-0.5.2
-
-## Documentation
-- Language tutorial: docs/tutorial/ (6 chapters)
-- Standard library reference: docs/stdlib/ (prelude, builtins, std.*)
-- Expanded CONTRIBUTING.md with doc accuracy and editor setup
-
-## Editor tooling
-- VS Code: fixed LSP client, .goop file icon, updated TextMate grammar
-- GitHub: linguist submission package (docs/github-linguist/), F# interim .gitattributes
-- scripts/sync-syntax.sh to sync grammar to editors
-
-## Grammar
-- fileTypes goop (was c0), new keywords, @golang embed, ? and % operators
+0.5.3-dev
