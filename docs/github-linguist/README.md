@@ -9,7 +9,7 @@ GitHub uses [Linguist](https://github.com/github-linguist/linguist) for language
 | TextMate grammar | [`syntaxes/goop.tmLanguage.json`](../../syntaxes/goop.tmLanguage.json) |
 | Linguist samples | [`samples/`](samples/) (real project code, MIT) |
 | Linguist metadata | [`goop.yml`](goop.yml) |
-| GitHub web UI | **Pending** Linguist PR merge |
+| GitHub web UI | **PR open:** [github-linguist/linguist#8062](https://github.com/github-linguist/linguist/pull/8062) |
 
 Until Goop is in Linguist, `.goop` files on github.com render as plain text.
 

@@ -46,9 +46,11 @@ The workspace ships `.vscode/settings.json` pointing at `${workspaceFolder}/goop
 
 ## What you should see
 
-- **Goop icon** in the file explorer (from `assets/goop-icon-square.png`)
+- **Goop file icon** in the file explorer (from `assets/goop-icon-square.png`)
 - **Syntax highlighting** (keywords, `match`, `@golang` blocks, etc.)
-- **LSP diagnostics** if `goop` is on `PATH` (errors from `goop check` pipeline)
+- **LSP diagnostics** when `goop` is found (workspace `goop` binary or `goop.path` setting)
+
+Open any `.goop` file — you should see:
 
 ## Troubleshooting
 
