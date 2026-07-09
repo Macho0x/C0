@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.4-dev
+## 0.5.5-dev
 
 ### README
 - Language comparison matrix (Go / Rust / OCaml / F# / Goop)

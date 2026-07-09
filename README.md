@@ -302,7 +302,7 @@ Configure features in `goop.toml` (effect inference, check severities, etc.). Se
 
 ## Status
 
-**v0.5.4** — README safety comparison matrices and banner fix for GitHub dark mode.
+**v0.5.5** — README safety comparison matrices and banner fix for GitHub dark mode.
 
 - Language comparison table (Go / Rust / OCaml / F# / Goop) on README
 - Trading bot safety summary (Go vs Goop compile-time checks)
