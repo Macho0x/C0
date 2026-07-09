@@ -62,7 +62,9 @@ This file tracks the remaining work to make Goop a usable language. It is kept i
 ## Tooling
 
 - [x] LSP server (features: diagnostics, hover, definition, completion)
-- [x] Formatter (`goop fmt` command)
+- [x] Formatter (`goop fmt` via `src/internal/fmt`, parse-tree round-trip)
+- [x] Channel-mediated race tracking (LINEAR008)
+- [x] Narrow static deadlock lint (DEADLOCK001)
 - [x] Test runner
 - [ ] Documentation generator (`goop doc` — not started)
 

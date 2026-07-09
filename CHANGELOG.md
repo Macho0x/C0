@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0
+
+### Formatter
+- New `src/internal/fmt` package; `goop fmt` formats the parse tree (no desugar)
+- Offside-rule layout for `match`, `if`, `let`; full `GoExpr` / `go (move ...)` support
+
+### Concurrency safety
+- Channel-mediated race tracking (`LINEAR008`, under `[check] concurrent`)
+- Narrow static deadlock lint (`DEADLOCK001`, `[check] deadlock`)
+
 ## 0.6.0
 
 ### Compile-time safety

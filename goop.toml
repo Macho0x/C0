@@ -9,6 +9,7 @@ exhaust_missing = "error"
 effect_inference = true
 concurrent = "error"
 refinement_unproven = "warn"
+deadlock = "warn"
 
 [mappings]
 "std.io"     = "github.com/Macho0x/Goop/std/io"

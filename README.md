@@ -313,7 +313,7 @@ See [package manager guide](docs/design/11-package-manager.md).
 
 ## Status
 
-**v0.6.0** — Refinement call-site guards, arithmetic VC solver, linear `go` handoff, `go (move ...)`, and `goop.toml` check severities.
+**v0.7.0** — `src/internal/fmt` package, channel-mediated race tracking (LINEAR008), narrow deadlock lint (DEADLOCK001).
 
 - Language comparison table (Go / Rust / OCaml / F# / Goop) on README
 - Trading bot safety summary (Go vs Goop compile-time checks)

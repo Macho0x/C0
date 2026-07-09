@@ -1,0 +1,8 @@
+module ChannelRace
+
+(* Safe: mutable not sent through channel *)
+let main () : unit with { async; io } =
+  let ch : int chan = Chan.make () in
+  let dummy = go (fun () -> let s = Chan.send ch 42 in ()) in
+  let v = Chan.recv ch in
+  print_line (int_to_string v)

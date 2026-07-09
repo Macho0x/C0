@@ -25,6 +25,7 @@ import (
 	"goop.dev/compiler/internal/color"
 	"goop.dev/compiler/internal/config"
 	"goop.dev/compiler/internal/desugar"
+	gfmt "goop.dev/compiler/internal/fmt"
 	lc0 "goop.dev/compiler/internal/lexer"
 	"goop.dev/compiler/internal/modresolve"
 	"goop.dev/compiler/internal/parser"
@@ -412,12 +413,12 @@ func main() {
 		}
 
 	case "fmt":
-		mod, err := parseAndDesugar()
+		mod, err := parser.Parse(file, src)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "parse error: %v\n", err)
 			os.Exit(1)
 		}
-		formatted := FormatModule(mod)
+		formatted := gfmt.FormatModule(mod)
 		if inPlace {
 			outPath := file
 			if err := os.WriteFile(outPath, []byte(formatted), 0644); err != nil {
@@ -1270,57 +1271,7 @@ func loadProjectConfig(srcFile string) *config.Config {
 // ---------------------------------------------------------------------------
 
 func printModule(mod *ast.Module) string {
-	return FormatModule(mod)
-}
-
-// FormatModule returns a properly formatted Goop source from an AST.
-func FormatModule(mod *ast.Module) string {
-	var buf strings.Builder
-
-	if mod.Name != "" {
-		buf.WriteString(fmt.Sprintf("module %s\n", mod.Name))
-	}
-
-	if len(mod.Imports) > 0 {
-		buf.WriteString("\nimport (\n")
-		for _, spec := range mod.Imports {
-			formatImportSpec(&buf, spec)
-		}
-		buf.WriteString(")\n")
-	}
-
-	for i, d := range mod.Decls {
-		if i > 0 || mod.Name != "" || len(mod.Imports) > 0 {
-			buf.WriteString("\n")
-		}
-		formatDecl(&buf, d, 0)
-	}
-
-	return buf.String()
-}
-
-func formatImportSpec(buf *strings.Builder, spec ast.ImportSpec) {
-	if spec.Alias != "" && spec.Alias != "." {
-		buf.WriteString("  " + spec.Alias + " ")
-	}
-	switch spec.Kind {
-	case ast.ImportGolang:
-		buf.WriteString("golang ")
-	case ast.ImportGoop:
-		buf.WriteString("goop ")
-		if spec.Alias == "." {
-			buf.WriteString(". ")
-		}
-	}
-	buf.WriteString(fmt.Sprintf("%q", spec.Path))
-	if len(spec.Vals) > 0 {
-		buf.WriteString(" {\n")
-		for _, v := range spec.Vals {
-			buf.WriteString(fmt.Sprintf("    val %s : ...\n", v.Name))
-		}
-		buf.WriteString("  }")
-	}
-	buf.WriteString("\n")
+	return gfmt.FormatModule(mod)
 }
 
 func loadProjectLock(file string) *config.Lockfile {
@@ -1335,304 +1286,6 @@ func loadProjectLock(file string) *config.Lockfile {
 
 func typecheckModule(mod *ast.Module, file string, cfg *config.Config) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
 	return typecheck.CheckWithTypesForFile(mod, file, cfg, loadProjectLock(file))
-}
-
-func formatDecl(buf *strings.Builder, d ast.TopDecl, depth int) {
-	indent := strings.Repeat("  ", depth)
-	switch d := d.(type) {
-	case *ast.LetDecl:
-		formatLetDecl(buf, d, indent)
-	case *ast.TypeDecl:
-		formatTypeDecl(buf, d, indent)
-	case *ast.ExternDecl:
-		buf.WriteString(fmt.Sprintf("%sextern %q %q { ... }\n", indent, d.Lang, d.Path))
-	case *ast.GolangEmbedDecl:
-		buf.WriteString(fmt.Sprintf("%s@golang { ... }\n", indent))
-		for _, v := range d.Vals {
-			buf.WriteString(fmt.Sprintf("%sval %s : ...\n", indent, v.Name))
-		}
-	}
-}
-
-func formatLetDecl(buf *strings.Builder, d *ast.LetDecl, indent string) {
-	rec := ""
-	if d.Rec {
-		rec = "rec "
-	}
-	mut := ""
-	if d.Mutable {
-		mut = "mutable "
-	}
-
-	for i, b := range d.Bindings {
-		if i > 0 {
-			buf.WriteString(indent + "and\n")
-		}
-
-		// Build the let line
-		buf.WriteString(indent + "let " + rec + mut + b.Name)
-
-		// Function parameters
-		if len(b.Params) > 0 {
-			for _, p := range b.Params {
-				buf.WriteString(" " + p.Name)
-				if p.Type != nil {
-					buf.WriteString(" : " + formatType(p.Type))
-				}
-			}
-		}
-
-		// Return type
-		if b.RetType != nil {
-			buf.WriteString(" : " + formatType(b.RetType))
-		}
-		buf.WriteString(" =\n")
-		buf.WriteString(formatExpr(b.Body, indent+"  "))
-	}
-}
-
-func formatTypeDecl(buf *strings.Builder, d *ast.TypeDecl, indent string) {
-	buf.WriteString(fmt.Sprintf("%stype %s", indent, d.Name))
-	for _, tp := range d.TypeParams {
-		buf.WriteString(" " + tp)
-	}
-	if d.Quantity == 1 {
-		buf.WriteString(" : 1")
-	}
-
-	switch k := d.Kind.(type) {
-	case *ast.OpaqueTypeKind:
-		buf.WriteByte('\n')
-	case *ast.RecordTypeKind:
-		buf.WriteString(" = {\n")
-		for i, f := range k.Fields {
-			buf.WriteString(fmt.Sprintf("%s  %s : %s", indent, f.Name, formatType(f.Type)))
-			if i < len(k.Fields)-1 {
-				buf.WriteString(";\n")
-			} else {
-				buf.WriteString("\n")
-			}
-		}
-		buf.WriteString(indent + "}\n")
-	case *ast.ADTTypeKind:
-		buf.WriteString(" =\n")
-		for _, c := range k.Cases {
-			buf.WriteString(fmt.Sprintf("%s  | %s", indent, c.Name))
-			if c.Arg != nil {
-				buf.WriteString(" of " + formatType(c.Arg))
-			}
-			buf.WriteByte('\n')
-		}
-	case *ast.AliasTypeKind:
-		buf.WriteString(" = " + formatType(k.Alias) + "\n")
-	}
-}
-
-// formatType returns a formatted type string with proper Goop syntax
-func formatType(t ast.Type) string {
-	if t == nil {
-		return ""
-	}
-	switch t := t.(type) {
-	case *ast.TIdent:
-		return t.Name
-	case *ast.TApp:
-		return formatType(t.Func) + "<" + formatType(t.Arg) + ">"
-	case *ast.TFun:
-		return formatType(t.From) + " -> " + formatType(t.To)
-	case *ast.TTuple:
-		var elems []string
-		for _, e := range t.Elems {
-			elems = append(elems, formatType(e))
-		}
-		return "(" + strings.Join(elems, " * ") + ")"
-	case *ast.TRecord:
-		var fields []string
-		for _, f := range t.Fields {
-			fields = append(fields, f.Name+": "+formatType(f.Type))
-		}
-		s := "{ " + strings.Join(fields, "; ") + " "
-		if t.Open {
-			s += "| .. "
-		}
-		return s + "}"
-	case *ast.TVar:
-		return t.Name
-	case *ast.RefinementType:
-		return formatType(t.Inner) + " where " + ExprStr(t.Pred)
-	case *ast.TChan:
-		return formatType(t.Elem) + " chan"
-	default:
-		return "<type>"
-	}
-}
-
-// formatExpr returns a formatted expression string with proper indentation
-func formatExpr(e ast.Expr, indent string) string {
-	return indent + ExprStr(e) + "\n"
-}
-
-func formatPattern(p ast.Pattern) string {
-	return patternStr(p) // Reuse existing patternStr function
-}
-
-func ExprStr(e ast.Expr) string {
-	switch e := e.(type) {
-	case *ast.LitExpr:
-		return fmt.Sprintf("%v", e.Value)
-	case *ast.IdentExpr:
-		return e.Name
-	case *ast.ConstructorExpr:
-		if e.Arg != nil {
-			return e.Name + "(" + ExprStr(e.Arg) + ")"
-		}
-		return e.Name
-	case *ast.AppExpr:
-		return "(" + ExprStr(e.Func) + " " + ExprStr(e.Arg) + ")"
-	case *ast.IfExpr:
-		return fmt.Sprintf("(if %s then %s else %s)",
-			ExprStr(e.Cond), ExprStr(e.ThenBranch), ExprStr(e.ElseBranch))
-	case *ast.MatchExpr:
-		var arms []string
-		for _, a := range e.Arms {
-			arms = append(arms, patternStr(a.Pattern)+" -> "+ExprStr(a.Body))
-		}
-		return "(match " + ExprStr(e.Scrutinee) + " with " + strings.Join(arms, " | ") + ")"
-	case *ast.LetInExpr:
-		bs := make([]string, len(e.Bindings))
-		for i, b := range e.Bindings {
-			bs[i] = b.Name + " = " + ExprStr(b.Body)
-		}
-		return "(let " + strings.Join(bs, " and ") + " in " + ExprStr(e.Body) + ")"
-	case *ast.FunExpr:
-		ps := make([]string, len(e.Params))
-		for i, p := range e.Params {
-			ps[i] = p.Name
-		}
-		return "(fun " + strings.Join(ps, " ") + " -> " + ExprStr(e.Body) + ")"
-	case *ast.BinaryExpr:
-		return fmt.Sprintf("(%s %s %s)", ExprStr(e.Left), e.Op, ExprStr(e.Right))
-	case *ast.PipeExpr:
-		return "(" + ExprStr(e.Left) + " |> " + ExprStr(e.Right) + ")"
-	case *ast.QuestionExpr:
-		if e.Arg != nil {
-			return "(" + ExprStr(e.Left) + " ? " + ExprStr(e.Arg) + ")"
-		}
-		return "(" + ExprStr(e.Left) + " ?)"
-	case *ast.RecordExpr:
-		var fields []string
-		for _, f := range e.Fields {
-			if f.Value != nil {
-				fields = append(fields, f.Name+" = "+ExprStr(f.Value))
-			} else {
-				fields = append(fields, f.Name)
-			}
-		}
-		return "{" + strings.Join(fields, "; ") + "}"
-	case *ast.RecordUpdateExpr:
-		var fields []string
-		for _, f := range e.Fields {
-			fields = append(fields, f.Name+" = "+ExprStr(f.Value))
-		}
-		return "{" + ExprStr(e.Base) + " with " + strings.Join(fields, "; ") + "}"
-	case *ast.FieldAccessExpr:
-		return ExprStr(e.Left) + "." + e.Field
-	case *ast.TupleExpr:
-		var elems []string
-		for _, el := range e.Elems {
-			elems = append(elems, ExprStr(el))
-		}
-		return "(" + strings.Join(elems, ", ") + ")"
-	case *ast.ListExpr:
-		var elems []string
-		for _, el := range e.Elems {
-			elems = append(elems, ExprStr(el))
-		}
-		return "[" + strings.Join(elems, "; ") + "]"
-	case *ast.ParenExpr:
-		return "(" + ExprStr(e.Inner) + ")"
-	default:
-		return "<expr>"
-	}
-}
-
-func patternStr(p ast.Pattern) string {
-	switch p := p.(type) {
-	case *ast.WildcardPattern:
-		return "_"
-	case *ast.IdentPattern:
-		return p.Name
-	case *ast.LitPattern:
-		return fmt.Sprintf("%v", p.Value)
-	case *ast.ConstructorPattern:
-		if p.Arg != nil {
-			return p.Name + "(" + patternStr(p.Arg) + ")"
-		}
-		return p.Name
-	case *ast.RecordPattern:
-		var fields []string
-		for _, f := range p.Fields {
-			if f.Pattern != nil {
-				fields = append(fields, f.Name+" = "+patternStr(f.Pattern))
-			} else {
-				fields = append(fields, f.Name)
-			}
-		}
-		return "{" + strings.Join(fields, "; ") + "}"
-	case *ast.TuplePattern:
-		var elems []string
-		for _, el := range p.Elems {
-			elems = append(elems, patternStr(el))
-		}
-		return "(" + strings.Join(elems, ", ") + ")"
-	case *ast.ListPattern:
-		if len(p.Elems) == 0 {
-			return "[]"
-		}
-		var elems []string
-		for _, el := range p.Elems {
-			elems = append(elems, patternStr(el))
-		}
-		return "[" + strings.Join(elems, "; ") + "]"
-	case *ast.ConsPattern:
-		return patternStr(p.Head) + " :: " + patternStr(p.Tail)
-	case *ast.AliasPattern:
-		return patternStr(p.Pattern) + " as " + p.Name
-	default:
-		return "<pat>"
-	}
-}
-
-func typeStr(t ast.Type) string {
-	if t == nil {
-		return ""
-	}
-	switch t := t.(type) {
-	case *ast.TIdent:
-		return t.Name
-	case *ast.TApp:
-		return typeStr(t.Func) + "(" + typeStr(t.Arg) + ")"
-	case *ast.TFun:
-		return typeStr(t.From) + " -> " + typeStr(t.To)
-	case *ast.TTuple:
-		var elems []string
-		for _, e := range t.Elems {
-			elems = append(elems, typeStr(e))
-		}
-		return "(" + strings.Join(elems, " * ") + ")"
-	case *ast.TRecord:
-		var fields []string
-		for _, f := range t.Fields {
-			fields = append(fields, f.Name+": "+typeStr(f.Type))
-		}
-		return "{" + strings.Join(fields, "; ") + "}"
-	case *ast.TVar:
-		return t.Name
-	case *ast.RefinementType:
-		return typeStr(t.Inner) + " where " + ExprStr(t.Pred)
-	default:
-		return "<type>"
-	}
 }
 
 // runSafetyChecks runs linear, nil-channel, refinement, and exhaustiveness passes.
@@ -1653,6 +1306,22 @@ func runSafetyChecks(mod *ast.Module, tm typeinfo.TypeMap, src []byte, cfg *conf
 		fatal = true
 	}
 	warnings = append(warnings, r.LinearWarnings...)
+	if len(r.ChannelRaceErrors) > 0 {
+		fmt.Println("FAIL: channel-mediated race errors:")
+		for _, e := range r.ChannelRaceErrors {
+			fmt.Print(report.Render(e, src))
+		}
+		fatal = true
+	}
+	warnings = append(warnings, r.ChannelRaceWarns...)
+	if len(r.DeadlockErrors) > 0 {
+		fmt.Println("FAIL: deadlock errors:")
+		for _, e := range r.DeadlockErrors {
+			fmt.Print(report.Render(e, src))
+		}
+		fatal = true
+	}
+	warnings = append(warnings, r.DeadlockWarns...)
 	if len(r.NilchanErrors) > 0 {
 		fmt.Println("FAIL: nil-channel errors:")
 		for _, e := range r.NilchanErrors {
@@ -1689,11 +1358,23 @@ func lspSafetyDiagnostics(mod *ast.Module, tm typeinfo.TypeMap, cfg *config.Conf
 	r := checkpipeline.Run(mod, tm, linearTypes, cfg)
 	var out []error
 	out = append(out, r.LinearErrors...)
+	out = append(out, r.ChannelRaceErrors...)
+	out = append(out, r.DeadlockErrors...)
 	out = append(out, r.NilchanErrors...)
 	out = append(out, r.RefineErrors...)
 	out = append(out, r.ExhaustErrors...)
 	for _, w := range r.LinearWarnings {
 		if cfg.Check.Concurrent == config.SeverityError {
+			out = append(out, w)
+		}
+	}
+	for _, w := range r.ChannelRaceWarns {
+		if cfg.Check.Concurrent == config.SeverityError {
+			out = append(out, w)
+		}
+	}
+	for _, w := range r.DeadlockWarns {
+		if cfg.Check.Deadlock == config.SeverityError {
 			out = append(out, w)
 		}
 	}

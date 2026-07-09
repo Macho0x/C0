@@ -3,7 +3,9 @@ package checkpipeline
 
 import (
 	"goop.dev/compiler/internal/ast"
+	"goop.dev/compiler/internal/channelrace"
 	"goop.dev/compiler/internal/config"
+	"goop.dev/compiler/internal/deadlock"
 	"goop.dev/compiler/internal/exhaustive"
 	"goop.dev/compiler/internal/linear"
 	"goop.dev/compiler/internal/nilchan"
@@ -13,21 +15,27 @@ import (
 
 // Result holds outcomes from all safety passes.
 type Result struct {
-	LinearErrors     []error
-	LinearWarnings   []error
-	NilchanErrors    []error
-	RefineProven     refine.ProvenSites
-	RefineFuncProven map[string]bool
-	RefineWarnings   []error
-	RefineErrors     []error
-	ExhaustErrors    []error
-	ExhaustWarns     []error
+	LinearErrors       []error
+	LinearWarnings     []error
+	ChannelRaceErrors  []error
+	ChannelRaceWarns   []error
+	DeadlockErrors     []error
+	DeadlockWarns      []error
+	NilchanErrors      []error
+	RefineProven       refine.ProvenSites
+	RefineFuncProven   map[string]bool
+	RefineWarnings     []error
+	RefineErrors       []error
+	ExhaustErrors      []error
+	ExhaustWarns       []error
 }
 
-// Run executes linear, nil-channel, refinement, and exhaustiveness checks.
+// Run executes linear, channelrace, deadlock, nil-channel, refinement, and exhaustiveness checks.
 func Run(mod *ast.Module, tm typeinfo.TypeMap, linearTypes map[string]bool, cfg *config.Config) Result {
 	var r Result
 	r.LinearErrors, r.LinearWarnings = linear.CheckWithConfig(mod, linearTypes, cfg)
+	r.ChannelRaceErrors, r.ChannelRaceWarns = channelrace.CheckWithConfig(mod, cfg)
+	r.DeadlockErrors, r.DeadlockWarns = deadlock.CheckWithConfig(mod, cfg)
 	r.NilchanErrors = nilchan.Check(mod)
 	r.RefineProven, r.RefineFuncProven, r.RefineWarnings, r.RefineErrors = refine.CheckRefinements(mod, tm, cfg)
 	exErrs, exWarns := exhaustive.CheckWithConfig(mod, cfg)

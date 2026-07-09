@@ -41,8 +41,9 @@ type CheckConfig struct {
 	ExhaustRedundant    Severity // EXHAUST001/002 (default warn)
 	ExhaustMissing      Severity // EXHAUST003 (default error)
 	EffectInference     bool     // infer effect rows from function bodies (default true)
-	Concurrent          Severity // LINEAR006/007 (default error)
+	Concurrent          Severity // LINEAR006/007/008 (default error)
 	RefinementUnproven  Severity // REFINE002 (default warn)
+	Deadlock            Severity // DEADLOCK001 (default warn)
 }
 
 // Config holds the project-wide compiler configuration.
@@ -63,6 +64,7 @@ func DefaultConfig() *Config {
 			EffectInference:    true,
 			Concurrent:         SeverityError,
 			RefinementUnproven: SeverityWarn,
+			Deadlock:           SeverityWarn,
 		},
 		Dependencies: make(map[string]string),
 		Mappings: map[string]string{
@@ -173,6 +175,8 @@ func parseConfig(data string) (*Config, error) {
 					c.Check.Concurrent = Severity(val)
 				case "refinement_unproven":
 					c.Check.RefinementUnproven = Severity(val)
+				case "deadlock":
+					c.Check.Deadlock = Severity(val)
 				}
 			case "mappings":
 				c.Mappings[key] = val

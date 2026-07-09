@@ -1,20 +1,15 @@
-# Goop 0.6.0
+# Goop 0.7.0
 
-## Compile-time safety completion
+## Formatter
+- **`src/internal/fmt`**: `goop fmt` pretty-prints the parse tree without desugaring (preserves `guard`, `go (move ...)`, etc.)
+- Offside-rule layout for `match`, `if`, and `let` chains
 
-- **Refinement call-site guards**: proven VCs skip runtime checks; unproven calls emit guards (IIFE-wrapped in expression position); exported functions keep entry guards for FFI safety.
-- **Arithmetic refinement solver**: interval arithmetic with overflow-safe bounds; structural implication (`a > b` → `a - b > 0`).
-- **Linear `go` handoff**: linear/`owned_chan` resources captured by `go` are discharged in the spawning scope.
-- **`go (move x, ...)` syntax**: explicit transfer of mutable bindings into goroutines; suppresses LINEAR007 when the parent no longer uses the variable.
-- **`goop.toml` severities**: `concurrent` (LINEAR006/007) and `refinement_unproven` (REFINE002) support `warn` | `error` | `off`.
+## Concurrency safety
+- **LINEAR008**: channel-mediated race tracking when mutable values are sent on channels while still accessible in the spawning scope (`[check] concurrent`)
+- **DEADLOCK001**: narrow static deadlock lint for circular send/recv on unbuffered channels (`[check] deadlock`, default `warn`)
 
 ## Examples
-
-- `docs/examples/refinement_solving.goop` (extended)
-- `docs/examples/go_move.goop`
-- `docs/examples/linear_go_handoff.goop`
+- `docs/examples/channel_race.goop`
 
 ## Tests
-
-- 31 `*_test.goop` integration tests passing
-- Full `go test ./...` green
+- Full `go test ./...` and 32 `goop test` integration tests passing
