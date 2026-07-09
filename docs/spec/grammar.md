@@ -19,7 +19,7 @@ unit     := '()'
 
 ```
 and as goop else false fun golang guard if import in
-let match module mutable of panic private rec
+let match module move mutable of panic private rec
 requires returns then true type unit val when with
 ```
 
@@ -67,6 +67,9 @@ primary_expr := literal
               | tuple_expr
               | field_expr
               | match_macro_expr
+              | go_expr
+
+go_expr      := 'go' ('(' 'move' ident (',' ident)* ')')? expr
 
 qarg         := string | expr
 

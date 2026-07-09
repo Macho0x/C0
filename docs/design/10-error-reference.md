@@ -1172,7 +1172,8 @@ control-flow path. All linear errors stop compilation.
 ### LINEAR006: Data race — shared between goroutines
 
 - **Error code**: `LINEAR006`
-- **Severity**: Error
+- **Severity**: Error by default; configurable via `goop.toml` `[check] concurrent` (`warn` | `error` | `off`)
+- **Config key**: `concurrent`
 - **Message**: `potential data race: mutable variable %q shared between multiple goroutines`
 - **Example**: `test.goop:12:5: potential data race: mutable variable "counter" shared between multiple goroutines`
 - **Trigger**: A `mutable` variable is captured by closures passed to
@@ -1191,21 +1192,28 @@ control-flow path. All linear errors stop compilation.
 ### LINEAR007: Data race — mutable capture by goroutine
 
 - **Error code**: `LINEAR007`
-- **Severity**: Error
+- **Severity**: Error by default; configurable via `goop.toml` `[check] concurrent` (`warn` | `error` | `off`)
+- **Config key**: `concurrent`
 - **Message**: `potential data race: mutable variable %q captured by goroutine is still accessible in spawning scope`
 - **Example**: `test.goop:10:5: potential data race: mutable variable "counter" captured by goroutine is still accessible in spawning scope`
 - **Trigger**: A `mutable` variable is captured by a `go` closure while the
   spawning scope can still access the variable. This creates a data race
   between the goroutine and the spawning code.
 - **Fix**: Ensure the mutable variable is not accessed in the spawning scope
-  after the goroutine starts, or use proper synchronization.
+  after the goroutine starts, or use proper synchronization. Use
+  `go (move var) (...)` to mark a mutable binding as transferred into the
+  goroutine when the parent will not use it again.
 - **Bad**:
   ```goop
   let mutable x = 0
   let _ = go (fun () -> x := 42)
   x := 1  (* race with goroutine *)
   ```
-- **Good**: Use channels or design a different concurrency pattern.
+- **Good**:
+  ```goop
+  let mutable counter = 0
+  let _ = go (move counter) (fun () -> counter <- counter + 1)
+  ```
 
 ---
 
@@ -1246,7 +1254,8 @@ three possible outcomes for each refinement:
 ### REFINE002: Unproven refinement
 
 - **Error code**: `REFINE002`
-- **Severity**: Warning
+- **Severity**: Warning by default; configurable via `goop.toml` `[check] refinement_unproven` (`warn` | `error` | `off`)
+- **Config key**: `refinement_unproven`
 - **Message**: `could not prove refinement %s at %s — runtime check emitted`
 - **Example**: `test.goop:15:5: WARNING: could not prove refinement n > 0 at line 15 — runtime check emitted`
 - **Trigger**: A refinement-annotated parameter receives an argument whose

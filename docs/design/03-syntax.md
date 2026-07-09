@@ -15,7 +15,7 @@ Line comments are not provided by default; block comments are sufficient and ali
 
 - Identifiers start with a letter or underscore and continue with letters, digits, underscores, or apostrophes.
 - Type variables are written with a leading apostrophe: `'a`, `'key`.
-- Keywords include: `let`, `type`, `match`, `with`, `if`, `then`, `else`, `fun`, `module`, `import`, `golang`, `c0`, `mutable`, `rec`, `and`, `in`, `as`, `when`, `requires`, `returns`, `true`, `false`, `unit`, `private`, `go`, `chan`.
+- Keywords include: `let`, `type`, `match`, `with`, `if`, `then`, `else`, `fun`, `module`, `import`, `golang`, `c0`, `mutable`, `rec`, `and`, `in`, `as`, `when`, `requires`, `returns`, `true`, `false`, `unit`, `private`, `go`, `move`, `chan`.
 
 ## Modules
 
@@ -286,3 +286,22 @@ Operations inside `region { }`:
 The linear discharge checker auto-discharges region-bound variables at scope exit. This replaces the legacy `using` block with compile-time-guaranteed cleanup.
 
 See `docs/examples/region.goop`.
+
+## Concurrency
+
+Spawn a goroutine with `go`:
+
+```goop
+let _ = go (fun () -> print_line "hello")
+```
+
+Optionally transfer mutable bindings into the goroutine with `go (move ...)`:
+
+```goop
+let mutable counter = 0
+let _ = go (move counter) (fun () -> counter <- counter + 1)
+```
+
+Listed names are treated as moved into the closure: the spawning scope must not use them afterward. This suppresses LINEAR007 (mutable capture race) when the parent no longer accesses the variable. Linear and `owned_chan` values captured by `go` are discharged in the spawning scope (linear handoff).
+
+See `docs/examples/go_move.goop` and `docs/tutorial/05-concurrency.md`.
