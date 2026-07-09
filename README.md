@@ -1,5 +1,9 @@
 <p align="center">
-  <img alt="Goop banner" src="assets/goop-banner.png" width="680">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/goop-banner.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/goop-banner-whitebg.jpg">
+    <img alt="Goop banner" src="assets/goop-banner-whitebg.jpg" width="680">
+  </picture>
 </p>
 
 <p align="center">
@@ -21,12 +25,54 @@
 </p>
 
 <p align="center">
+  <a href="#how-goop-compares">Compare</a> •
+  <a href="#trading-bot-safety">Trading bots</a> •
   <a href="#what-goop-catches">Compile-time safety</a> •
   <a href="#go-interop">Go interop</a> •
   <a href="#inline-go">Inline Go</a> •
   <a href="#getting-started">Getting Started</a> •
   <a href="#documentation">Docs</a>
 </p>
+
+---
+
+## How Goop compares
+
+Goop targets **compile-time** checks that Go leaves to runtime tests, panics, or `-race`. Effect rows and refinements are verified in Goop source; they erase in generated Go (see [lowering](docs/design/04-go-lowering.md)).
+
+| Safety feature | Go | Rust | OCaml / F# | Goop |
+|---|---|---|---|---|
+| Sum types + exhaustive `match` | ❌ | ✅ | ✅ | ✅ |
+| No null by default (`option`) | ❌ | ✅ | ✅ | ✅ |
+| Branded / newtype IDs | ❌ | ✅ | ✅ | ✅ |
+| Effect tracking in types | ❌ | ❌ | ✅ (F#) | ✅ (`with { io }`) |
+| Nil channel misuse | ❌ (blocks/panics at runtime) | N/A | N/A | ✅ (NIL001) |
+| Data race detection | ⚠️ runtime (`-race`) | ✅ (borrow checker) | ❌ | ✅ (linear pass, conservative) |
+| Refinement / contract checks | ❌ | ⚠️ limited | ⚠️ limited | ⚠️ proven compile-time; runtime guard fallback |
+| Native Go stdlib + deploy model | ✅ | ❌ | ❌ | ✅ |
+
+✅ compile-time · ⚠️ partial or runtime · ❌ not available
+
+Goop is not trying to replace Rust’s ownership model. The pitch is **ML-family safety on a Go runtime** — catch whole classes of production bugs before `go build`, without leaving the Go ecosystem.
+
+Design influences: [language overview](docs/design/01-overview.md) · [compile-time checks analysis](docs/design/09-compile-time-checks-analysis.md)
+
+---
+
+## Trading bot safety
+
+Condensed from the [full trading-bot matrix](docs/design/12-trading-bot-safety.md). These are failure modes that show up constantly in venue integrations and order routers.
+
+| Failure mode | Go at compile time | Goop at compile time |
+|---|---|---|
+| Unhandled order ack / venue message variant | ❌ | ✅ EXHAUST003 |
+| `order_id` swapped with `symbol` (both `string`) | ❌ | ✅ newtypes |
+| Send/recv on nil channel | ❌ | ✅ NIL001 |
+| Shared `mutable` state captured by `go` | ❌ (`-race` at runtime) | ✅ linear pass |
+| Pure helper secretly doing IO | ❌ | ✅ UNIFY018 |
+| Division when divisor may be zero | ❌ | ⚠️ REFINE001 / REFINE002 |
+
+Examples: [`trading_order_ack_test.goop`](tests/trading_order_ack_test.goop) · [`newtype_trading.goop`](docs/examples/newtype_trading.goop) · [`trading_binance.goop`](tests/trading_binance.goop)
 
 ---
 
@@ -256,11 +302,12 @@ Configure features in `goop.toml` (effect inference, check severities, etc.). Se
 
 ## Status
 
-**v0.5.2** — Tutorial, stdlib reference, VS Code highlighting/icons, GitHub Linguist package.
+**v0.5.4** — README safety comparison matrices and banner fix for GitHub dark mode.
 
-- Unified safety pipeline (`runSafetyChecks`) on check / build / LSP
-- NIL001, EXHAUST003 (error), effect inference, nominal newtypes
-- [Trading bot safety matrix](docs/design/12-trading-bot-safety.md)
+- Language comparison table (Go / Rust / OCaml / F# / Goop) on README
+- Trading bot safety summary (Go vs Goop compile-time checks)
+- Banner: `<picture>` light/dark variants; renamed `goop-banner-whitebg.jpg`
+- Prior: Goopher branding, Zed icons, Linguist color `#62c52e` (v0.5.3)
 - 🔮 Self-hosting compiler in Goop
 
 ---
