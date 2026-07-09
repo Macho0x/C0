@@ -1,12 +1,14 @@
 # Contributing to Goop
 
-Thank you for your interest in Goop. The project is in active bootstrap; this guide will grow as the toolchain matures.
+Thank you for contributing. This guide covers build/test workflow, documentation expectations, and editor tooling.
 
 ## Before you start
 
-- Read the [design overview](docs/design/01-overview.md) and [roadmap](docs/design/07-roadmap.md).
-- Check [TODO.md](TODO.md) for open work.
-- Error codes and safety checks: [10-error-reference.md](docs/design/10-error-reference.md), [12-trading-bot-safety.md](docs/design/12-trading-bot-safety.md).
+- [Design overview](docs/design/01-overview.md) and [roadmap](docs/design/07-roadmap.md)
+- [Language tutorial](docs/tutorial/README.md) — how the language fits together
+- [Standard library reference](docs/stdlib/README.md) — prelude, builtins, `std.*`
+- [TODO.md](TODO.md) — open work
+- Error codes: [10-error-reference.md](docs/design/10-error-reference.md), [12-trading-bot-safety.md](docs/design/12-trading-bot-safety.md)
 
 ## Build and test
 
@@ -14,33 +16,121 @@ Thank you for your interest in Goop. The project is in active bootstrap; this gu
 cd src
 go build -o ../goop ./cmd/goop
 
-# Unit tests (Go compiler implementation)
+# Go compiler unit tests
 go test ./...
 
-# End-to-end Goop tests
+# Goop end-to-end tests
 ../goop test ../tests/
 
-# Examples (also run in CI)
+# All examples (CI does this)
 for f in ../docs/examples/*.goop; do ../goop check "$f"; done
 ```
 
 ## Making changes
 
-1. **Compiler / language** — changes usually touch `src/internal/` (parser, typecheck, codegen, safety passes) and `tests/*.goop` e2e files.
-2. **Examples** — add or update files under `docs/examples/`; CI runs `goop check` on all of them.
-3. **Design docs** — keep `docs/design/` and `TODO.md` / `docs/design/07-roadmap.md` in sync when behavior changes.
-4. **Formatting** — `goop fmt` for Goop sources; `gofmt` for Go in `src/`.
+### Compiler / language
+
+Touch `src/internal/` (lexer, parser, typecheck, codegen, safety passes) and add or update `tests/*.goop` e2e files for user-visible behavior.
+
+### Prelude or `std.*`
+
+| Change | Update |
+|---|---|
+| New prelude binding | `src/internal/prelude/prelude.go` + `docs/stdlib/prelude.md` |
+| New `std.*` export | `std/*/*.goop` + matching `docs/stdlib/std-*.md` |
+| New builtin type | `src/internal/typecheck/` + `docs/stdlib/builtins.md` |
+
+### Examples
+
+Add runnable files under `docs/examples/`. CI runs `goop check` on every file.
+
+### Design docs
+
+Keep `docs/design/`, `TODO.md`, and `docs/design/07-roadmap.md` in sync when behavior changes.
+
+### Syntax highlighting
+
+Canonical grammar: [`syntaxes/goop.tmLanguage.json`](syntaxes/goop.tmLanguage.json).
+
+After editing:
+
+```bash
+./scripts/sync-syntax.sh
+```
+
+Reload VS Code / Zed after grammar changes.
+
+### Formatting
+
+- Goop sources: `goop fmt`
+- Go in `src/`: `gofmt`
+
+## Editor extensions
+
+### VS Code
+
+```bash
+cd editors/vscode && npm install
+```
+
+Install via **Developer: Install Extension from Location…** → `editors/vscode`.
+
+Provides:
+
+- TextMate syntax highlighting
+- `.goop` file icon (`assets/goop-icon-square.png`)
+- LSP via `goop lsp` (requires `goop` on `PATH`)
+
+See [editors/vscode/README.md](editors/vscode/README.md).
+
+### Zed
+
+```bash
+cd editors/zed && make install
+```
+
+### GitHub highlighting
+
+GitHub requires [Linguist](https://github.com/github-linguist/linguist) registration. Submission package: [`docs/github-linguist/`](docs/github-linguist/README.md).
+
+Until Linguist merges Goop, [`.gitattributes`](.gitattributes) maps `*.goop` to F# for approximate highlighting.
+
+## Documentation accuracy
+
+Documentation must match the compiler, not aspirational design:
+
+1. **Verify** — run `goop check` on any example you add or change.
+2. **Trace to source** — prelude from `prelude.go`, `std.*` from `std/*/*.goop`, syntax from `docs/design/03-syntax.md` and `src/internal/parser/`.
+3. **Update together** — compiler change + e2e test + relevant doc page (tutorial, stdlib, or design doc).
+4. **Error codes** — new diagnostics need entries in `docs/design/10-error-reference.md`.
 
 ## Pull requests
 
 - One logical change per PR when possible.
-- Include or update e2e tests for user-visible behavior.
-- Note breaking changes and migration steps in the PR description.
+- Include e2e tests for user-visible behavior.
+- Note breaking changes and migration steps.
+- If you change prelude, `std.*`, or public CLI behavior, update the stdlib reference or tutorial.
+
+## Project structure (quick reference)
+
+```
+src/cmd/goop/          CLI entry (check, build, lsp, test, …)
+src/internal/          Compiler implementation
+std/                   std.io, std.list, std.option, std.result
+tests/                 End-to-end .goop tests
+docs/examples/         Runnable examples (CI-checked)
+docs/tutorial/         Step-by-step tutorial
+docs/stdlib/           Hand-written API reference
+docs/design/           Language design documents
+syntaxes/              Canonical TextMate grammar
+editors/vscode/        VS Code extension
+editors/zed/           Zed extension
+```
 
 ## Not yet available
 
-- `goop doc` documentation generator
-- Dedicated language tutorial series
-- Generated standard library API reference
+- `goop doc` — automated documentation generator ([TODO.md](TODO.md))
 
-These are tracked in [TODO.md](TODO.md) and the roadmap.
+## License
+
+By contributing, you agree your contributions are licensed under the project’s MIT / Apache-2.0 dual license.

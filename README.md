@@ -256,7 +256,7 @@ Configure features in `goop.toml` (effect inference, check severities, etc.). Se
 
 ## Status
 
-**v0.5.1** — README and documentation status refresh; safety-first positioning.
+**v0.5.2** — Tutorial, stdlib reference, VS Code highlighting/icons, GitHub Linguist package.
 
 - Unified safety pipeline (`runSafetyChecks`) on check / build / LSP
 - NIL001, EXHAUST003 (error), effect inference, nominal newtypes
@@ -267,14 +267,15 @@ Configure features in `goop.toml` (effect inference, check severities, etc.). Se
 
 ## Documentation
 
-| Resource | Status |
+| Resource | Link |
 |---|---|
-| [Design docs](docs/design/) | Current |
+| [Language tutorial](docs/tutorial/README.md) | 6 chapters, linked examples |
+| [Standard library reference](docs/stdlib/README.md) | Prelude, builtins, `std.*` |
+| [Design docs](docs/design/) | Language design |
 | [Examples](docs/examples/) | Runnable; CI checks all |
 | [Grammar](docs/spec/grammar.md) | Draft |
-| Language tutorial | In progress (examples + README; no dedicated track yet) |
-| Standard library reference | In progress (prelude + `std.*` sources; no generated API docs) |
-| [Contributing](CONTRIBUTING.md) | Started |
+| [Contributing](CONTRIBUTING.md) | Build, editors, doc workflow |
+| [GitHub highlighting](docs/github-linguist/README.md) | Linguist submission (F# interim via `.gitattributes`) |
 | Documentation generator (`goop doc`) | Not started |
 
 ---

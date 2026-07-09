@@ -43,3 +43,7 @@ codedb.snapshot
 # Environment
 .env
 .env.local
+
+# Node (VS Code extension)
+node_modules/
+editors/vscode/node_modules/

@@ -1,0 +1,37 @@
+# std.io
+
+**Source:** `std/io/io.goop`  
+**Import:** `import goop "std.io"` or `import goop . "std.io"`
+
+Wraps Go’s `fmt` package with a Goop-facing API.
+
+## Exports
+
+| Name | Type | Description |
+|---|---|---|
+| `PrintLine` | `string -> unit` | Print a line to stdout (`fmt.Println`) |
+
+## Example
+
+```goop
+module main
+
+import goop . "std.io"
+
+let main () : unit with { io } =
+  PrintLine "from std.io"
+```
+
+## vs prelude `print_line`
+
+| | `print_line` | `std.io.PrintLine` |
+|---|---|---|
+| Import | None (prelude) | `import goop . "std.io"` |
+| Naming | `snake_case` | `PascalCase` |
+| Lowering | `fmt.Println` | `fmt.Println` (via `@golang` embed) |
+
+Use whichever fits your module style. Tests: `tests/std_io_test.goop`.
+
+## Internal (not exported)
+
+The module uses `@golang { func printLine(...) }` internally. `@golang` embed blocks and their `val` bindings are module-private.

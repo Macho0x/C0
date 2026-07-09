@@ -2,9 +2,10 @@
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "name": "Goop",
   "scopeName": "source.goop",
-  "fileTypes": ["c0"],
+  "fileTypes": ["goop"],
   "patterns": [
     { "include": "#comments" },
+    { "include": "#embedded-golang" },
     { "include": "#strings" },
     { "include": "#numbers" },
     { "include": "#keywords" },
@@ -18,11 +19,23 @@
         {
           "name": "comment.block.goop",
           "begin": "\\(\\*",
-          "end": "\\*\\)"
+          "end": "\\*\\)",
+          "patterns": [{ "include": "#comments" }]
         },
         {
           "name": "comment.line.goop",
           "match": "//.*$"
+        }
+      ]
+    },
+    "embedded-golang": {
+      "patterns": [
+        {
+          "name": "meta.embedded.block.golang",
+          "begin": "@golang\\s*\\{",
+          "end": "\\}",
+          "contentName": "source.go",
+          "patterns": [{ "include": "source.go" }]
         }
       ]
     },
@@ -68,19 +81,19 @@
       "patterns": [
         {
           "name": "keyword.control.goop",
-          "match": "\\b(if|then|else|match|with|when|guard|of|in|let|rec|mutable|and|as)\\b"
+          "match": "\\b(if|then|else|match|with|when|guard|of|in|let|rec|mutable|and|as|select|return|where|is|using)\\b"
         },
         {
           "name": "keyword.declaration.goop",
-          "match": "\\b(module|open|import|extern|type|val|fun)\\b"
+          "match": "\\b(module|import|type|val|fun|private|newtype)\\b"
         },
         {
-          "name": "keyword.operator.goop",
-          "match": "\\b(requires|returns|panic|using|chan|go)\\b"
+          "name": "keyword.other.goop",
+          "match": "\\b(golang|goop|go|chan|async|result|region|panic)\\b"
         },
         {
           "name": "constant.language.goop",
-          "match": "\\b(true|false|unit|forall)\\b"
+          "match": "\\b(true|false|unit|None|Some|Ok|Error)\\b"
         }
       ]
     },
@@ -92,12 +105,16 @@
         },
         {
           "name": "support.type.primitive.goop",
-          "match": "\\b(bool|int|float|string|char|unit)\\b"
+          "match": "\\b(bool|int|float|string|char|unit|bytes|rune|list|option|result|owned_chan)\\b"
         }
       ]
     },
     "operators": {
       "patterns": [
+        {
+          "name": "keyword.operator.error-propagation.goop",
+          "match": "\\?"
+        },
         {
           "name": "keyword.operator.arrow.goop",
           "match": "->"
@@ -120,7 +137,7 @@
         },
         {
           "name": "keyword.operator.arithmetic.goop",
-          "match": "\\+|\\-|\\*\\*|\\*|/\\.|\\*\\."
+          "match": "\\+|\\-|\\*\\*|\\*|/\\.|\\*\\.|%|\\."
         },
         {
           "name": "keyword.operator.logical.goop",
@@ -129,6 +146,10 @@
         {
           "name": "keyword.operator.concatenation.goop",
           "match": "\\^"
+        },
+        {
+          "name": "keyword.operator.cons.goop",
+          "match": "::"
         },
         {
           "name": "keyword.operator.range.goop",

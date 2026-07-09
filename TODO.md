@@ -70,9 +70,9 @@ This file tracks the remaining work to make Goop a usable language. It is kept i
 - [x] Examples (`docs/examples/`; CI `goop check` on all files)
 - [x] `goop.toml` project configuration
 - [x] Package manager (`goop get`, `goop.lock`; see `docs/design/11-package-manager.md`)
-- [~] Language tutorial — README + examples + design docs; no step-by-step tutorial track yet
-- [~] Standard library reference — prelude and `std.*` modules in tree; no generated API reference
-- [~] Contributing guide — [CONTRIBUTING.md](CONTRIBUTING.md) (build/test/PR basics); expand as project matures
+- [x] Language tutorial — [docs/tutorial/](docs/tutorial/) (6 chapters + examples)
+- [x] Standard library reference — [docs/stdlib/](docs/stdlib/) (prelude, builtins, std.*)
+- [x] Contributing guide — [CONTRIBUTING.md](CONTRIBUTING.md) (build, editors, doc accuracy)
 
 ## Long term
 

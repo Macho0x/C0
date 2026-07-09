@@ -1,8 +1,14 @@
-0.5.1
+0.5.2
 
-## Documentation and README
-- README repositioned: compile-time safety first, then Go interop and `@golang`
-- Real diagnostic examples (EXHAUST003, UNIFY018, linear race, newtypes)
-- CONTRIBUTING.md with build, test, and PR basics
-- TODO and roadmap updated for doc generator, tutorial, stdlib ref, contributing status
-- EXHAUST003 severity corrected in error reference (error, not warning)
+## Documentation
+- Language tutorial: docs/tutorial/ (6 chapters)
+- Standard library reference: docs/stdlib/ (prelude, builtins, std.*)
+- Expanded CONTRIBUTING.md with doc accuracy and editor setup
+
+## Editor tooling
+- VS Code: fixed LSP client, .goop file icon, updated TextMate grammar
+- GitHub: linguist submission package (docs/github-linguist/), F# interim .gitattributes
+- scripts/sync-syntax.sh to sync grammar to editors
+
+## Grammar
+- fileTypes goop (was c0), new keywords, @golang embed, ? and % operators

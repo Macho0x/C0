@@ -1,38 +1,41 @@
-// VSCode extension entry point
-// Provides Goop language support via LSP integration
+// VSCode extension entry point — syntax highlighting + LSP via goop lsp
 
 const vscode = require("vscode");
+const { LanguageClient, TransportKind } = require("vscode-languageclient/node");
 
+/** @type {LanguageClient | undefined} */
+let client;
+
+/**
+ * @param {vscode.ExtensionContext} context
+ */
 function activate(context) {
-  const goopSelector = { scheme: "file", language: "goop" };
-
   const serverOptions = {
     command: "goop",
     args: ["lsp"],
+    transport: TransportKind.stdio,
     options: {
-      cwd: vscode.workspace.rootPath,
+      cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
     },
   };
 
   const clientOptions = {
-    documentSelector: [goopSelector],
+    documentSelector: [{ scheme: "file", language: "goop" }],
     synchronize: {
       fileEvents: vscode.workspace.createFileSystemWatcher("**/*.goop"),
     },
   };
 
-  const lspClient = new vscode.LanguageClient(
-    "goop",
-    "Goop Language Server",
-    serverOptions,
-    clientOptions,
-  );
-
-  context.subscriptions.push(lspClient.start());
-  console.log("Goop extension activated");
+  client = new LanguageClient("goop", "Goop Language Server", serverOptions, clientOptions);
+  context.subscriptions.push(client.start());
 }
 
-function deactivate() {}
+function deactivate() {
+  if (!client) {
+    return undefined;
+  }
+  return client.stop();
+}
 
 module.exports = {
   activate,
