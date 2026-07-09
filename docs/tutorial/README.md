@@ -10,6 +10,7 @@ A step-by-step introduction to Goop. Each chapter links to runnable examples che
 | [4. Go interop](04-go-interop.md) | `import golang`, `@golang` | [`extern_demo.goop`](../examples/extern_demo.goop) |
 | [5. Concurrency](05-concurrency.md) | `go`, `chan`, race checks | [`concurrency.goop`](../examples/concurrency.goop), [`race_detection.goop`](../examples/race_detection.goop) |
 | [6. Safety checks](06-safety-checks.md) | Exhaustiveness, newtypes, nil channels | [`newtype_trading.goop`](../examples/newtype_trading.goop), [`trading_order.goop`](../examples/trading_order.goop) |
+| [7. Arrays and loops](07-arrays-and-loops.md) | `Array.make`, `for`, `begin`/`end` | [`arrays.goop`](../examples/arrays.goop), [`trading_decision_lut.goop`](../examples/trading_decision_lut.goop) |
 
 ## Prerequisites
 

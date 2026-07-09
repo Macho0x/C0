@@ -504,6 +504,188 @@ let main () =
 	}
 }
 
+func TestParseArrayIndexAndAssign(t *testing.T) {
+	src := `module main
+let main () =
+  begin
+    let arr = Array.make 2 0 in
+    arr.(1) <- 42;
+    arr.(0)
+  end
+`
+	mod, err := parser.Parse("t.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var assign *ast.AssignExpr
+	var walk func(ast.Expr)
+	walk = func(e ast.Expr) {
+		if e == nil {
+			return
+		}
+		switch n := e.(type) {
+		case *ast.AssignExpr:
+			assign = n
+		case *ast.LetInExpr:
+			for _, b := range n.Bindings {
+				walk(b.Body)
+			}
+			walk(n.Body)
+		case *ast.BeginExpr:
+			for _, s := range n.Stmts {
+				walk(s)
+			}
+		}
+	}
+	for _, d := range mod.Decls {
+		if ld, ok := d.(*ast.LetDecl); ok {
+			for _, b := range ld.Bindings {
+				walk(b.Body)
+			}
+		}
+	}
+	if assign == nil {
+		t.Fatal("expected AssignExpr")
+	}
+	if _, ok := assign.Target.(*ast.IndexExpr); !ok {
+		t.Fatalf("assign target should be IndexExpr, got %T", assign.Target)
+	}
+}
+
+func TestParseForLoop(t *testing.T) {
+	src := `module main
+let main () =
+  for i = 0 to 3 do
+    print_line (int_to_string i)
+  done
+`
+	mod, err := parser.Parse("t.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var forExpr *ast.ForExpr
+	var walk func(ast.Expr)
+	walk = func(e ast.Expr) {
+		if e == nil {
+			return
+		}
+		if fe, ok := e.(*ast.ForExpr); ok {
+			forExpr = fe
+		}
+		switch e := e.(type) {
+		case *ast.LetInExpr:
+			walk(e.Body)
+		}
+	}
+	for _, d := range mod.Decls {
+		if ld, ok := d.(*ast.LetDecl); ok {
+			for _, b := range ld.Bindings {
+				walk(b.Body)
+			}
+		}
+	}
+	if forExpr == nil {
+		t.Fatal("expected ForExpr")
+	}
+	if forExpr.Var != "i" {
+		t.Errorf("expected loop var i, got %q", forExpr.Var)
+	}
+}
+
+func TestParseBeginEnd(t *testing.T) {
+	src := `module main
+let main () =
+  begin
+    print_line "a";
+    42
+  end
+`
+	mod, err := parser.Parse("t.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var begin *ast.BeginExpr
+	var walk func(ast.Expr)
+	walk = func(e ast.Expr) {
+		if e == nil {
+			return
+		}
+		if b, ok := e.(*ast.BeginExpr); ok {
+			begin = b
+		}
+		switch e := e.(type) {
+		case *ast.LetInExpr:
+			walk(e.Body)
+		}
+	}
+	for _, d := range mod.Decls {
+		if ld, ok := d.(*ast.LetDecl); ok {
+			for _, b := range ld.Bindings {
+				walk(b.Body)
+			}
+		}
+	}
+	if begin == nil {
+		t.Fatal("expected BeginExpr")
+	}
+	if len(begin.Stmts) != 2 {
+		t.Fatalf("expected 2 stmts in begin, got %d", len(begin.Stmts))
+	}
+}
+
+func TestParseQualifiedConstructor(t *testing.T) {
+	src := `module main
+type Color = Red | Green
+let main () =
+  let c = Color.Red in
+  match c with
+  | Color.Green -> ()
+  | _ -> ()
+`
+	mod, err := parser.Parse("t.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var exprCtor *ast.ConstructorExpr
+	var patPrefix, patName string
+	var walkExpr func(ast.Expr)
+	walkExpr = func(e ast.Expr) {
+		if e == nil {
+			return
+		}
+		if ce, ok := e.(*ast.ConstructorExpr); ok && ce.TypePrefix != "" {
+			exprCtor = ce
+		}
+		switch e := e.(type) {
+		case *ast.LetInExpr:
+			for _, b := range e.Bindings {
+				walkExpr(b.Body)
+			}
+			walkExpr(e.Body)
+		case *ast.MatchExpr:
+			for _, arm := range e.Arms {
+				if cp, ok := arm.Pattern.(*ast.ConstructorPattern); ok && cp.TypePrefix != "" {
+					patPrefix, patName = cp.TypePrefix, cp.Name
+				}
+				walkExpr(arm.Body)
+			}
+		}
+	}
+	for _, d := range mod.Decls {
+		if ld, ok := d.(*ast.LetDecl); ok {
+			for _, b := range ld.Bindings {
+				walkExpr(b.Body)
+			}
+		}
+	}
+	if exprCtor == nil || exprCtor.TypePrefix != "Color" || exprCtor.Name != "Red" {
+		t.Fatalf("expected Color.Red expr, got %+v", exprCtor)
+	}
+	if patPrefix != "Color" || patName != "Green" {
+		t.Fatalf("expected Color.Green pattern, got %s.%s", patPrefix, patName)
+	}
+}
+
 func TestRejectImportGo(t *testing.T) {
 	src := `module main
 import go "fmt"

@@ -216,6 +216,87 @@ var xs = []int{1, 2, 3}
 var ys = append([]int{0}, xs...)
 ```
 
+## Arrays
+
+The built-in `'a array` type lowers to a Go slice `[]T`. Prelude `Array.make` and `Array.length` are the canonical API; `std.array` re-exports the same bindings.
+
+```goop
+let lut = Array.make 100 default in
+for i = 0 to 99 do
+  lut.(i) <- compute i
+done
+```
+
+→
+
+```go
+lut := func() []Decision {
+    _arr0 := make([]Decision, 100)
+    for _i := 0; _i < len(_arr0); _i++ {
+        _arr0[_i] = default
+    }
+    return _arr0
+}()
+for i := 0; i <= 99; i++ {
+    lut[i] = compute(i)
+}
+```
+
+| Goop | Go |
+|---|---|
+| `Array.make n default` | `make([]T, n)` + init loop filling each slot with `default` |
+| `Array.length arr` | `len(arr)` |
+| `arr.(i)` | `arr[i]` |
+| `arr.(i) <- v` | `arr[i] = v` |
+
+Array element writes do not require the array binding to be `mutable`; only rebinding the array variable does.
+
+## For loops
+
+`for i = lo to hi do body done` lowers to an inclusive Go `for` loop:
+
+```goop
+for i = 0 to n - 1 do
+  arr.(i) <- f i
+done
+```
+
+→
+
+```go
+for i := 0; i <= n-1; i++ {
+    arr[i] = f(i)
+}
+```
+
+The loop variable is scoped to the loop body only.
+
+## `begin` / `end`
+
+In statement position (top-level `let` body, function body), `begin ... end` lowers to a Go block `{ ... }`. Each intermediate expression is emitted as a statement; the last expression is emitted as a statement or return value depending on context.
+
+In expression position (e.g. the RHS of `let x = ...`), `begin ... end` lowers to an immediately invoked function expression (IIFE) so intermediate statements can run before the final value:
+
+```goop
+let x = begin a(); b(); c end
+```
+
+→
+
+```go
+x := func() T {
+    a()
+    b()
+    return c
+}()
+```
+
+`for` and `<-` assignments inside `begin` are emitted as real Go statements, not discarded `_ = expr` wrappers.
+
+## Qualified constructors
+
+`Type.Ctor` in expressions and patterns lowers to the same Go constructor as unqualified `Ctor`. Qualification is a parse-time disambiguator only.
+
 ## Mutability
 
 `mutable` bindings lower to Go `var`:

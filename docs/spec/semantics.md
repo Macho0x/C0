@@ -20,6 +20,56 @@ let r = { mutable value = 0 }
 r.value <- r.value + 1
 ```
 
+Array cells are mutable without marking the array binding `mutable`: `arr.(i) <- v` updates element `i` in place. The array variable itself remains immutable (you cannot rebind `arr` without `let mutable arr = ...`).
+
+## Arrays
+
+Goop provides OCaml-style dynamic arrays (`'a array`), lowered to Go slices.
+
+| Operation | Syntax | Type |
+|---|---|---|
+| Create | `Array.make n default` | `int -> 'a -> 'a array` |
+| Length | `Array.length arr` | `'a array -> int` |
+| Read | `arr.(i)` | `'a array -> int -> 'a` |
+| Write | `arr.(i) <- v` | `'a array -> int -> 'a -> unit` |
+
+`Array.make n default` allocates `n` slots initialized to `default`. Index `i` must have type `int`; the compiler unifies the indexed value with the array element type.
+
+Const-size array literals (`[| ... |]`) are **not** part of v0.8.0 — use `Array.make` plus a fill loop.
+
+## For loops
+
+`for var = from to to do body done` is an expression of type `unit`. The loop variable is bound to `int` in `body`. Bounds `from` and `to` must be `int`; iteration is inclusive on both ends (`from <= i <= to`).
+
+```goop
+for i = 0 to n - 1 do
+  arr.(i) <- f i
+done
+```
+
+The loop variable is not visible outside the loop.
+
+## Sequencing with `begin` / `end`
+
+`begin e1; e2; ... en end` evaluates expressions left-to-right. The value of the whole expression is the value of the last expression (`en`). Earlier expressions must be valid in sequence (typically `unit`, assignments, or loops).
+
+Use `begin ... end` when you need statement-like sequencing inside a `let` body or expression position:
+
+```goop
+let result =
+  begin
+    arr.(0) <- 1;
+    arr.(1) <- 2;
+    arr.(0) + arr.(1)
+  end
+```
+
+## Qualified constructors
+
+Constructors may be written qualified by their type name: `Color.Red`, `OrderAck.PartialFill`. In `match` patterns, qualification disambiguates constructors when multiple types export the same name.
+
+The qualified form does not change runtime representation — it is the same constructor as the unqualified name when unambiguous.
+
 ## Pattern matching semantics
 
 A `match` expression evaluates the scrutinee once, then selects the first case whose pattern matches and whose guard (if any) is true. Pattern variables are bound in the corresponding branch.

@@ -82,37 +82,37 @@ let lut_total_size = 375
 (* ------ Discretization (continuous feeds -> buckets) ------ *)
 
 let classifyPrice (current: float) (mean: float) : PriceVsMean =
-  if mean = 0.0 then AtMean
+  if mean = 0.0 then PriceVsMean.AtMean
   else
     let diff = current -. mean in
     let pct = diff /. mean in
-    if pct >= 0.03 then FarAbove
-    else if pct >= 0.005 then Above
-    else if pct <= (0.0 -. 0.03) then FarBelow
-    else if pct <= (0.0 -. 0.005) then Below
+    if pct >= 0.03 then PriceVsMean.FarAbove
+    else if pct >= 0.005 then PriceVsMean.Above
+    else if pct <= (0.0 -. 0.03) then PriceVsMean.FarBelow
+    else if pct <= (0.0 -. 0.005) then PriceVsMean.Below
     else AtMean
 
 let classifyMomentum (roc: float) : Momentum =
-  if roc >= 0.05 then StrongBull
-  else if roc >= 0.01 then Bull
+  if roc >= 0.05 then Momentum.StrongBull
+  else if roc >= 0.01 then Momentum.Bull
   else if roc <= (0.0 -. 0.05) then StrongBear
-  else if roc <= (0.0 -. 0.01) then Bear
-  else Flat
+  else if roc <= (0.0 -. 0.01) then Momentum.Bear
+  else Momentum.Flat
 
 let classifyTrend (rising: float) (lookback: float) : Trend =
   if lookback <= 0.0 then FlatTrend
   else
     let ratio = rising /. lookback in
-    if ratio >= 0.8 then RisingStrong
-    else if ratio >= 0.55 then RisingWeak
-    else if ratio <= 0.2 then FallingStrong
-    else if ratio <= 0.45 then FallingWeak
-    else FlatTrend
+    if ratio >= 0.8 then Trend.RisingStrong
+    else if ratio >= 0.55 then Trend.RisingWeak
+    else if ratio <= 0.2 then Trend.FallingStrong
+    else if ratio <= 0.45 then Trend.FallingWeak
+    else Trend.FlatTrend
 
 let classifyVolatility (ret_std: float) : Volatility =
-  if ret_std >= 0.025 then HighVol
-  else if ret_std <= 0.008 then LowVol
-  else NormalVol
+  if ret_std >= 0.025 then Volatility.HighVol
+  else if ret_std <= 0.008 then Volatility.LowVol
+  else Volatility.NormalVol
 
 let makeKey (current: float) (mean: float) (roc: float) (rising: float) (lookback: float) (ret_std: float) : SignalKey =
   { price = classifyPrice current mean
@@ -124,60 +124,60 @@ let makeKey (current: float) (mean: float) (roc: float) (rising: float) (lookbac
 (* ------ LUT indexing (price varies slowest, vol fastest) ------ *)
 
 let priceAt (i: int) : PriceVsMean =
-  if i = 0 then FarAbove
-  else if i = 1 then Above
-  else if i = 2 then AtMean
-  else if i = 3 then Below
-  else FarBelow
+  if i = 0 then PriceVsMean.FarAbove
+  else if i = 1 then PriceVsMean.Above
+  else if i = 2 then PriceVsMean.AtMean
+  else if i = 3 then PriceVsMean.Below
+  else PriceVsMean.FarBelow
 
 let momentumAt (i: int) : Momentum =
-  if i = 0 then StrongBull
-  else if i = 1 then Bull
+  if i = 0 then Momentum.StrongBull
+  else if i = 1 then Momentum.Bull
   else if i = 2 then Flat
-  else if i = 3 then Bear
-  else StrongBear
+  else if i = 3 then Momentum.Bear
+  else Momentum.StrongBear
 
 let trendAt (i: int) : Trend =
-  if i = 0 then RisingStrong
-  else if i = 1 then RisingWeak
+  if i = 0 then Trend.RisingStrong
+  else if i = 1 then Trend.RisingWeak
   else if i = 2 then FlatTrend
-  else if i = 3 then FallingWeak
-  else FallingStrong
+  else if i = 3 then Trend.FallingWeak
+  else Trend.FallingStrong
 
 let volAt (i: int) : Volatility =
-  if i = 0 then LowVol
+  if i = 0 then Volatility.LowVol
   else if i = 1 then NormalVol
-  else HighVol
+  else Volatility.HighVol
 
 let priceIndex (p: PriceVsMean) : int =
   match p with
-  | FarAbove -> 0
-  | Above -> 1
-  | AtMean -> 2
-  | Below -> 3
-  | FarBelow -> 4
+  | PriceVsMean.FarAbove -> 0
+  | PriceVsMean.Above -> 1
+  | PriceVsMean.AtMean -> 2
+  | PriceVsMean.Below -> 3
+  | PriceVsMean.FarBelow -> 4
 
 let momentumIndex (m: Momentum) : int =
   match m with
-  | StrongBull -> 0
-  | Bull -> 1
-  | Flat -> 2
-  | Bear -> 3
-  | StrongBear -> 4
+  | Momentum.StrongBull -> 0
+  | Momentum.Bull -> 1
+  | Momentum.Flat -> 2
+  | Momentum.Bear -> 3
+  | Momentum.StrongBear -> 4
 
 let trendIndex (t: Trend) : int =
   match t with
-  | RisingStrong -> 0
-  | RisingWeak -> 1
-  | FlatTrend -> 2
-  | FallingWeak -> 3
-  | FallingStrong -> 4
+  | Trend.RisingStrong -> 0
+  | Trend.RisingWeak -> 1
+  | Trend.FlatTrend -> 2
+  | Trend.FallingWeak -> 3
+  | Trend.FallingStrong -> 4
 
 let volIndex (v: Volatility) : int =
   match v with
-  | LowVol -> 0
-  | NormalVol -> 1
-  | HighVol -> 2
+  | Volatility.LowVol -> 0
+  | Volatility.NormalVol -> 1
+  | Volatility.HighVol -> 2
 
 let lutIndex (key: SignalKey) : int =
   let p = priceIndex key.price in
@@ -200,7 +200,7 @@ let decodeIndex (idx: int) : SignalKey =
 (* ------ LUT storage (OCaml-style flat array) ------ *)
 
 let uninitializedDecision : decision =
-  { directive = Hold
+  { directive = TradeSide.Hold
   ; quote_slot = NoQuote
   ; risk_action = FlattenAndPause
   ; urgency = Critical
@@ -217,15 +217,15 @@ let lookup (lut: decision array) (key: SignalKey) : decision =
 
 let volSizePct (key: SignalKey) (low: int) (normal: int) (high: int) : int =
   match key.vol with
-  | LowVol -> low
-  | NormalVol -> normal
-  | HighVol -> high
+  | Volatility.LowVol -> low
+  | Volatility.NormalVol -> normal
+  | Volatility.HighVol -> high
 
 let computeBaseDecision (key: SignalKey) : decision =
   match key.price with
-  | FarBelow ->
-    if key.momentum = StrongBull && key.trend = RisingStrong then
-      { directive = Buy
+  | PriceVsMean.FarBelow ->
+    if key.momentum = Momentum.StrongBull && key.trend = Trend.RisingStrong then
+      { directive = TradeSide.Buy
       ; quote_slot = NoQuote
       ; risk_action = AllowNewPositions
       ; urgency = High
@@ -234,8 +234,8 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:CAPITULATION_REVERSAL"
       ; reason = "Far below mean + strong bull momentum + rising trend"
       }
-    else if key.momentum = StrongBear && key.trend = FallingStrong && key.vol = HighVol then
-      { directive = Hold
+    else if key.momentum = Momentum.StrongBear && key.trend = Trend.FallingStrong && key.vol = Volatility.HighVol then
+      { directive = TradeSide.Hold
       ; quote_slot = NoQuote
       ; risk_action = ReduceOnly
       ; urgency = Medium
@@ -244,8 +244,8 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:CAPITULATION_WAIT"
       ; reason = "Capitulation washout — wait for stabilization"
       }
-    else if key.momentum = StrongBear then
-      { directive = Sell
+    else if key.momentum = Momentum.StrongBear then
+      { directive = TradeSide.Sell
       ; quote_slot = NoQuote
       ; risk_action = ReduceOnly
       ; urgency = Medium
@@ -254,8 +254,8 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:BELOW_STRONG_BEAR"
       ; reason = "Below mean with strong bear momentum"
       }
-    else if key.momentum = Bull && key.trend = RisingStrong then
-      { directive = Buy
+    else if key.momentum = Momentum.Bull && key.trend = Trend.RisingStrong then
+      { directive = TradeSide.Buy
       ; quote_slot = NoQuote
       ; risk_action = AllowNewPositions
       ; urgency = Medium
@@ -265,7 +265,7 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; reason = "Below mean, trend turning up"
       }
     else
-      { directive = Hold
+      { directive = TradeSide.Hold
       ; quote_slot = NoQuote
       ; risk_action = ReduceOnly
       ; urgency = Low
@@ -274,9 +274,9 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:FAR_BELOW_HOLD"
       ; reason = "Far below mean without confirmation"
       }
-  | Below ->
-    if key.momentum = Bull && key.trend = RisingStrong then
-      { directive = Buy
+  | PriceVsMean.Below ->
+    if key.momentum = Momentum.Bull && key.trend = Trend.RisingStrong then
+      { directive = TradeSide.Buy
       ; quote_slot = NoQuote
       ; risk_action = AllowNewPositions
       ; urgency = Medium
@@ -285,8 +285,8 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:DIP_UPTREND"
       ; reason = "Dip with confirmed uptrend"
       }
-    else if key.momentum = Bull && key.trend = FallingWeak then
-      { directive = Hold
+    else if key.momentum = Momentum.Bull && key.trend = Trend.FallingWeak then
+      { directive = TradeSide.Hold
       ; quote_slot = NoQuote
       ; risk_action = ReduceOnly
       ; urgency = Low
@@ -295,8 +295,8 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:CONFLICT"
       ; reason = "Conflicting trend vs momentum below mean"
       }
-    else if key.momentum = StrongBear && key.trend = FallingStrong then
-      { directive = Sell
+    else if key.momentum = Momentum.StrongBear && key.trend = Trend.FallingStrong then
+      { directive = TradeSide.Sell
       ; quote_slot = NoQuote
       ; risk_action = ReduceOnly
       ; urgency = High
@@ -306,7 +306,7 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; reason = "Breakdown below mean"
       }
     else
-      { directive = Hold
+      { directive = TradeSide.Hold
       ; quote_slot = NoQuote
       ; risk_action = ReduceOnly
       ; urgency = Low
@@ -315,9 +315,9 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:BELOW_HOLD"
       ; reason = "Below mean, no edge"
       }
-  | AtMean ->
-    if key.momentum = Flat && key.trend = FlatTrend then
-      { directive = Hold
+  | PriceVsMean.AtMean ->
+    if key.momentum = Momentum.Flat && key.trend = Trend.FlatTrend then
+      { directive = TradeSide.Hold
       ; quote_slot = NoQuote
       ; risk_action = AllowNewPositions
       ; urgency = Low
@@ -326,8 +326,8 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:NEUTRAL"
       ; reason = "Price at mean, flat momentum and trend"
       }
-    else if key.momentum = Bull && key.trend = RisingStrong then
-      { directive = Buy
+    else if key.momentum = Momentum.Bull && key.trend = Trend.RisingStrong then
+      { directive = TradeSide.Buy
       ; quote_slot = NoQuote
       ; risk_action = AllowNewPositions
       ; urgency = Medium
@@ -336,8 +336,8 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:MEAN_REVERSION_LONG"
       ; reason = "Mean reversion long, momentum aligned"
       }
-    else if key.momentum = Bear && key.trend = FallingStrong then
-      { directive = Sell
+    else if key.momentum = Momentum.Bear && key.trend = Trend.FallingStrong then
+      { directive = TradeSide.Sell
       ; quote_slot = NoQuote
       ; risk_action = ReduceOnly
       ; urgency = Medium
@@ -346,8 +346,8 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:MEAN_CROSS_DOWN"
       ; reason = "Mean cross down confirmed"
       }
-    else if key.momentum = Flat && key.vol = HighVol then
-      { directive = Hold
+    else if key.momentum = Momentum.Flat && key.vol = Volatility.HighVol then
+      { directive = TradeSide.Hold
       ; quote_slot = NoQuote
       ; risk_action = ReduceOnly
       ; urgency = Medium
@@ -357,7 +357,7 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; reason = "High vol chop at mean"
       }
     else
-      { directive = Hold
+      { directive = TradeSide.Hold
       ; quote_slot = NoQuote
       ; risk_action = AllowNewPositions
       ; urgency = Low
@@ -366,9 +366,9 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:AT_MEAN"
       ; reason = "At mean, no strong conviction"
       }
-  | Above ->
-    if key.momentum = StrongBull && key.trend = RisingStrong && key.vol = LowVol then
-      { directive = Buy
+  | PriceVsMean.Above ->
+    if key.momentum = Momentum.StrongBull && key.trend = Trend.RisingStrong && key.vol = Volatility.LowVol then
+      { directive = TradeSide.Buy
       ; quote_slot = NoQuote
       ; risk_action = AllowNewPositions
       ; urgency = Medium
@@ -377,8 +377,8 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:BREAKOUT"
       ; reason = "Breakout continuation above mean, low vol"
       }
-    else if key.momentum = Bull && key.trend = FallingWeak then
-      { directive = Hold
+    else if key.momentum = Momentum.Bull && key.trend = Trend.FallingWeak then
+      { directive = TradeSide.Hold
       ; quote_slot = NoQuote
       ; risk_action = ReduceOnly
       ; urgency = Low
@@ -387,8 +387,8 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:CONFLICT"
       ; reason = "Conflicting trend vs momentum above mean"
       }
-    else if key.momentum = StrongBear && key.trend = FallingStrong then
-      { directive = Sell
+    else if key.momentum = Momentum.StrongBear && key.trend = Trend.FallingStrong then
+      { directive = TradeSide.Sell
       ; quote_slot = NoQuote
       ; risk_action = ReduceOnly
       ; urgency = High
@@ -397,8 +397,8 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:DISTRIBUTION"
       ; reason = "Distribution at highs"
       }
-    else if key.momentum = Bear && key.trend = FallingStrong then
-      { directive = Sell
+    else if key.momentum = Momentum.Bear && key.trend = Trend.FallingStrong then
+      { directive = TradeSide.Sell
       ; quote_slot = NoQuote
       ; risk_action = ReduceOnly
       ; urgency = Medium
@@ -408,7 +408,7 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; reason = "Momentum roll-over at premium"
       }
     else
-      { directive = Hold
+      { directive = TradeSide.Hold
       ; quote_slot = NoQuote
       ; risk_action = AllowNewPositions
       ; urgency = Low
@@ -417,19 +417,19 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:ABOVE_HOLD"
       ; reason = "Above mean, mixed signals"
       }
-  | FarAbove ->
-    if key.momentum = StrongBear && key.trend = FallingStrong && key.vol = HighVol then
-      { directive = Sell
+  | PriceVsMean.FarAbove ->
+    if key.momentum = Momentum.StrongBear && key.trend = Trend.FallingStrong && key.vol = Volatility.HighVol then
+      { directive = TradeSide.Sell
       ; quote_slot = NoQuote
-      ; risk_action = EmergencyReduce Sell
+      ; risk_action = EmergencyReduce TradeSide.Sell
       ; urgency = Critical
       ; size_pct = 100
       ; size_cap_pct_equity = 0.008
       ; log_tag = "BASE:BLOWOFF_TOP"
       ; reason = "Blow-off top reversal, high vol"
       }
-    else if key.momentum = StrongBull && key.trend = RisingStrong && key.vol = LowVol then
-      { directive = Buy
+    else if key.momentum = Momentum.StrongBull && key.trend = Trend.RisingStrong && key.vol = Volatility.LowVol then
+      { directive = TradeSide.Buy
       ; quote_slot = NoQuote
       ; risk_action = AllowNewPositions
       ; urgency = Low
@@ -438,8 +438,8 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; log_tag = "BASE:EXTENDED_TREND"
       ; reason = "Extended but still trending (small size)"
       }
-    else if key.momentum = Bear && key.trend = FallingStrong then
-      { directive = Sell
+    else if key.momentum = Momentum.Bear && key.trend = Trend.FallingStrong then
+      { directive = TradeSide.Sell
       ; quote_slot = NoQuote
       ; risk_action = ReduceOnly
       ; urgency = High
@@ -449,7 +449,7 @@ let computeBaseDecision (key: SignalKey) : decision =
       ; reason = "Overextended fade"
       }
     else
-      { directive = Hold
+      { directive = TradeSide.Hold
       ; quote_slot = NoQuote
       ; risk_action = ReduceOnly
       ; urgency = Low
@@ -462,28 +462,28 @@ let computeBaseDecision (key: SignalKey) : decision =
 (* ------ Populate + targeted overrides ------ *)
 
 let keyFarBelowCapitulation : SignalKey =
-  { price = FarBelow; momentum = StrongBull; trend = RisingStrong; vol = LowVol }
+  { price = PriceVsMean.FarBelow; momentum = Momentum.StrongBull; trend = Trend.RisingStrong; vol = Volatility.LowVol }
 
 let keyBlowoffTop : SignalKey =
-  { price = FarAbove; momentum = StrongBear; trend = FallingStrong; vol = HighVol }
+  { price = PriceVsMean.FarAbove; momentum = Momentum.StrongBear; trend = Trend.FallingStrong; vol = Volatility.HighVol }
 
 let keyNeutral : SignalKey =
-  { price = AtMean; momentum = Flat; trend = FlatTrend; vol = NormalVol }
+  { price = PriceVsMean.AtMean; momentum = Momentum.Flat; trend = Trend.FlatTrend; vol = Volatility.NormalVol }
 
 let keyDipUptrend : SignalKey =
-  { price = Below; momentum = Bull; trend = RisingStrong; vol = LowVol }
+  { price = PriceVsMean.Below; momentum = Momentum.Bull; trend = Trend.RisingStrong; vol = Volatility.LowVol }
 
 let keyConflictAbove : SignalKey =
-  { price = Above; momentum = Bull; trend = FallingWeak; vol = NormalVol }
+  { price = PriceVsMean.Above; momentum = Momentum.Bull; trend = Trend.FallingWeak; vol = Volatility.NormalVol }
 
 let keyCapitulationWait : SignalKey =
-  { price = FarBelow; momentum = StrongBear; trend = FallingStrong; vol = HighVol }
+  { price = PriceVsMean.FarBelow; momentum = Momentum.StrongBear; trend = Trend.FallingStrong; vol = Volatility.HighVol }
 
 let keyDistribution : SignalKey =
-  { price = Above; momentum = StrongBear; trend = FallingStrong; vol = NormalVol }
+  { price = PriceVsMean.Above; momentum = Momentum.StrongBear; trend = Trend.FallingStrong; vol = Volatility.NormalVol }
 
 let overrideCapitulationBuy : decision =
-  { directive = Buy
+  { directive = TradeSide.Buy
   ; quote_slot =
       ActiveQuote
         { bid_offset_bps = -5
@@ -503,7 +503,7 @@ let overrideCapitulationBuy : decision =
   }
 
 let overrideBlowoffTop : decision =
-  { directive = Sell
+  { directive = TradeSide.Sell
   ; quote_slot =
       ActiveQuote
         { bid_offset_bps = 25
@@ -514,7 +514,7 @@ let overrideBlowoffTop : decision =
         ; cancel_existing = true
         ; take_liquidity = true
         }
-  ; risk_action = EmergencyReduce Sell
+  ; risk_action = EmergencyReduce TradeSide.Sell
   ; urgency = Critical
   ; size_pct = 100
   ; size_cap_pct_equity = 0.008
@@ -523,7 +523,7 @@ let overrideBlowoffTop : decision =
   }
 
 let overrideNeutral : decision =
-  { directive = Hold
+  { directive = TradeSide.Hold
   ; quote_slot =
       ActiveQuote
         { bid_offset_bps = 8
@@ -543,7 +543,7 @@ let overrideNeutral : decision =
   }
 
 let overrideConflict : decision =
-  { directive = Hold
+  { directive = TradeSide.Hold
   ; quote_slot = NoQuote
   ; risk_action = ReduceOnly
   ; urgency = Medium
@@ -554,7 +554,7 @@ let overrideConflict : decision =
   }
 
 let overrideCapitulationWait : decision =
-  { directive = Hold
+  { directive = TradeSide.Hold
   ; quote_slot = NoQuote
   ; risk_action = FlattenAndPause
   ; urgency = High
@@ -591,9 +591,9 @@ let populate () : decision array =
 
 let directiveLabel (d: decision) : string =
   match d.directive with
-  | Buy -> "BUY"
-  | Sell -> "SELL"
-  | Hold -> "HOLD"
+  | TradeSide.Buy -> "BUY"
+  | TradeSide.Sell -> "SELL"
+  | TradeSide.Hold -> "HOLD"
 
 let formatDecision (d: decision) : string =
   directiveLabel d ^ " (" ^ int_to_string d.size_pct ^ "%) [" ^ d.log_tag ^ "]: " ^ d.reason
@@ -602,13 +602,13 @@ let reportDecision (_sym: symbol) (key: SignalKey) (d: decision) : string =
   "LUT[" ^ int_to_string (lutIndex key) ^ "] -> " ^ formatDecision d
 
 let assertBuy (d: decision) (minSize: int) : bool =
-  d.directive = Buy && d.size_pct >= minSize
+  d.directive = TradeSide.Buy && d.size_pct >= minSize
 
 let assertSell (d: decision) (minSize: int) : bool =
-  d.directive = Sell && d.size_pct >= minSize
+  d.directive = TradeSide.Sell && d.size_pct >= minSize
 
 let assertHold (d: decision) : bool =
-  d.directive = Hold && d.size_pct = 0
+  d.directive = TradeSide.Hold && d.size_pct = 0
 
 let rec assertAllInitialized (lut: decision array) (i: int) : bool =
   if i >= lut_total_size then true
@@ -625,52 +625,54 @@ let rec assertIndexRoundtrip (i: int) : bool =
     else false
 
 let main () =
-  let lut = populate () in
-  let chk0 = assert (Array.length lut = lut_total_size) in
-  let chk1 = assert (assertAllInitialized lut 0) in
-  let chk2 = assert (assertIndexRoundtrip 0) in
-  let k1 = makeKey 51600.0 50000.0 0.06 9.0 10.0 0.005 in
-  let chk3 = assert (k1.price = FarAbove) in
-  let chk4 = assert (k1.momentum = StrongBull) in
-  let chk5 = assert (k1.trend = RisingStrong) in
-  let chk6 = assert (k1.vol = LowVol) in
-  let k2 = makeKey 48400.0 50000.0 (0.0 -. 0.06) 1.0 10.0 0.03 in
-  let chk7 = assert (k2.price = FarBelow) in
-  let chk8 = assert (k2.momentum = StrongBear) in
-  let chk9 = assert (k2.trend = FallingStrong) in
-  let chk10 = assert (k2.vol = HighVol) in
-  let idx1 = lutIndex k1 in
-  let idx2 = lutIndex k2 in
-  let chk11 = assert (idx1 = idx2 = false) in
-  let chk12 = assert (lutIndex k1 = lutIndex (decodeIndex idx1)) in
-  let d1 = lookup lut k1 in
-  let chk13 = assert (assertBuy d1 20) in
-  let d2 = lookup lut k2 in
-  let chk14 = assert (d2.log_tag = "OVERRIDE:CAPITULATION_WAIT") in
-  let chk15 = assert (assertHold d2) in
-  let d3 = lookup lut keyBlowoffTop in
-  let chk16 = assert (assertSell d3 100) in
-  let chk17 = assert (d3.urgency = Critical) in
-  let chk18 = assert (d3.log_tag = "OVERRIDE:BLOWOFF_TOP") in
-  let d4 = lookup lut keyNeutral in
-  let chk19 = assert (assertHold d4) in
-  let chk20 = assert (d4.log_tag = "OVERRIDE:NEUTRAL_MM") in
-  let d5 = lookup lut keyConflictAbove in
-  let chk21 = assert (assertHold d5) in
-  let chk22 = assert (d5.log_tag = "OVERRIDE:CONFLICT") in
-  let d6 = lookup lut keyDipUptrend in
-  let chk23 = assert (assertBuy d6 75) in
-  let d7 = lookup lut keyCapitulationWait in
-  let chk24 = assert (d7.risk_action = FlattenAndPause) in
-  let d8 = lookup lut keyFarBelowCapitulation in
-  let chk25 = assert (assertBuy d8 100) in
-  let chk26 = assert (d8.log_tag = "OVERRIDE:CAPITULATION_BUY") in
-  let chk27 = assert (d8.urgency = Critical) in
-  let d9 = lookup lut keyDistribution in
-  let chk28 = assert (assertSell d9 80) in
-  let btc = Symbol "BTC-USD" in
-  let report = reportDecision btc keyDipUptrend d6 in
-  let chk29 = assert (report <> "") in
-  let e2eKey = makeKey 49200.0 50000.0 0.015 8.0 10.0 0.006 in
-  let e2e = lookup lut e2eKey in
-  assert (assertBuy e2e 25)
+  begin
+    let lut = populate () in
+    assert (Array.length lut = lut_total_size);
+    assert (assertAllInitialized lut 0);
+    assert (assertIndexRoundtrip 0);
+    let k1 = makeKey 51600.0 50000.0 0.06 9.0 10.0 0.005 in
+    assert (k1.price = PriceVsMean.FarAbove);
+    assert (k1.momentum = Momentum.StrongBull);
+    assert (k1.trend = Trend.RisingStrong);
+    assert (k1.vol = Volatility.LowVol);
+    let k2 = makeKey 48400.0 50000.0 (0.0 -. 0.06) 1.0 10.0 0.03 in
+    assert (k2.price = PriceVsMean.FarBelow);
+    assert (k2.momentum = Momentum.StrongBear);
+    assert (k2.trend = Trend.FallingStrong);
+    assert (k2.vol = Volatility.HighVol);
+    let idx1 = lutIndex k1 in
+    let idx2 = lutIndex k2 in
+    assert (idx1 = idx2 = false);
+    assert (lutIndex k1 = lutIndex (decodeIndex idx1));
+    let d1 = lookup lut k1 in
+    assert (assertBuy d1 20);
+    let d2 = lookup lut k2 in
+    assert (d2.log_tag = "OVERRIDE:CAPITULATION_WAIT");
+    assert (assertHold d2);
+    let d3 = lookup lut keyBlowoffTop in
+    assert (assertSell d3 100);
+    assert (d3.urgency = Critical);
+    assert (d3.log_tag = "OVERRIDE:BLOWOFF_TOP");
+    let d4 = lookup lut keyNeutral in
+    assert (assertHold d4);
+    assert (d4.log_tag = "OVERRIDE:NEUTRAL_MM");
+    let d5 = lookup lut keyConflictAbove in
+    assert (assertHold d5);
+    assert (d5.log_tag = "OVERRIDE:CONFLICT");
+    let d6 = lookup lut keyDipUptrend in
+    assert (assertBuy d6 75);
+    let d7 = lookup lut keyCapitulationWait in
+    assert (d7.risk_action = FlattenAndPause);
+    let d8 = lookup lut keyFarBelowCapitulation in
+    assert (assertBuy d8 100);
+    assert (d8.log_tag = "OVERRIDE:CAPITULATION_BUY");
+    assert (d8.urgency = Critical);
+    let d9 = lookup lut keyDistribution in
+    assert (assertSell d9 80);
+    let btc = Symbol "BTC-USD" in
+    let report = reportDecision btc keyDipUptrend d6 in
+    assert (report <> "");
+    let e2eKey = makeKey 49200.0 50000.0 0.015 8.0 10.0 0.006 in
+    let e2e = lookup lut e2eKey in
+    assert (assertBuy e2e 25)
+  end

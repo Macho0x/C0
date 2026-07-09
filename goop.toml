@@ -14,5 +14,6 @@ deadlock = "warn"
 [mappings]
 "std.io"     = "github.com/Macho0x/Goop/std/io"
 "std.list"   = "github.com/Macho0x/Goop/std/list"
+"std.array"  = "github.com/Macho0x/Goop/std/array"
 "std.option" = "github.com/Macho0x/Goop/std/option"
 "std.result" = "github.com/Macho0x/Goop/std/result"

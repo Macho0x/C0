@@ -41,7 +41,7 @@ This file tracks the remaining work to make Goop a usable language. It is kept i
 - [x] `%` modulo operator
 - [x] Golang import 2-tuple returns
 - [x] Flow-sensitive goroutine liveness (fewer race false positives)
-- [x] std/ modules (`std.io`, `std.list`, `std.option`, `std.result`)
+- [x] std/ modules (`std.io`, `std.list`, `std.array`, `std.option`, `std.result`)
 - [x] Effect rows (erased, row-polymorphic effect tracking in types)
 - [x] Linear resource types (modal linearity, opt-in for resource-kinded types)
 - [x] Region scopes (computation expression for scoped resource cleanup)
@@ -77,7 +77,7 @@ This file tracks the remaining work to make Goop a usable language. It is kept i
 - [x] Examples (`docs/examples/`; CI `goop check` on all files)
 - [x] `goop.toml` project configuration
 - [x] Package manager (`goop get`, `goop.lock`; see `docs/design/11-package-manager.md`)
-- [x] Language tutorial — [docs/tutorial/](docs/tutorial/) (6 chapters + examples)
+- [x] Language tutorial — [docs/tutorial/](docs/tutorial/) (7 chapters + examples)
 - [x] Standard library reference — [docs/stdlib/](docs/stdlib/) (prelude, builtins, std.*)
 - [x] Contributing guide — [CONTRIBUTING.md](CONTRIBUTING.md) (build, editors, doc accuracy)
 

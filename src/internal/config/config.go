@@ -38,12 +38,12 @@ const (
 
 // CheckConfig controls optional compile-time safety passes.
 type CheckConfig struct {
-	ExhaustRedundant    Severity // EXHAUST001/002 (default warn)
-	ExhaustMissing      Severity // EXHAUST003 (default error)
-	EffectInference     bool     // infer effect rows from function bodies (default true)
-	Concurrent          Severity // LINEAR006/007/008 (default error)
-	RefinementUnproven  Severity // REFINE002 (default warn)
-	Deadlock            Severity // DEADLOCK001 (default warn)
+	ExhaustRedundant   Severity // EXHAUST001/002 (default warn)
+	ExhaustMissing     Severity // EXHAUST003 (default error)
+	EffectInference    bool     // infer effect rows from function bodies (default true)
+	Concurrent         Severity // LINEAR006/007/008 (default error)
+	RefinementUnproven Severity // REFINE002 (default warn)
+	Deadlock           Severity // DEADLOCK001 (default warn)
 }
 
 // Config holds the project-wide compiler configuration.
@@ -70,6 +70,7 @@ func DefaultConfig() *Config {
 		Mappings: map[string]string{
 			"std.io":     "github.com/Macho0x/Goop/std/io",
 			"std.list":   "github.com/Macho0x/Goop/std/list",
+			"std.array":  "github.com/Macho0x/Goop/std/array",
 			"std.option": "github.com/Macho0x/Goop/std/option",
 			"std.result": "github.com/Macho0x/Goop/std/result",
 		},
@@ -103,6 +104,8 @@ func (c *Config) ResolveImport(c0ModuleName string) (goImportPath, goPackageName
 		return "github.com/Macho0x/Goop/std/io", "io"
 	case "std.list", "Std.List":
 		return "github.com/Macho0x/Goop/std/list", "list"
+	case "std.array", "Std.Array":
+		return "github.com/Macho0x/Goop/std/array", "array"
 	case "std.option", "Std.Option":
 		return "github.com/Macho0x/Goop/std/option", "option"
 	case "std.result", "Std.Result":

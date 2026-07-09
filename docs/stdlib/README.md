@@ -24,6 +24,7 @@ For production code, **Go’s standard library** is the main dependency — use 
 |---|---|---|
 | `std.io` | `import goop "std.io"` or `import goop . "std.io"` | [std.io](std-io.md) |
 | `std.list` | `import goop "std.list"` | [std.list](std-list.md) |
+| `std.array` | `import goop "std.array"` | [std.array](std-array.md) |
 | `std.option` | `import goop "std.option"` | [std.option](std-option.md) |
 | `std.result` | `import goop "std.result"` | [std.result](std-result.md) |
 

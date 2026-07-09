@@ -1,0 +1,18 @@
+module main
+
+let fill (n: int) (v: int) : int array =
+  begin
+    let arr = Array.make n v in
+    for i = 0 to n - 1 do
+      arr.(i) <- v + i
+    done;
+    arr
+  end
+
+let main () =
+  let xs = fill 5 10 in
+  begin
+    assert (Array.length xs = 5);
+    assert (xs.(0) = 10 && xs.(4) = 14);
+    print_line "arrays ok"
+  end

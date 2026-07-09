@@ -906,3 +906,85 @@ let answer () : int =
 		}
 	}
 }
+
+func TestTypeCheckArraySyntax(t *testing.T) {
+	src := `module Test
+let fill (n: int) (v: int) : int array =
+  begin
+    let arr = Array.make n v in
+    for i = 0 to n - 1 do
+      arr.(i) <- v + i
+    done;
+    arr
+  end
+let main () =
+  let xs = fill 3 10 in
+  assert (Array.length xs = 3 && xs.(2) = 12)
+`
+	mod, err := parser.Parse("test.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	mod = desugar.DesugarModule(mod)
+	errs := typecheck.Check(mod)
+	if len(errs) > 0 {
+		for _, e := range errs {
+			t.Errorf("type error: %v", e)
+		}
+	}
+}
+
+func TestAssignToImmutableBinding(t *testing.T) {
+	src := `module Test
+let main () =
+  let x = 0 in
+  x <- 1
+`
+	mod, err := parser.Parse("test.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	errs := typecheck.Check(mod)
+	if len(errs) == 0 {
+		t.Fatal("expected type error for assign to immutable")
+	}
+	if !strings.Contains(errs[0].Error(), "cannot assign to immutable binding") {
+		t.Errorf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestInvalidAssignmentTarget(t *testing.T) {
+	src := `module Test
+let main () =
+  (fun x -> x) <- 1
+`
+	mod, err := parser.Parse("test.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	errs := typecheck.Check(mod)
+	if len(errs) == 0 {
+		t.Fatal("expected type error for invalid assignment target")
+	}
+	if !strings.Contains(errs[0].Error(), "invalid assignment target") {
+		t.Errorf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestQualifiedConstructorUndefined(t *testing.T) {
+	src := `module Test
+type Color = Red | Green
+let main () = Color.Blue
+`
+	mod, err := parser.Parse("test.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	errs := typecheck.Check(mod)
+	if len(errs) == 0 {
+		t.Fatal("expected type error for undefined qualified constructor")
+	}
+	if !strings.Contains(errs[0].Error(), "constructor Color.Blue is not defined") {
+		t.Errorf("unexpected error: %v", errs[0])
+	}
+}

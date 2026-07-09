@@ -516,6 +516,17 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Bad**: `let f x : = int -> int = x + 1`
 - **Good**: `let f x : int -> int = x + 1`
 
+### PARSE023: Expected field name or index after `.`
+
+- **Error code**: `PARSE023`
+- **Severity**: Error
+- **Message**: `expected field name or index after '.', got %s`
+- **Example**: `test.goop:3:5: expected field name or index after '.', got RPAREN`
+- **Trigger**: After `.` in an expression, the parser expects either a field name (`x.field`) or OCaml-style indexing (`arr.(i)`). An empty `.( )` or a token that cannot start a field/index produces this error.
+- **Fix**: Use `arr.(index)` for arrays or `record.field` for record fields.
+- **Bad**: `arr.()`
+- **Good**: `arr.(0)`
+
 ---
 
 ## TYPE — Type Checker Errors
@@ -696,6 +707,55 @@ cannot be resolved. All type errors stop compilation.
 - **Fix**: See the specific UNIFY error code referenced in the message.
 - **Bad**: `let x : string = 42`
 - **Good**: `let x : int = 42`
+
+### TYPE011: Cannot assign to immutable binding
+
+- **Error code**: `TYPE011`
+- **Severity**: Error
+- **Message**: `cannot assign to immutable binding %q`
+- **Example**: `test.goop:4:3: cannot assign to immutable binding "x"`
+- **Trigger**: The `<-` operator is used on an identifier that was introduced with plain `let` (not `let mutable`). Only `mutable` bindings and array index targets (`arr.(i) <- v`) may be assigned.
+- **Fix**: Use `let mutable x = ... in` for rebinding, or use `arr.(i) <- v` for array element updates.
+- **Bad**:
+  ```goop
+  let x = 0 in
+  x <- 1
+  ```
+- **Good**:
+  ```goop
+  let mutable x = 0 in
+  x <- 1
+  ```
+
+### TYPE012: Invalid assignment target
+
+- **Error code**: `TYPE012`
+- **Severity**: Error
+- **Message**: `invalid assignment target`
+- **Example**: `test.goop:5:3: invalid assignment target`
+- **Trigger**: The left-hand side of `<-` is neither an array index (`arr.(i)`) nor a `mutable` variable. Record fields use `r.field <- v` syntax on mutable fields, not arbitrary expressions.
+- **Fix**: Assign only to `mutable` bindings or `arr.(index)`.
+- **Bad**: `(f x) <- 1`
+- **Good**: `arr.(0) <- 1` or `mutable x <- 1`
+
+### TYPE013: Qualified constructor not defined
+
+- **Error code**: `TYPE013`
+- **Severity**: Error
+- **Message**: `constructor %s.%s is not defined`
+- **Example**: `test.goop:6:5: constructor Color.Yellow is not defined`
+- **Trigger**: A qualified constructor `Type.Ctor` names a type prefix and constructor, but that constructor is not a variant of the named type (or the type is unknown).
+- **Fix**: Use a constructor declared on the type, or drop the qualifier when unambiguous.
+- **Bad**:
+  ```goop
+  type Color = Red | Green
+  let c = Color.Blue
+  ```
+- **Good**:
+  ```goop
+  type Color = Red | Green
+  let c = Color.Red
+  ```
 
 ---
 
@@ -1447,14 +1507,14 @@ associated with a specific source location.
 | Category | Number of error/warning sites |
 |---|---|
 | LEX (Lexer) | 9 |
-| PARSE (Parser) | 22 |
-| TYPE (Typechecker, direct) | 10 |
+| PARSE (Parser) | 23 |
+| TYPE (Typechecker, direct) | 13 |
 | UNIFY (Unification) | 19 |
 | EXHAUST (Exhaustiveness) | 3 |
 | LINEAR (Linear checker) | 7 |
 | REFINE (Refinement solver) | 2 (+ 1 silent outcome) |
 | CLI (CLI/file/system) | 13 |
-| **Total** | **85** |
+| **Total** | **89** |
 
 ---
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.1
+
+### Documentation & stdlib
+- Tutorial chapter 7 (arrays and loops); semantics, lowering, and error-reference updates
+- `std.array` thin re-export module; `goop.toml` mapping
+
+### Tests
+- Trading decision LUT test: qualified constructors, `begin`/`end` assertions
+- Parser, typecheck, and fmt unit tests for OCaml surface syntax
+- `std_array_test.goop`; `arrays.goop` example
+
 ## 0.8.0
 
 ### OCaml surface syntax

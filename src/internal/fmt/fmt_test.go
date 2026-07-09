@@ -27,6 +27,42 @@ let main () : unit with { async; io } =
 	}
 }
 
+func TestFormatArrayAndFor(t *testing.T) {
+	src := `module Main
+let main () =
+  begin
+    let arr = Array.make 2 0 in
+    for i = 0 to 1 do arr.(i) <- i done;
+    arr.(0)
+  end
+`
+	mod, err := parser.Parse("test.goop", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := FormatModule(mod)
+	if !strings.Contains(out, "arr.(i) <- i") {
+		t.Fatalf("missing array assign in:\n%s", out)
+	}
+	if !strings.Contains(out, "for i = 0 to 1 do") || !strings.Contains(out, "done") {
+		t.Fatalf("missing for/done in:\n%s", out)
+	}
+}
+
+func TestFormatBeginEnd(t *testing.T) {
+	src := `module Main
+let main () = begin print_line "a"; 1 end
+`
+	mod, err := parser.Parse("test.goop", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := FormatModule(mod)
+	if !strings.Contains(out, "begin") || !strings.Contains(out, "end") {
+		t.Fatalf("missing begin/end in:\n%s", out)
+	}
+}
+
 func TestRoundTripSelected(t *testing.T) {
 	names := []string{
 		"go_move_test.goop",
@@ -34,6 +70,11 @@ func TestRoundTripSelected(t *testing.T) {
 		"if_test.goop",
 		"active_pattern_test.goop",
 		"bool_test.goop",
+		"array_test.goop",
+		"array_mutation_test.goop",
+		"for_loop_test.goop",
+		"begin_end_test.goop",
+		"qualified_ctor_test.goop",
 	}
 	for _, name := range names {
 		path := filepath.Join("..", "..", "..", "tests", name)
