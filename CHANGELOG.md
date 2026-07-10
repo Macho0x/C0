@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1
+
+### Documentation
+- README first-viewport restructure for GitHub visitors; status wording fixed to shipped **1.0.1**
+- Example renames: `branded_ids`, `match_patterns`, `linear_resource`, `chan_async`, `result_match` (folded/removed `using.goop`)
+- Real `effects.goop` demo + stronger `effect_handler_test.goop`
+- Doc accuracy: PARSE019/020 marked obsolete → PARSE-MIG016; deferred-analysis banner; STYLE drops `let*` as preferred; overview drops F# peer pitch
+
 ## 1.0.0
 
 ### Breaking — OCaml-aligned surface

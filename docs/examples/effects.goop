@@ -1,20 +1,19 @@
-module main
+module EffectsDemo
 
-(* Explicit IO effect — annotations deferred; effects via handlers later *)
-let readFile (path: string) : string =
-  (* would call extern Go file reading *)
-  path
+(* Minimal OCaml 5-style effect demo (CPS-lowered). *)
 
-(* Pure function *)
-let double (x: int) : int = x * 2
+effect Flip : unit -> bool
 
-(* Would log under a log effect handler *)
-let logAndReturn (x: int) : int =
-  (* would log something *)
-  x
+let coin () : bool =
+  begin
+    perform (Flip ());
+    false
+  end
 
-(* Pure main *)
+let run () : bool =
+  match coin () with
+  | effect (Flip _) k -> k true
+  | v -> v
+
 let main () =
-  let n = double 21 in
-  let m = double (double 1) in
-  print_line (int_to_string (n + m))
+  assert (run () = true)

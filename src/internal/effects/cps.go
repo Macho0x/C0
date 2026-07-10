@@ -133,13 +133,9 @@ func transformExpr(e ast.Expr) ast.Expr {
 			}
 		}
 		if hasEffect {
-			// Wrap as __goop_handle(scrutinee) — handlers remain in MatchExpr
-			// for codegen to emit; mark via Ident wrapper.
-			return &ast.AppExpr{
-				Func: &ast.IdentExpr{Name: "__goop_handle", Loc: e.Loc},
-				Arg:  e,
-				Loc:  e.Loc,
-			}
+			// Leave MatchExpr in place for codegen; do not wrap as
+			// __goop_handle(match) — that produces invalid Go argument lists.
+			return e
 		}
 		return e
 	case *ast.AppExpr:

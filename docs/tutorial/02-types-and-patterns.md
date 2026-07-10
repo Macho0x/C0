@@ -70,7 +70,7 @@ type order_id = Order_id of string
 type symbol = Symbol of string
 ```
 
-See [`newtype_trading.goop`](../examples/newtype_trading.goop) (ADT branding) and [STYLE.md](../design/STYLE.md).
+See [`branded_ids.goop`](../examples/branded_ids.goop) (ADT branding) and [STYLE.md](../design/STYLE.md).
 
 ## Active patterns
 

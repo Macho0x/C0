@@ -513,29 +513,12 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Bad**: `match x with | { 42 = pat } -> ...`
 - **Good**: `match x with | { field = pat } -> ...`
 
-### PARSE019: Expected `..` after `|` in effect row
+### PARSE019 / PARSE020: Effect-row parse errors (obsolete in 1.0)
 
-- **Error code**: `PARSE019`
-- **Severity**: Error
-- **Message**: `expected '..' after '|' in effect row`
-- **Example**: `test.goop:3:20: expected '..' after '|' in effect row`
-- **Trigger**: In an effect row annotation `with { ... }`, the `|` pipe
-  character is not followed by `..` to indicate an open row.
-- **Fix**: Use `| ..` to indicate an open (extensible) effect row.
-- **Bad**: `let f x : int -> int with { io | } = ...`
-- **Good**: `let f x : int -> int with { io | .. } = ...`
-
-### PARSE020: Expected effect name in effect row
-
-- **Error code**: `PARSE020`
-- **Severity**: Error
-- **Message**: `expected effect name or type variable in effect row, got %s`
-- **Example**: `test.goop:3:12: expected effect name or type variable in effect row, got INT`
-- **Trigger**: Inside an effect row, a token appears that is neither an
-  identifier (effect name) nor a type variable (`'a`).
-- **Fix**: Use a valid effect name (identifier) or type variable.
-- **Bad**: `let f x : int -> int with { 42 | .. } = ...`
-- **Good**: `let f x : int -> int with { io | .. } = ...`
+- **Error codes**: `PARSE019`, `PARSE020`
+- **Status**: **Obsolete in 1.0.** Surface effect rows (`… with { io }`) were removed.
+- **Use instead**: [PARSE-MIG016](#parse-mig016-effect-rows-removed-10) — drop the row annotation; use `effect` / `perform` / handlers when needed.
+- **Do not** treat `with { io | .. }` as valid 1.0 syntax.
 
 ### PARSE021: Expected `..` after `|` in record type
 

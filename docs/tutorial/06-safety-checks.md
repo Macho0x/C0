@@ -24,7 +24,7 @@ let oid = Order_id "ord-1"
 let sym = Symbol "ETH-USD"
 ```
 
-Raw strings cannot be assigned to `order_id` without the constructor. See [`newtype_trading.goop`](../examples/newtype_trading.goop).
+Raw strings cannot be assigned to `order_id` without the constructor. See [`branded_ids.goop`](../examples/branded_ids.goop).
 
 ## Nil channel detection (NIL001)
 

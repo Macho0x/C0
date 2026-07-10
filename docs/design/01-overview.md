@@ -2,7 +2,7 @@
 
 ## What Goop is
 
-Goop is a compiled, statically typed programming language with ML-family syntax that targets Go. It is designed for programmers who want the type safety, pattern matching, and inference of OCaml or F#, but who also want Go's runtime, concurrency model, standard library, and deployment characteristics.
+Goop is a compiled, statically typed programming language with OCaml-aligned syntax that targets Go. It is designed for programmers who want OCaml-style type safety, pattern matching, and inference, but who also want Go's runtime, concurrency model, standard library, and deployment characteristics.
 
 ## Core principles
 

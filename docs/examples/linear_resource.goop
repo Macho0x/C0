@@ -20,4 +20,4 @@ let process (h: Handle) : unit =
   useHandle h
 
 let main () =
-  print_line "region demo"
+  print_line "linear resource demo"

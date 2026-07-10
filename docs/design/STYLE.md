@@ -21,7 +21,7 @@ See also: [14-ocaml-parity.md](14-ocaml-parity.md), [03-syntax.md](03-syntax.md)
 | Patterns | `match`, `when`, pattern `as`, `function` | expr `is`, expr `as … -> … else …` |
 | Branding | `private type` + single-ctor ADT | `newtype` keyword |
 | Effects | `effect` / `perform` / handlers | `with { io }` on arrow types |
-| Monads | `let*` / `let+` or plain `match` | `result { }`, `async { }`, `region { }` |
+| Monads / bind | plain `match` on `result` | `result { }`, `async { }`, `region { }`, `let*` / `let+` |
 | Blocks | `let … in`, `begin/end`, loops | Offside-as-primary; F# CE braces |
 | Integer ops | `mod`, `land`, `lor`, `lxor` | `%` |
 | Resources | `try … finally` / linear discharge | `region { let! … }` |

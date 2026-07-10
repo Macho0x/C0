@@ -2,5 +2,16 @@ module EffectHandlerTest
 
 effect Flip : unit -> bool
 
+let coin () : bool =
+  begin
+    perform (Flip ());
+    false
+  end
+
+let run () : bool =
+  match coin () with
+  | effect (Flip _) k -> k true
+  | v -> v
+
 let main () =
-  assert true
+  assert (run () = true)

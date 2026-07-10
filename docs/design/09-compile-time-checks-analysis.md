@@ -114,11 +114,11 @@ Goop doesn't need Rust's borrow checker to catch the most common data races. Fou
 The idea: when a `go` expression captures a closure, the compiler analyzes which **mutable** variables from the enclosing scope are captured by the goroutine. If the same mutable variable is accessible from the spawning goroutine (or multiple spawned goroutines), flag it as a potential data race.
 
 ```goop
-let mutable counter = 0
+let counter = ref 0
 
 let launch (n: int) : unit =
   for i = 0 to n do
-    go (fun () -> counter <- counter + 1)  (* ⚠️ RACE: counter shared between goroutines *)
+    go (fun () -> counter := !counter + 1)  (* ⚠️ RACE: counter shared between goroutines *)
   done
 ```
 

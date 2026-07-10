@@ -209,7 +209,7 @@ mod land lor lxor          (* integer; % removed *)
 | `let mutable` | PARSE-MIG010 | `ref` / `:=` / `!` |
 | `x <- e` (non-array) | PARSE-MIG011 | `x := e` |
 | `e ?` | PARSE-MIG012 | `match` on `result` |
-| `result { }` / `async { }` / `region { }` | PARSE-MIG013 | `match` / `let*` / `try/finally` |
+| `result { }` / `async { }` / `region { }` | PARSE-MIG013 | `match` on `result` / `try`/`finally` |
 | `e is p` / `e as p ->` / `guard` | PARSE-MIG014 | `match` |
 | `type t = newtype r` | PARSE-MIG015 | single-ctor ADT + `private` |
 | `… with { io }` | PARSE-MIG016 | effect handlers |

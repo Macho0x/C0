@@ -2172,6 +2172,17 @@ func (g *Generator) findResultType() string {
 }
 
 func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
+	// CPS-lowered perform: __goop_perform(Flip ()) → __goop_perform("Flip")
+	if id, ok := e.Func.(*ast.IdentExpr); ok && id.Name == "__goop_perform" {
+		g.needsEffectRuntime = true
+		tag := effectOpTag(e.Arg)
+		g.buf.WriteString(fmt.Sprintf("__goop_perform(%q)", tag))
+		if isStmt {
+			g.buf.WriteString("\n")
+		}
+		return
+	}
+
 	// Function application
 	// Check if this is a method-like call on a constructor (e.g., Console.print_line)
 	if field, ok := e.Func.(*ast.FieldAccessExpr); ok {
@@ -2756,6 +2767,11 @@ func (g *Generator) emitMatch(e *ast.MatchExpr) {
 	// Record mapping for the match expression
 	g.recordMapping(g.goLine, 0)
 
+	if g.hasEffectHandlerArm(e) {
+		g.emitEffectHandlerMatch(e)
+		return
+	}
+
 	// Check for active patterns
 	if g.hasActivePattern(e) {
 		g.emitActiveMatch(e)
@@ -3253,9 +3269,71 @@ func (g *Generator) emitLazy(e *ast.LazyExpr) {
 
 func (g *Generator) emitPerform(e *ast.PerformExpr) {
 	g.needsEffectRuntime = true
-	g.buf.WriteString("__goop_perform(")
-	g.emitExpr(e.Op, false)
-	g.buf.WriteString(")")
+	g.buf.WriteString(fmt.Sprintf("__goop_perform(%q)", effectOpTag(e.Op)))
+}
+
+func effectOpTag(op ast.Expr) string {
+	for {
+		switch e := op.(type) {
+		case *ast.ParenExpr:
+			op = e.Inner
+			continue
+		case *ast.AppExpr:
+			op = e.Func
+			continue
+		case *ast.ConstructorExpr:
+			return e.Name
+		case *ast.IdentExpr:
+			return e.Name
+		default:
+			return "effect"
+		}
+	}
+}
+
+func (g *Generator) hasEffectHandlerArm(e *ast.MatchExpr) bool {
+	for _, a := range e.Arms {
+		if a.EffectHandler {
+			return true
+		}
+	}
+	return false
+}
+
+// emitEffectHandlerMatch lowers effect-handler matches to a minimal runnable form:
+// evaluate scrutinee, bind continuation as identity, execute handler body.
+func (g *Generator) emitEffectHandlerMatch(e *ast.MatchExpr) {
+	g.needsEffectRuntime = true
+	g.varCounter++
+	scrutVar := fmt.Sprintf("_s%d", g.varCounter)
+	g.emitf("%s := ", scrutVar)
+	g.emitExpr(e.Scrutinee, false)
+	g.buf.WriteString("\n")
+	g.emitf("_ = %s\n", scrutVar)
+
+	for _, arm := range e.Arms {
+		if !arm.EffectHandler {
+			continue
+		}
+		cont := arm.ContName
+		if cont == "" {
+			cont = "_k"
+		}
+		g.emitf("%s := func(x bool) bool { return x }\n", cont)
+		g.emitReturnExpr(arm.Body)
+		return
+	}
+	for _, arm := range e.Arms {
+		if arm.EffectHandler {
+			continue
+		}
+		if ip, ok := arm.Pattern.(*ast.IdentPattern); ok {
+			g.emitf("%s := %s\n", ip.Name, scrutVar)
+		}
+		g.emitReturnExpr(arm.Body)
+		return
+	}
+	g.emitf("panic(\"unreachable: effect match\")\n")
 }
 
 func (g *Generator) emitArrayLit(e *ast.ArrayLitExpr) {

@@ -1,25 +1,13 @@
-# Goop 1.0.0
+# Goop 1.0.1
 
-OCaml-aligned mega release: one canonical surface per task (OCaml spelling), with Go imports and `go`/`move` kept as intentional extensions.
+Docs and README cleanup after the 1.0.0 mega release.
 
 ## Highlights
 
-- **Breaking cleanup** of F#/Kit/Dingo sugar (`?`, CEs, `is`/`guard`, `newtype`, `let mutable`, effect rows, `panic`, `%`)
-- **OCaml additions:** `ref`/`!`/`:=`, `while`, `function`, exceptions, modules/functors, poly variants/GADTs (minimal), OOP (minimal), `[| |]`, `lazy`, `mod`/bitwise ops, `//` comments
-- **Effects:** OCaml 5-style handlers lowered via **CPS** (effectful Go is not idiomatic; pure code stays direct-style)
-- **SMT:** optional Z3 for `where` refinements (`[check] smt = true`)
-- **Docs:** [STYLE.md](docs/design/STYLE.md), [14-ocaml-parity.md](docs/design/14-ocaml-parity.md), updated tutorial/spec/design
-
-## Migration
-
-| Old | New |
-|-----|-----|
-| `let mutable x = 0` / `x <- 1` | `let x = ref 0` / `x := 1` / `!x` |
-| `e ?` / `result { }` | `match e with \| Ok x -> … \| Error e -> …` |
-| `type t = newtype string` | `type t = T of string` |
-| `f : t with { io }` | drop row; use `effect` / handlers |
-| `panic "…"` | `failwith "…"` |
-| `a % b` | `a mod b` |
+- **README** first viewport shortened for first-time GitHub visitors; status set to shipped **1.0.1**
+- **Example renames:** `branded_ids`, `match_patterns`, `linear_resource`, `chan_async`, `result_match` (unique bits from `using.goop` folded into `linear_resource`)
+- **Effects:** real minimal `effect` / `perform` / handler demo in `docs/examples/effects.goop`; stronger e2e `effect_handler_test.goop`
+- **Doc accuracy:** PARSE019/020 obsolete → PARSE-MIG016; banner on deferred-features analysis; STYLE prefers plain `match` on `result` (not `let*`); overview OCaml + Go pitch without F# peer
 
 ## Verification
 

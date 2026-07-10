@@ -1,6 +1,8 @@
 # Analysis: Resumptive Effects and Dependent/Refinement Types in Goop
 
-This document analyzes two features currently deferred ("Deferred or rejected" in the roadmap) to inform whether — and how — they could be added to Goop. Each section covers: what the feature is, feasibility under the Go-lowering constraint, concrete syntax, type-system integration, lowering strategy, cost, comparison to other languages, and a recommendation.
+> **Historical analysis (pre-1.0).** Mid-document reject/defer recommendations and old snippets (`let mutable`, `?`, `with { io }`) are superseded by the **1.0 summary verdicts** at the end of this file and by [STYLE.md](STYLE.md) / [14-ocaml-parity.md](14-ocaml-parity.md). Read the closing table first if you only need current product decisions.
+
+This document analyzes two features that were once deferred to inform whether — and how — they could be added to Goop. Each section covers: what the feature is, feasibility under the Go-lowering constraint, concrete syntax, type-system integration, lowering strategy, cost, comparison to other languages, and a recommendation.
 
 ---
 

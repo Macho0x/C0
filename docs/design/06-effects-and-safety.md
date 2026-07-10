@@ -23,7 +23,7 @@ let readUser (id: int) : (user, string) result =
       | Ok validated -> Ok validated
 ```
 
-There is no `?` propagation operator (PARSE-MIG012). Prefer plain `match`, or `let*` / `let+` where supported.
+There is no `?` propagation operator (PARSE-MIG012). Prefer plain `match` on `result`.
 
 ## Failwith and exceptions
 
@@ -52,12 +52,25 @@ Goop 1.0 ships minimal OCaml 5 effect handlers:
 
 ```goop
 effect Flip : unit -> bool
+
+let coin () : bool =
+  begin
+    perform (Flip ());
+    false
+  end
+
+let run () : bool =
+  match coin () with
+  | effect (Flip _) k -> k true
+  | v -> v
 ```
 
 - `perform` invokes an effect operation.
 - Handlers appear as `effect (Op …) k -> …` arms in `match` / `try`.
 - Effectful code is CPS-transformed (`internal/effects`) before Go codegen — **not** idiomatic Go.
 - Pure code without `perform` stays direct-style.
+
+See [`docs/examples/effects.goop`](../examples/effects.goop).
 
 Surface effect **rows** (`… with { io }`) are removed (PARSE-MIG016). See [14-ocaml-parity.md](14-ocaml-parity.md) and [08-deferred-features-analysis.md](08-deferred-features-analysis.md).
 
