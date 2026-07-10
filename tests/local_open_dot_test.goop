@@ -1,0 +1,8 @@
+module LocalOpenDotTest
+
+module Inner = struct
+  let mul (a: int) (b: int) : int = a * b
+end
+
+let main () =
+  assert (Inner.(mul 3 4) = 12)

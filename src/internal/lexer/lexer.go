@@ -214,6 +214,9 @@ func (l *Lexer) run() {
 		case r == '@':
 			l.consumeN(1)
 			l.emit(token.AT, "@", nil)
+		case r == '#':
+			l.consumeN(1)
+			l.emit(token.HASH, "#", nil)
 		case r == '%':
 			l.consumeN(1)
 			l.emit(token.PERCENT, "%", nil)

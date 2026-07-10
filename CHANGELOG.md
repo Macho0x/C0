@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0
+
+### OCaml parity mega-ship
+
+- Control: `for … downto`, `let open` / `M.(…)` / `open!`, `exception` patterns, memoizing `Lazy.force` / `Lazy.from_val`
+- Modules: inline `module M : S =` sealing (no `.mli`), `module type of`, `module rec`, `with type`/`with module`/`:=`, functors, first-class pack/unpack, real `include` re-exports
+- Types: extensible variants, GADT result types, open/closed polymorphic variants, labelled/optional args
+- Objects: `inherit` / `virtual` / `initializer` / `constraint` / `class type`, `#method`, object method codegen
+- Effects: shallow CPS with real resume + `continue` / `discontinue`; attributes `[@@]`/`[@]`/`[%]` parse-and-strip (`@golang` remains the only active extension)
+
 ## 1.0.1
 
 ### Documentation

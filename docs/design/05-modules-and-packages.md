@@ -20,16 +20,21 @@ end
 open Inner
 ```
 
-Also supported (minimal implementations):
+Also supported:
 
 | Form | Role |
 |------|------|
 | `module M = struct … end` | Nested structure |
+| `module M : S = …` | Inline sealing (no `.mli`) |
 | `module type S = sig … end` | Signature |
+| `module type of M` | Synthesize signature |
+| `module rec` | Recursive modules |
+| `S with type` / `with module` / `:=` | Signature constraints |
 | `module F (X : S) = struct … end` / `functor` | Functors |
-| `open` / `include` | Bring names into scope |
+| `(module M : S)` / `(val e : S)` | First-class modules |
+| `open` / `open!` / `let open` / `M.(…)` | Local visibility |
+| `include` | Re-export into current module |
 | `let module M = … in …` | Local module |
-| `.mli` | Interface file (`sig` items) |
 
 See [14-ocaml-parity.md](14-ocaml-parity.md). Everyday projects still use one file-level `module` plus Go-style imports.
 

@@ -143,6 +143,25 @@ func Default() *Prelude {
 		&panicEff,
 	)
 
+	// Lazy.force : 'a lazy -> 'a
+	lazyA := types.LazyType(a)
+	p.addWithEffects("Lazy.force",
+		&types.Scheme{
+			Vars: []*types.TVar{a},
+			Type: &types.TFun{From: lazyA, To: a},
+		},
+		Lowering{Custom: "lazy_force"},
+		&pureEff,
+	)
+	p.addWithEffects("Lazy.from_val",
+		&types.Scheme{
+			Vars: []*types.TVar{a},
+			Type: &types.TFun{From: a, To: lazyA},
+		},
+		Lowering{Custom: "lazy_from_val"},
+		&pureEff,
+	)
+
 	// ref : 'a -> 'a ref
 	p.addWithEffects("ref",
 		&types.Scheme{

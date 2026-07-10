@@ -1,0 +1,10 @@
+module LazyForceTest
+
+let main () =
+  begin
+    let r = ref 0 in
+    let lz = lazy (begin r := !r + 1; 42 end) in
+    let a = Lazy.force lz in
+    let b = Lazy.force lz in
+    assert (a = 42 && b = 42 && !r = 1)
+  end

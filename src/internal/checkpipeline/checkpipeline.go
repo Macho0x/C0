@@ -15,19 +15,19 @@ import (
 
 // Result holds outcomes from all safety passes.
 type Result struct {
-	LinearErrors       []error
-	LinearWarnings     []error
-	ChannelRaceErrors  []error
-	ChannelRaceWarns   []error
-	DeadlockErrors     []error
-	DeadlockWarns      []error
-	NilchanErrors      []error
-	RefineProven       refine.ProvenSites
-	RefineFuncProven   map[string]bool
-	RefineWarnings     []error
-	RefineErrors       []error
-	ExhaustErrors      []error
-	ExhaustWarns       []error
+	LinearErrors      []error
+	LinearWarnings    []error
+	ChannelRaceErrors []error
+	ChannelRaceWarns  []error
+	DeadlockErrors    []error
+	DeadlockWarns     []error
+	NilchanErrors     []error
+	RefineProven      refine.ProvenSites
+	RefineFuncProven  map[string]bool
+	RefineWarnings    []error
+	RefineErrors      []error
+	ExhaustErrors     []error
+	ExhaustWarns      []error
 }
 
 // Run executes linear, channelrace, deadlock, nil-channel, refinement, and exhaustiveness checks.
@@ -66,6 +66,7 @@ func RegisterADTsFromModule(mod *ast.Module) {
 		"result": {"Ok", "Error"},
 		"option": {"None", "Some"},
 	}
+	exhaustive.OpenADTRegistry = make(map[string]bool)
 	for _, d := range mod.Decls {
 		td, ok := d.(*ast.TypeDecl)
 		if !ok {
@@ -81,9 +82,26 @@ func RegisterADTsFromModule(mod *ast.Module) {
 			for _, c := range k.Cases {
 				ctors = append(ctors, c.Name)
 			}
+		case *ast.ExtensibleTypeKind:
+			exhaustive.RegisterADT(td.Name, nil)
+			exhaustive.OpenADTRegistry[td.Name] = true
+			continue
 		default:
 			continue
 		}
 		exhaustive.RegisterADT(td.Name, ctors)
 	}
+	for _, d := range mod.Decls {
+		if ext, ok := d.(*ast.ExtensibleVariantDecl); ok {
+			exhaustive.ADTRegistry[ext.TypeName] = append(exhaustive.ADTRegistry[ext.TypeName], ctorNames(ext.Cases)...)
+		}
+	}
+}
+
+func ctorNames(cases []ast.ADTCase) []string {
+	names := make([]string, len(cases))
+	for i, c := range cases {
+		names[i] = c.Name
+	}
+	return names
 }

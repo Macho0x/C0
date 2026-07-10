@@ -1,0 +1,11 @@
+module PolyvarTest
+
+type color = [ `Red | `Blue ]
+
+let score c : int =
+  match c with
+  | `Red -> 1
+  | `Blue -> 2
+
+let main () =
+  assert (score `Red = 1 && score `Blue = 2)

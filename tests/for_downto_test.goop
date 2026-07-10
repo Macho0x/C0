@@ -1,0 +1,10 @@
+module ForDowntoTest
+
+let main () =
+  begin
+    let arr = Array.make 4 0 in
+    for i = 3 downto 0 do
+      arr.(i) <- i + 1
+    done;
+    assert (arr.(0) = 1 && arr.(3) = 4)
+  end

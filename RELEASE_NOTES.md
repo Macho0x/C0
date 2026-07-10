@@ -1,16 +1,25 @@
-# Goop 1.0.1
+# Goop 1.1.0
 
-Docs and README cleanup after the 1.0.0 mega release.
+OCaml parity mega-ship: close remaining syntax/semantics gaps after 1.0.
 
 ## Highlights
 
-- **README** first viewport shortened for first-time GitHub visitors; status set to shipped **1.0.1**
-- **Example renames:** `branded_ids`, `match_patterns`, `linear_resource`, `chan_async`, `result_match` (unique bits from `using.goop` folded into `linear_resource`)
-- **Effects:** real minimal `effect` / `perform` / handler demo in `docs/examples/effects.goop`; stronger e2e `effect_handler_test.goop`
-- **Doc accuracy:** PARSE019/020 obsolete → PARSE-MIG016; banner on deferred-features analysis; STYLE prefers plain `match` on `result` (not `let*`); overview OCaml + Go pitch without F# peer
+- **Control:** `downto`, local/`let open`/`open!`, `exception` patterns, real memoizing `Lazy`
+- **Modules:** inline sealing (`module M : S = …` — **no `.mli`**), `module type of`, `module rec`, signature constraints, functors, first-class modules, `include` re-exports
+- **Types:** extensible variants, GADTs (result types), polyvar rows, labelled/optional args
+- **Objects:** inherit/virtual/initializer/constraint/class type + `#method`
+- **Effects:** shallow CPS resume with `continue`/`discontinue`
+- **Attributes:** parse+strip only; `@golang { }` stays the only active extension
+
+## Out of scope (unchanged)
+
+- Deep effect handlers / stack capture
+- PPX plugins / deriving
+- Full OCaml Stdlib / Domains
+- `.mli` interface files
 
 ## Verification
 
 - `go test ./...` (from `src/`)
-- `goop test tests/` — 49 passed
+- `goop test tests/` — 66 passed
 - `goop check` on all `docs/examples/*.goop`

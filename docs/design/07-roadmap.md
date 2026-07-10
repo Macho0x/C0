@@ -55,7 +55,8 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] Package manager (`goop get`, `goop.lock`).
 - [x] **OCaml alignment (1.0):** `ref`/`while`/`function`/exceptions/`failwith`/`mod`; remove F# CE, `?`, Kit macros, `newtype`, effect rows, `panic`, `%`.
 - [x] **Effect handlers (1.0):** OCaml 5-style `effect` / `perform` / handlers, CPS-lowered.
-- [x] Nested modules / `sig` / functors / `.mli` (minimal).
+- [x] Nested modules / `sig` / functors / inline sealing (no `.mli`).
+- [x] **OCaml parity 1.1:** downto, local open, exception patterns, Lazy, extensible variants, GADTs/polyvars, objects, shallow effects + attr strip.
 
 ## Phase 4: Maturity
 

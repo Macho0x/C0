@@ -111,9 +111,11 @@ func (e *EffectRow) String() string {
 // Effects is nil for "unknown" (backward-compat implicit open row),
 // non-nil for explicit effect annotations.
 type TFun struct {
-	From    Type
-	To      Type
-	Effects *EffectRow // nil means unknown (permissive for backward compat)
+	From     Type
+	To       Type
+	Effects  *EffectRow // nil means unknown (permissive for backward compat)
+	Label    string
+	Optional bool
 }
 
 func (f *TFun) String() string {
@@ -125,6 +127,30 @@ func (f *TFun) String() string {
 		}
 	}
 	return base
+}
+
+// PolyVariant is a structural polymorphic-variant row.
+type PolyVariant struct {
+	Variants   []Variant
+	Open       bool
+	UpperBound bool
+}
+
+func (p *PolyVariant) String() string {
+	parts := make([]string, len(p.Variants))
+	for i, v := range p.Variants {
+		parts[i] = "`" + v.Name
+		if v.Arg != nil {
+			parts[i] += " of " + v.Arg.String()
+		}
+	}
+	prefix := "["
+	if p.Open {
+		prefix += ">"
+	} else if p.UpperBound {
+		prefix += "<"
+	}
+	return prefix + strings.Join(parts, " | ") + "]"
 }
 
 // ---------------------------------------------------------------------------
@@ -373,7 +399,7 @@ func Apply(s Subst, t Type) Type {
 	case *Prim:
 		return t
 	case *TFun:
-		fn := &TFun{From: Apply(s, t.From), To: Apply(s, t.To)}
+		fn := &TFun{From: Apply(s, t.From), To: Apply(s, t.To), Label: t.Label, Optional: t.Optional}
 		if t.Effects != nil {
 			fn.Effects = &EffectRow{
 				Effects: t.Effects.Effects,
@@ -410,6 +436,15 @@ func Apply(s Subst, t Type) Type {
 			}
 		}
 		return &TAdt{Name: t.Name, Params: params, Variants: variants, Linear: t.Linear}
+	case *PolyVariant:
+		variants := make([]Variant, len(t.Variants))
+		for i, v := range t.Variants {
+			variants[i] = Variant{Name: v.Name}
+			if v.Arg != nil {
+				variants[i].Arg = Apply(s, v.Arg)
+			}
+		}
+		return &PolyVariant{Variants: variants, Open: t.Open, UpperBound: t.UpperBound}
 	case *TNewtype:
 		return &TNewtype{Name: t.Name, Rep: Apply(s, t.Rep)}
 	case *TCon:
@@ -456,6 +491,12 @@ func freeVars(t Type, fv map[int64]bool) {
 	case *TAdt:
 		for _, p := range t.Params {
 			freeVars(p, fv)
+		}
+	case *PolyVariant:
+		for _, v := range t.Variants {
+			if v.Arg != nil {
+				freeVars(v.Arg, fv)
+			}
 		}
 	case *TNewtype:
 		freeVars(t.Rep, fv)
@@ -517,9 +558,9 @@ func Mono(t Type) *Scheme {
 
 // Built-in generic ADT type variables used for the definitions.
 var (
-	tvA  = &TVar{ID: -1, Name: "'a"}
-	tvB  = &TVar{ID: -2, Name: "'b"}
-	tvOk = &TVar{ID: -3, Name: "'ok"}
+	tvA   = &TVar{ID: -1, Name: "'a"}
+	tvB   = &TVar{ID: -2, Name: "'b"}
+	tvOk  = &TVar{ID: -3, Name: "'ok"}
 	tvErr = &TVar{ID: -4, Name: "'err"}
 )
 

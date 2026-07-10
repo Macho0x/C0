@@ -1,0 +1,17 @@
+module ModuleSealTest
+
+module type S = sig
+  val answer : int
+end with type t = int
+
+module M : S = struct
+  let answer : int = 42
+  let hidden : string = "sealed"
+end
+
+module type Copy = module type of M
+
+open M
+
+let main () =
+  assert (answer = 42)

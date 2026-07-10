@@ -32,7 +32,7 @@ import (
 let x = 1
 ```
 
-Keep Go-style `import golang` / `import goop`. Nested `module M = struct … end`, `sig`, functors, and `.mli` are supported (minimal). See [05-modules-and-packages.md](05-modules-and-packages.md).
+Keep Go-style `import golang` / `import goop`. Nested `module M = struct … end`, `sig`, functors, and inline `module M : S = …` sealing are supported. There is no `.mli` — see [05-modules-and-packages.md](05-modules-and-packages.md) and [14-ocaml-parity.md](14-ocaml-parity.md).
 
 ## Value declarations
 

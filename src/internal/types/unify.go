@@ -7,9 +7,9 @@ import (
 
 // UnifyError represents a type mismatch during unification.
 type UnifyError struct {
-	Msg    string
-	Left   Type
-	Right  Type
+	Msg   string
+	Left  Type
+	Right Type
 }
 
 func (e *UnifyError) Error() string {
@@ -176,6 +176,35 @@ func unify(sub Subst, t1, t2 Type) error {
 		}
 		return nil
 
+	case *PolyVariant:
+		r, ok := t2.(*PolyVariant)
+		if !ok {
+			return mismatch(t1, t2, "expected a polymorphic variant row")
+		}
+		lm, rm := variantMap(l.Variants), variantMap(r.Variants)
+		for name, lv := range lm {
+			rv, ok := rm[name]
+			if !ok {
+				if r.Open || r.UpperBound {
+					continue
+				}
+				return mismatch(t1, t2, "polymorphic variant tag missing: `"+name)
+			}
+			if lv.Arg != nil && rv.Arg != nil {
+				if err := unify(sub, lv.Arg, rv.Arg); err != nil {
+					return err
+				}
+			} else if lv.Arg != nil || rv.Arg != nil {
+				return mismatch(t1, t2, "polymorphic variant payload mismatch: `"+name)
+			}
+		}
+		for name := range rm {
+			if _, ok := lm[name]; !ok && !l.Open && !l.UpperBound {
+				return mismatch(t1, t2, "unexpected polymorphic variant tag: `"+name)
+			}
+		}
+		return nil
+
 	case *TNewtype:
 		r, ok := t2.(*TNewtype)
 		if !ok {
@@ -251,6 +280,12 @@ func occurs(vid int64, t Type) bool {
 				return true
 			}
 		}
+	case *PolyVariant:
+		for _, v := range t.Variants {
+			if v.Arg != nil && occurs(vid, v.Arg) {
+				return true
+			}
+		}
 	case *TCon:
 		for _, a := range t.Args {
 			if occurs(vid, a) {
@@ -272,6 +307,14 @@ func fieldMap(r *TRecord) map[string]Type {
 		m[f.Name] = f.Type
 	}
 	return m
+}
+
+func variantMap(variants []Variant) map[string]Variant {
+	out := make(map[string]Variant, len(variants))
+	for _, v := range variants {
+		out[v.Name] = v
+	}
+	return out
 }
 
 // unifyEffects unifies the effect rows of two function types.
@@ -377,7 +420,6 @@ func hasEffect(effects []string, name string) bool {
 	}
 	return false
 }
-
 
 func mismatch(t1, t2 Type, reason string) *UnifyError {
 	return &UnifyError{

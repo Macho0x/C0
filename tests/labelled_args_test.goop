@@ -1,0 +1,7 @@
+module LabelledArgsTest
+
+let format ~prefix:(prefix : string) n : string =
+  prefix
+
+let main () =
+  assert (format ~prefix:"n=" 3 = "n=")

@@ -122,7 +122,7 @@ Highlights: ADTs + exhaustive `match`, `ref`/`!`/`:=`, `go`/`chan`/`go (move …
 
 ## FAQ
 
-**Is 1.0.1 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Modules/OOP/effects are minimal; we are not claiming production load readiness yet.
+**Is 1.1.0 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
 
 **How is this different from Borgo or Dingo?** Goop is a full compiler with OCaml-aligned syntax and compile-time safety for gradual migration to Go. Dingo-style `?` and F# computation expressions were removed in 1.0.
 
@@ -130,7 +130,9 @@ Highlights: ADTs + exhaustive `match`, `ref`/`!`/`:=`, `go`/`chan`/`go (move …
 
 ## Status
 
-**v1.0.1** — Docs/README cleanup, example renames, real effects demo. See [CHANGELOG](CHANGELOG.md).
+**v1.1.0** — OCaml parity mega-ship (modules, types, objects, shallow effects). See [CHANGELOG](CHANGELOG.md) · [parity](docs/design/14-ocaml-parity.md).
+
+**v1.0.1** — Docs/README cleanup, example renames, real effects demo.
 
 **v1.0.0** — OCaml-aligned surface, CPS effect handlers, optional Z3 SMT.
 

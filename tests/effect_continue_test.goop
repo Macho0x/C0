@@ -1,0 +1,17 @@
+module EffectContinueTest
+
+effect Flip : unit -> bool
+
+let coin () : bool =
+  begin
+    perform (Flip ());
+    false
+  end
+
+let run () : bool =
+  match coin () with
+  | effect (Flip _) k -> continue k true
+  | v -> v
+
+let main () =
+  assert (run () = true)

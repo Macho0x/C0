@@ -14,9 +14,10 @@ import (
 
 // Module represents a complete Goop source file.
 type Module struct {
-	Name    string       // module path, e.g. "Trading.OrderBook"
-	Imports []ImportSpec // import directives (golang and c0)
-	Decls   []TopDecl    // top-level declarations
+	Name       string       // module path, e.g. "Trading.OrderBook"
+	Imports    []ImportSpec // import directives (golang and c0)
+	Decls      []TopDecl    // top-level declarations
+	Attributes []Attribute  // ignored OCaml attributes/extensions stripped at parse time
 }
 
 // ImportKind distinguishes Go package imports from Goop module imports.
@@ -24,7 +25,7 @@ type ImportKind int
 
 const (
 	ImportGolang ImportKind = iota // import golang "path"
-	ImportGoop                       // import goop "path"
+	ImportGoop                     // import goop "path"
 )
 
 // ImportSpec is one arm of an import declaration.
@@ -115,6 +116,7 @@ type Param struct {
 	Type     Type   // nil if unannotated (e.g. `fun x ->`)
 	Label    string // labelled arg `~x` / `~label:x` (empty = positional)
 	Optional bool   // `?x` optional labelled arg
+	Default  Expr   // default expression for optional labelled arguments
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +167,12 @@ type GADTTypeKind struct {
 
 func (*GADTTypeKind) typeKindNode() {}
 
+// ExtensibleTypeKind is `type t = ..`. Its constructors are added later by
+// ExtensibleVariantDecl declarations.
+type ExtensibleTypeKind struct{}
+
+func (*ExtensibleTypeKind) typeKindNode() {}
+
 // GADTCase is one GADT constructor: `C : arg -> ret` or `C : ret`.
 type GADTCase struct {
 	Name   string
@@ -177,6 +185,14 @@ type ADTCase struct {
 	Name string
 	Arg  Type // nil if no payload (e.g. `| Point`)
 }
+
+// ExtensibleVariantDecl is `type t += C of payload`.
+type ExtensibleVariantDecl struct {
+	TypeName string
+	Cases    []ADTCase
+}
+
+func (*ExtensibleVariantDecl) topDeclNode() {}
 
 // FieldType is a record field declaration: `name : Type` or `mutable name : Type`.
 type FieldType struct {
@@ -243,6 +259,24 @@ type TRecord struct {
 }
 
 func (*TRecord) typeNode() {}
+
+// TObject is a structural object type: `< method : type; ... >`.
+type TObject struct {
+	Methods []FieldType
+	Open    bool
+}
+
+func (*TObject) typeNode() {}
+
+// TPolyVariant is a polymorphic-variant row. Open accepts extra tags, while
+// Closed is the ordinary exact row form. UpperBound records `[< ...]`.
+type TPolyVariant struct {
+	Cases      []ADTCase
+	Open       bool
+	UpperBound bool
+}
+
+func (*TPolyVariant) typeNode() {}
 
 // TVar is a type variable: `'a`.
 type TVar struct {
@@ -456,6 +490,15 @@ type FieldAccessExpr struct {
 
 func (*FieldAccessExpr) exprNode() {}
 
+// MethodSendExpr is `expr#method`.
+type MethodSendExpr struct {
+	Target Expr
+	Method string
+	Loc    token.SourceLoc
+}
+
+func (*MethodSendExpr) exprNode() {}
+
 // TupleExpr is a tuple literal: `(a, b, c)`.
 type TupleExpr struct {
 	Elems []Expr
@@ -499,11 +542,12 @@ type AssignExpr struct {
 
 func (*AssignExpr) exprNode() {}
 
-// ForExpr is `for var = from to to do body done`.
+// ForExpr is `for var = from to/downto to do body done`.
 type ForExpr struct {
 	Var  string
 	From Expr
 	To   Expr
+	Down bool // true for downto
 	Body Expr
 	Loc  token.SourceLoc
 }
@@ -601,7 +645,7 @@ type ArrayLitExpr struct {
 
 func (*ArrayLitExpr) exprNode() {}
 
-// PolyvarExpr is `` `Tag `` or `` `Tag e ``.
+// PolyvarExpr is “ `Tag “ or “ `Tag e “.
 type PolyvarExpr struct {
 	Tag string
 	Arg Expr // nil if no payload
@@ -612,10 +656,13 @@ func (*PolyvarExpr) exprNode() {}
 
 // ObjectExpr is `object (self) ... end`.
 type ObjectExpr struct {
-	Self    string
-	Fields  []ClassField
-	Methods []ClassMethod
-	Loc     token.SourceLoc
+	Self         string
+	Fields       []ClassField
+	Methods      []ClassMethod
+	Inherits     []string
+	Initializers []Expr
+	Constraints  []ClassConstraint
+	Loc          token.SourceLoc
 }
 
 func (*ObjectExpr) exprNode() {}
@@ -649,9 +696,10 @@ func (*ModuleAppExpr) exprNode() {}
 
 // LabelledArgExpr is `~x` or `~x:e` used as a function argument.
 type LabelledArgExpr struct {
-	Label string
-	Value Expr // nil means punning `~x` ≡ `~x:x`
-	Loc   token.SourceLoc
+	Label    string
+	Value    Expr // nil means punning `~x` ≡ `~x:x`
+	Optional bool
+	Loc      token.SourceLoc
 }
 
 func (*LabelledArgExpr) exprNode() {}
@@ -677,8 +725,11 @@ func (*EffectDecl) topDeclNode() {}
 // `module F (X : S) = struct ... end`.
 type NestedModuleDecl struct {
 	Name       string
-	FunctorArg string // empty if not a functor; param name e.g. "X"
-	FunctorSig string // signature name e.g. "S"
+	FunctorArg string              // empty if not a functor; param name e.g. "X"
+	FunctorSig string              // signature name e.g. "S"
+	SealSig    string              // optional result signature in `module M : S = ...`
+	Rec        bool                // true for `module rec M = ...`
+	RecDecls   []*NestedModuleDecl // peers following `and` in a recursive group
 	Decls      []TopDecl
 	IsApp      bool   // true for `module M = F(N)` application
 	AppFunc    string // functor name when IsApp
@@ -689,8 +740,10 @@ func (*NestedModuleDecl) topDeclNode() {}
 
 // ModuleTypeDecl is `module type S = sig ... end`.
 type ModuleTypeDecl struct {
-	Name  string
-	Items []SigItem
+	Name            string
+	Items           []SigItem
+	OfModule        string          // `module type S = module type of M`
+	WithConstraints []SigConstraint // `S with type ...` / `with module ...`
 }
 
 func (*ModuleTypeDecl) topDeclNode() {}
@@ -702,9 +755,19 @@ type SigItem struct {
 	Type Type // for val; nil for type
 }
 
-// OpenModuleDecl is `open M` (module path).
+// SigConstraint preserves `with type/module` refinements on module signatures.
+// The checker currently uses them as transparent compatibility constraints.
+type SigConstraint struct {
+	Kind        string // "type" or "module"
+	Name        string
+	Manifest    string
+	Destructive bool // `:=` rather than `=`
+}
+
+// OpenModuleDecl is `open M` or `open! M` (module path).
 type OpenModuleDecl struct {
-	Path string
+	Path  string
+	Force bool // open!
 }
 
 func (*OpenModuleDecl) topDeclNode() {}
@@ -716,12 +779,98 @@ type IncludeDecl struct {
 
 func (*IncludeDecl) topDeclNode() {}
 
-// ClassDecl is `class c = object (self) ... end`.
+// LetOpenExpr is `let open M in body` (or `let open! M in body`).
+type LetOpenExpr struct {
+	Path  string
+	Force bool
+	Body  Expr
+	Loc   token.SourceLoc
+}
+
+func (*LetOpenExpr) exprNode() {}
+
+// LocalOpenExpr is `M.( body )` — expression-scoped open of module M.
+type LocalOpenExpr struct {
+	Path string
+	Body Expr
+	Loc  token.SourceLoc
+}
+
+func (*LocalOpenExpr) exprNode() {}
+
+// ContinueExpr is `continue k x` (effect handler resume sugar).
+type ContinueExpr struct {
+	Cont Expr
+	Arg  Expr
+	Loc  token.SourceLoc
+}
+
+func (*ContinueExpr) exprNode() {}
+
+// DiscontinueExpr is `discontinue k exn` (effect handler abort sugar).
+type DiscontinueExpr struct {
+	Cont Expr
+	Exn  Expr
+	Loc  token.SourceLoc
+}
+
+func (*DiscontinueExpr) exprNode() {}
+
+// PackModuleExpr is `(module M : S)` — pack a module as a first-class value.
+type PackModuleExpr struct {
+	Module string
+	Sig    string // optional signature name
+	Loc    token.SourceLoc
+}
+
+func (*PackModuleExpr) exprNode() {}
+
+// UnpackModuleExpr is `(val e : S)` — unpack a first-class module.
+type UnpackModuleExpr struct {
+	Value Expr
+	Sig   string
+	Loc   token.SourceLoc
+}
+
+func (*UnpackModuleExpr) exprNode() {}
+
+// ExceptionPattern is `exception P` in match/try arms.
+type ExceptionPattern struct {
+	Pattern Pattern
+}
+
+func (*ExceptionPattern) patternNode() {}
+
+// LazyPattern is `lazy P`.
+type LazyPattern struct {
+	Pattern Pattern
+}
+
+func (*LazyPattern) patternNode() {}
+
+// Attribute is a parsed but stripped OCaml-style attribute/extension.
+type Attribute struct {
+	Name     string
+	Payload  string // raw payload text
+	Attached string // "item" | "expr" | "type" | "ext"
+}
+
+// AttrStrip holds attributes removed before typecheck (parse+strip).
+type AttrStrip struct {
+	Attrs []Attribute
+}
+
+// ClassDecl is `class [virtual] c = object (self) ... end` or `class type`.
 type ClassDecl struct {
-	Name    string
-	Self    string // optional self name
-	Fields  []ClassField
-	Methods []ClassMethod
+	Name         string
+	Self         string // optional self name
+	Fields       []ClassField
+	Methods      []ClassMethod
+	Inherits     []string
+	Initializers []Expr
+	Constraints  []ClassConstraint
+	Virtual      bool
+	TypeOnly     bool
 }
 
 func (*ClassDecl) topDeclNode() {}
@@ -733,11 +882,20 @@ type ClassField struct {
 	Value   Expr
 }
 
-// ClassMethod is `method name = e` or `method name params = e`.
+// ClassMethod is `method [private] [virtual] name ...`.
 type ClassMethod struct {
-	Name   string
-	Params []Param
-	Body   Expr
+	Name    string
+	Params  []Param
+	Body    Expr
+	Type    Type // declared type for virtual methods
+	Private bool
+	Virtual bool
+}
+
+// ClassConstraint is `constraint left = right`.
+type ClassConstraint struct {
+	Left  Type
+	Right Type
 }
 
 // CompExpr is a computation expression: `builder { ops }` (removed in 1.0; kept for AST compat during migration errors).
@@ -800,7 +958,7 @@ func (*BodyOp) compOpNode() {}
 
 // GoExpr is a `go expr` or `go (move x, ...) expr` expression.
 type GoExpr struct {
-	Moved []string        // optional move list
+	Moved []string // optional move list
 	Expr  Expr
 	Loc   token.SourceLoc // source location
 }
@@ -881,6 +1039,14 @@ type ConstructorPattern struct {
 }
 
 func (*ConstructorPattern) patternNode() {}
+
+// PolyvarPattern matches “ `Tag “ or “ `Tag p “.
+type PolyvarPattern struct {
+	Tag string
+	Arg Pattern
+}
+
+func (*PolyvarPattern) patternNode() {}
 
 // OrPattern is `| A | B` (or-pattern).
 type OrPattern struct {
@@ -986,6 +1152,16 @@ func typeString(t Type) string {
 			s += "| .. "
 		}
 		return s + "}"
+	case *TObject:
+		parts := make([]string, len(t.Methods))
+		for i, m := range t.Methods {
+			parts[i] = m.Name + ": " + typeString(m.Type)
+		}
+		s := "< " + strings.Join(parts, "; ")
+		if t.Open {
+			s += " | .."
+		}
+		return s + " >"
 	case *TChan:
 		return typeString(t.Elem) + " chan"
 	case *RefinementType:
@@ -1095,7 +1271,23 @@ func ExprString(e Expr) string {
 		}
 		return ExprString(e.Target) + op + ExprString(e.Value)
 	case *ForExpr:
-		return fmt.Sprintf("for %s = %s to %s do %s done", e.Var, ExprString(e.From), ExprString(e.To), ExprString(e.Body))
+		kw := "to"
+		if e.Down {
+			kw = "downto"
+		}
+		return fmt.Sprintf("for %s = %s %s %s do %s done", e.Var, ExprString(e.From), kw, ExprString(e.To), ExprString(e.Body))
+	case *LetOpenExpr:
+		bang := ""
+		if e.Force {
+			bang = "!"
+		}
+		return fmt.Sprintf("let open%s %s in %s", bang, e.Path, ExprString(e.Body))
+	case *LocalOpenExpr:
+		return e.Path + ".(" + ExprString(e.Body) + ")"
+	case *ContinueExpr:
+		return "continue " + ExprString(e.Cont) + " " + ExprString(e.Arg)
+	case *DiscontinueExpr:
+		return "discontinue " + ExprString(e.Cont) + " " + ExprString(e.Exn)
 	case *BeginExpr:
 		parts := make([]string, len(e.Stmts))
 		for i, s := range e.Stmts {
@@ -1203,6 +1395,8 @@ func ExprString(e Expr) string {
 		return "`" + e.Tag
 	case *ObjectExpr:
 		return "object ... end"
+	case *MethodSendExpr:
+		return ExprString(e.Target) + "#" + e.Method
 	case *NewExpr:
 		return "new " + e.Class
 	case *LetModuleExpr:
@@ -1259,6 +1453,8 @@ func ExprLoc(e Expr) token.SourceLoc {
 		return e.Loc
 	case *FieldAccessExpr:
 		return e.Loc
+	case *MethodSendExpr:
+		return e.Loc
 	case *TupleExpr:
 		return e.Loc
 	case *ListExpr:
@@ -1270,6 +1466,18 @@ func ExprLoc(e Expr) token.SourceLoc {
 	case *AssignExpr:
 		return e.Loc
 	case *ForExpr:
+		return e.Loc
+	case *LetOpenExpr:
+		return e.Loc
+	case *LocalOpenExpr:
+		return e.Loc
+	case *ContinueExpr:
+		return e.Loc
+	case *DiscontinueExpr:
+		return e.Loc
+	case *PackModuleExpr:
+		return e.Loc
+	case *UnpackModuleExpr:
 		return e.Loc
 	case *BeginExpr:
 		return e.Loc

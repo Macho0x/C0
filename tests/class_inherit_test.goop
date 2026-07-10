@@ -1,0 +1,22 @@
+module ClassInheritTest
+
+class type answerable = object
+  method answer : int
+end
+
+type answer = < value : int >
+
+class virtual base = object
+  method virtual value : int
+end
+
+class child = object
+  inherit base
+  method value = 42
+  initializer assert true
+  constraint int = int
+end
+
+let main () =
+  let c = new child in
+  assert (c#value = 42)

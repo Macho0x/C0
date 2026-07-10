@@ -128,6 +128,7 @@ const (
 	PIPEPIPE
 	NOT
 	BANG // ! deref (and legacy let! rejected)
+	HASH // # object method send
 	PLUSDOT
 	MINUSDOT
 	SLASHDOT
@@ -143,10 +144,16 @@ const (
 	// --- imperative ---
 	FOR
 	TO
+	DOWNTO
 	DO
 	DONE
 	BEGIN
 	END
+
+	// --- effects sugar / modules ---
+	CONTINUE
+	DISCONTINUE
+	FUNCTOR
 
 	tokenCount
 )
@@ -174,11 +181,12 @@ var tokenNames = [...]string{
 	DOT: ".", COMMA: ",", STAR: "*", STARDOT: "*.", PLUS: "+", MINUS: "-", SLASH: "/",
 	UNDERSCORE: "_", CONS: "::", QUESTION: "?", PIPEOP: "|>", DIAMOND: "<>",
 	NEQ: "!=", EQEQ: "==", LEQ: "<=", GEQ: ">=", LT: "<", GT: ">", CARET: "^",
-	LARROW: "<-", AMPAMP: "&&", PIPEPIPE: "||", BANG: "!",
+	LARROW: "<-", AMPAMP: "&&", PIPEPIPE: "||", BANG: "!", HASH: "#",
 	PLUSDOT: "+.", MINUSDOT: "-.", SLASHDOT: "/.", PERCENT: "%", BACKTICK: "`",
 	TILDE: "~",
-	CHAN: "chan", GO: "go", MOVE: "move",
-	FOR: "for", TO: "to", DO: "do", DONE: "done", BEGIN: "begin", END: "end",
+	CHAN:  "chan", GO: "go", MOVE: "move",
+	FOR: "for", TO: "to", DOWNTO: "downto", DO: "do", DONE: "done", BEGIN: "begin", END: "end",
+	CONTINUE: "continue", DISCONTINUE: "discontinue", FUNCTOR: "functor",
 }
 
 func (t TokenType) String() string {
@@ -197,7 +205,7 @@ func (t TokenType) IsKeyword() bool {
 		CLASS, OBJECT, METHOD, INHERIT, INITIALIZER, VIRTUAL, CONSTRAINT,
 		STRUCT, SIG, INCLUDE, LAZY, ASSERT, FAILWITH, MOD, LAND, LOR, LXOR,
 		NEW, REF, GUARD, IS, PANIC, NEWTYPE, USING, CHAN, GO, MOVE, NOT,
-		FOR, TO, DO, DONE, BEGIN, END:
+		FOR, TO, DOWNTO, DO, DONE, BEGIN, END, CONTINUE, DISCONTINUE, FUNCTOR:
 		return true
 	}
 	return false
@@ -382,6 +390,8 @@ func LookupKeyword(s string) TokenType {
 		return FOR
 	case "to":
 		return TO
+	case "downto":
+		return DOWNTO
 	case "do":
 		return DO
 	case "done":
@@ -390,6 +400,12 @@ func LookupKeyword(s string) TokenType {
 		return BEGIN
 	case "end":
 		return END
+	case "continue":
+		return CONTINUE
+	case "discontinue":
+		return DISCONTINUE
+	case "functor":
+		return FUNCTOR
 	}
 	return IDENT
 }

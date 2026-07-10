@@ -1,0 +1,14 @@
+module ExtensibleVariantTest
+
+type event = ..
+type event += Tick of int
+type event += Stop
+
+let describe (e : event) : string =
+  match e with
+  | Tick n -> int_to_string n
+  | Stop -> "stop"
+  | _ -> "future"
+
+let main () =
+  assert (describe (Tick 7) = "7" && describe Stop = "stop")

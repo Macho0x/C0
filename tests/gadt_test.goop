@@ -1,0 +1,8 @@
+module GadtTest
+
+type _ t =
+  | Int : int t
+  | String : string t
+
+let main () =
+  assert true

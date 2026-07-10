@@ -1,0 +1,25 @@
+module FunctorTest
+
+module type S = sig
+  val value : int
+end
+
+module Input : S = struct
+  let value : int = 42
+end
+
+module F (X : S) = struct
+  let answer : int = 42
+end
+
+module Output = F(Input)
+open Output
+
+module rec A = struct
+  let a : int = 1
+end and B = struct
+  let b : int = 2
+end
+
+let main () =
+  assert (answer = 42 && a = 1 && b = 2)

@@ -113,6 +113,10 @@ type Checker struct {
 	effectInference bool              // infer effect rows from bodies when true
 	mutableVars     map[string]bool   // bindings that may be assigned via <-
 	modules         map[string]*moduleExports
+	moduleTypes     map[string]*moduleSignature
+	functors        map[string]*functorDef
+	extensible      map[string]bool
+	classes         map[string]*classInfo
 }
 
 // pkgFromPath extracts a Go package name from an import path (last segment).
@@ -193,6 +197,10 @@ func checkWithDepsAndImports(mod *ast.Module, deps map[string]*ast.Module, resol
 		effectInference: cfg.Check.EffectInference,
 		mutableVars:     make(map[string]bool),
 		modules:         make(map[string]*moduleExports),
+		moduleTypes:     make(map[string]*moduleSignature),
+		functors:        make(map[string]*functorDef),
+		extensible:      make(map[string]bool),
+		classes:         make(map[string]*classInfo),
 	}
 	c.initBuiltins()
 	c.importedModule = mod.Name
@@ -202,7 +210,6 @@ func checkWithDepsAndImports(mod *ast.Module, deps map[string]*ast.Module, resol
 		c.bindDependencyExports(deps)
 	}
 	c.checkModule(mod)
-	c.checkMLIIfPresent(mod, srcFile)
 
 	// Apply the final substitution to all recorded types so they are fully
 	// resolved (no free type variables remain that were unified).
@@ -418,6 +425,11 @@ func (c *Checker) checkModule(mod *ast.Module) {
 		c.env.Bind(td.Name, scheme)
 		typeDecls[td.Name] = scheme
 	}
+	for _, d := range mod.Decls {
+		if ext, ok := d.(*ast.ExtensibleVariantDecl); ok {
+			c.extendVariant(ext)
+		}
+	}
 	_ = typeDecls
 
 	// bindImportSpecs runs before checkModule when imports are present
@@ -431,6 +443,8 @@ func (c *Checker) checkModule(mod *ast.Module) {
 			c.bindExternVals("", d.Vals)
 		case *ast.TypeDecl:
 			// Already handled in first pass
+		case *ast.ExtensibleVariantDecl:
+			// Registered with its base type in the first pass.
 		case *ast.ExceptionDecl:
 			c.checkExceptionDecl(d)
 		case *ast.EffectDecl, *ast.NestedModuleDecl, *ast.ModuleTypeDecl,
@@ -506,6 +520,11 @@ func (c *Checker) convertTypeDecl(td *ast.TypeDecl) *types.Scheme {
 	case *ast.GADTTypeKind:
 		return c.convertGADT(td, k)
 
+	case *ast.ExtensibleTypeKind:
+		adt := &types.TAdt{Name: td.Name, Linear: td.Quantity == 1}
+		c.extensible[td.Name] = true
+		return types.Mono(adt)
+
 	case *ast.AliasTypeKind:
 		t := c.convertASTType(k.Alias)
 		return types.Mono(t)
@@ -518,6 +537,37 @@ func (c *Checker) convertTypeDecl(td *ast.TypeDecl) *types.Scheme {
 		return types.Mono(nt)
 	}
 	return types.Mono(types.Unit)
+}
+
+func (c *Checker) extendVariant(d *ast.ExtensibleVariantDecl) {
+	s := c.env.Lookup(d.TypeName)
+	if s == nil {
+		c.errorf("cannot extend unknown type %s", d.TypeName)
+		return
+	}
+	adt, ok := s.Type.(*types.TAdt)
+	if !ok || !c.extensible[d.TypeName] {
+		c.errorf("type %s is not extensible", d.TypeName)
+		return
+	}
+	for _, cs := range d.Cases {
+		for _, existing := range adt.Variants {
+			if existing.Name == cs.Name {
+				c.errorf("constructor %s is already defined", cs.Name)
+				continue
+			}
+		}
+		v := types.Variant{Name: cs.Name}
+		if cs.Arg != nil {
+			v.Arg = c.convertASTType(cs.Arg)
+		}
+		adt.Variants = append(adt.Variants, v)
+		var ctorType types.Type = adt
+		if v.Arg != nil {
+			ctorType = &types.TFun{From: v.Arg, To: adt}
+		}
+		c.env.Bind(cs.Name, types.Mono(ctorType))
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -627,6 +677,21 @@ func (c *Checker) convertASTType(at ast.Type) types.Type {
 			fields[i] = types.Field{Name: f.Name, Type: c.convertASTType(f.Type)}
 		}
 		return &types.TRecord{Fields: fields, Open: t.Open}
+	case *ast.TObject:
+		methods := make([]types.Field, len(t.Methods))
+		for i, m := range t.Methods {
+			methods[i] = types.Field{Name: m.Name, Type: c.convertASTType(m.Type)}
+		}
+		return &types.TRecord{Fields: methods, Open: t.Open}
+	case *ast.TPolyVariant:
+		variants := make([]types.Variant, len(t.Cases))
+		for i, cs := range t.Cases {
+			variants[i] = types.Variant{Name: cs.Name}
+			if cs.Arg != nil {
+				variants[i].Arg = c.convertASTType(cs.Arg)
+			}
+		}
+		return &types.PolyVariant{Variants: variants, Open: t.Open, UpperBound: t.UpperBound}
 	case *ast.RefinementType:
 		// Refinement types are transparent — only the inner type matters.
 		// The where clause is a runtime contract, not a type-level constraint.
@@ -722,7 +787,7 @@ func (c *Checker) checkLetRec(d *ast.LetDecl) {
 			} else {
 				paramType = c.fresh(b.Params[j].Name)
 			}
-			t = &types.TFun{From: paramType, To: t}
+			t = &types.TFun{From: paramType, To: t, Label: b.Params[j].Label, Optional: b.Params[j].Optional}
 		}
 		// Attach effect row if specified
 		if b.RetEffects != nil && len(b.Params) > 0 {
@@ -786,7 +851,7 @@ func (c *Checker) checkBinding(b ast.LetBinding) types.Type {
 	// Wrap in function types (curried)
 	result := bodyType
 	for i := len(paramTypes) - 1; i >= 0; i-- {
-		result = &types.TFun{From: paramTypes[i], To: result}
+		result = &types.TFun{From: paramTypes[i], To: result, Label: b.Params[i].Label, Optional: b.Params[i].Optional}
 	}
 
 	// Attach effect row to the outermost function type if specified
@@ -842,6 +907,8 @@ func (c *Checker) infer(e ast.Expr) types.Type {
 		t = c.inferRecordUpdate(e)
 	case *ast.FieldAccessExpr:
 		t = c.inferFieldAccess(e)
+	case *ast.MethodSendExpr:
+		t = c.inferMethodSend(e)
 	case *ast.TupleExpr:
 		t = c.inferTuple(e)
 	case *ast.ListExpr:
@@ -884,8 +951,20 @@ func (c *Checker) infer(e ast.Expr) types.Type {
 		t = c.inferNew(e)
 	case *ast.LetModuleExpr:
 		t = c.inferLetModule(e)
+	case *ast.LetOpenExpr:
+		t = c.inferLetOpen(e)
+	case *ast.LocalOpenExpr:
+		t = c.inferLocalOpen(e)
+	case *ast.ContinueExpr:
+		t = c.inferContinue(e)
+	case *ast.DiscontinueExpr:
+		t = c.inferDiscontinue(e)
 	case *ast.ModuleAppExpr:
 		t = types.Unit
+	case *ast.PackModuleExpr:
+		t = c.inferPackModule(e)
+	case *ast.UnpackModuleExpr:
+		t = c.inferUnpackModule(e)
 	case *ast.LabelledArgExpr:
 		t = c.inferLabelledArg(e)
 	case *ast.GuardExpr:
@@ -999,6 +1078,17 @@ func (c *Checker) inferApp(e *ast.AppExpr) types.Type {
 		}
 	} else {
 		argType = c.infer(e.Arg)
+	}
+	// A positional argument skips any outstanding optional labelled
+	// parameters. Their defaults are supplied by the callee/codegen.
+	if _, labelled := e.Arg.(*ast.LabelledArgExpr); !labelled {
+		for {
+			fn, ok := types.Apply(c.sub, funcType).(*types.TFun)
+			if !ok || !fn.Optional {
+				break
+			}
+			funcType = fn.To
+		}
 	}
 
 	resultType := c.fresh("result")
@@ -1268,10 +1358,7 @@ func (c *Checker) inferPolyvar(e *ast.PolyvarExpr) types.Type {
 	if e.Arg != nil {
 		argType = c.infer(e.Arg)
 	}
-	return &types.TAdt{
-		Name:     "`" + e.Tag,
-		Variants: []types.Variant{{Name: e.Tag, Arg: argType}},
-	}
+	return &types.PolyVariant{Variants: []types.Variant{{Name: e.Tag, Arg: argType}}, Open: true}
 }
 
 func (c *Checker) inferFor(e *ast.ForExpr) types.Type {
@@ -1343,7 +1430,7 @@ func (c *Checker) inferFun(e *ast.FunExpr) types.Type {
 
 	result := bodyType
 	for i := len(paramTypes) - 1; i >= 0; i-- {
-		result = &types.TFun{From: paramTypes[i], To: result}
+		result = &types.TFun{From: paramTypes[i], To: result, Label: e.Params[i].Label, Optional: e.Params[i].Optional}
 	}
 	return result
 }
@@ -1495,6 +1582,19 @@ func (c *Checker) inferFieldAccess(e *ast.FieldAccessExpr) types.Type {
 	// For unknown record types, just return the fresh result type.
 	// Full record type checking would require row types or similar.
 	return resultType
+}
+
+func (c *Checker) inferMethodSend(e *ast.MethodSendExpr) types.Type {
+	target := c.infer(e.Target)
+	result := c.fresh(e.Method)
+	if object, ok := types.Apply(c.sub, target).(*types.TRecord); ok {
+		if method := object.Lookup(e.Method); method != nil {
+			c.unify(result, method)
+			return result
+		}
+		c.errorfAt(e.Loc, "object has no method %s", e.Method)
+	}
+	return result
 }
 
 // fieldAccessName returns the dotted name for a simple field-access
@@ -1701,6 +1801,16 @@ func (c *Checker) checkPattern(loc token.SourceLoc, p ast.Pattern, scrutType typ
 		} else {
 			c.unifyAt(loc, ctorType, scrutType)
 		}
+	case *ast.PolyvarPattern:
+		payload := c.fresh("polyvar_payload")
+		if p.Arg == nil {
+			payload = nil
+		}
+		row := &types.PolyVariant{Variants: []types.Variant{{Name: p.Tag, Arg: payload}}, Open: true}
+		c.unifyAt(loc, scrutType, row)
+		if p.Arg != nil {
+			c.checkPattern(loc, p.Arg, payload)
+		}
 	case *ast.OrPattern:
 		c.checkOrPattern(loc, p, scrutType)
 	case *ast.RecordPattern:
@@ -1746,6 +1856,14 @@ func (c *Checker) checkPattern(loc token.SourceLoc, p ast.Pattern, scrutType typ
 	case *ast.AliasPattern:
 		c.checkPattern(loc, p.Pattern, scrutType)
 		c.env.Bind(p.Name, types.Mono(scrutType))
+	case *ast.ExceptionPattern:
+		// exception P matches raised values of type exn
+		c.unifyAt(loc, scrutType, &types.Prim{Name: "exn"})
+		c.checkPattern(loc, p.Pattern, &types.Prim{Name: "exn"})
+	case *ast.LazyPattern:
+		elem := c.fresh("lazy")
+		c.unifyAt(loc, scrutType, types.LazyType(elem))
+		c.checkPattern(loc, p.Pattern, elem)
 	}
 }
 

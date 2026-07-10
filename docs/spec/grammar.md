@@ -63,7 +63,7 @@ sig_item         := 'val' ident ':' type | 'type' type_binding | 'exception' …
                   | 'module' constr ':' module_type | 'open' constr
 ```
 
-`.mli` files use `sig_item*` (no `module` header required beyond package name).
+`.mli` files are **not** part of Goop 1.1 — seal modules inline with `module M : S = …`.
 
 ## Value declarations
 

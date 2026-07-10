@@ -1,0 +1,7 @@
+module ObjectMethodTest
+
+let main () =
+  let o = object
+    method answer = 42
+  end in
+  assert (o#answer = 42)

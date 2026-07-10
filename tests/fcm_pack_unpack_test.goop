@@ -1,0 +1,15 @@
+module FcmPackUnpackTest
+
+module type S = sig
+  val answer : int
+end
+
+module M : S = struct
+  let answer : int = 42
+end
+
+let packed = (module M : S)
+let unpacked = (val packed : S)
+
+let main () =
+  assert true

@@ -3,4 +3,12 @@ module ExceptionTest
 exception Boom
 exception Fail of string
 
-let main () = assert true
+let catch_boom () : string =
+  try
+    raise Boom
+  with
+  | exception Boom -> "boom"
+  | _ -> "other"
+
+let main () =
+  assert (catch_boom () = "boom")

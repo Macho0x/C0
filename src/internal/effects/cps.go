@@ -10,6 +10,7 @@ import "goop.dev/compiler/internal/ast"
 //   - Mark functions whose bodies contain perform or effect-handler matches
 //   - Rewrite `perform e` to `__goop_perform(e)`
 //   - Rewrite effect-handler match arms to `__goop_handle` applications
+//
 // Pure functions are left unchanged.
 func TransformCPS(mod *ast.Module) *ast.Module {
 	if mod == nil || !moduleUsesEffects(mod) {
@@ -30,6 +31,10 @@ func moduleUsesEffects(mod *ast.Module) bool {
 		}
 		switch e := e.(type) {
 		case *ast.PerformExpr:
+			found = true
+		case *ast.ContinueExpr:
+			found = true
+		case *ast.DiscontinueExpr:
 			found = true
 		case *ast.MatchExpr:
 			for _, a := range e.Arms {
@@ -167,6 +172,14 @@ func transformExpr(e ast.Expr) ast.Expr {
 		return e
 	case *ast.GoExpr:
 		e.Expr = transformExpr(e.Expr)
+		return e
+	case *ast.ContinueExpr:
+		e.Cont = transformExpr(e.Cont)
+		e.Arg = transformExpr(e.Arg)
+		return e
+	case *ast.DiscontinueExpr:
+		e.Cont = transformExpr(e.Cont)
+		e.Exn = transformExpr(e.Exn)
 		return e
 	case *ast.LazyExpr:
 		e.Value = transformExpr(e.Value)

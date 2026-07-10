@@ -63,8 +63,8 @@ func CheckWithConfig(mod *ast.Module, cfg *config.Config) (errors []error, warni
 }
 
 type checker struct {
-	cfg          *config.Config
-	diagnostics  []*Error
+	cfg         *config.Config
+	diagnostics []*Error
 }
 
 func (c *checker) emit(code, msg string, loc token.SourceLoc) {
@@ -239,7 +239,7 @@ func (c *checker) checkMatch(e *ast.MatchExpr) {
 	}
 
 	adtName := c.inferADTFromPatterns(e.Arms)
-	if adtName != "" && !hasWildcard {
+	if adtName != "" && !hasWildcard && !OpenADTRegistry[adtName] {
 		allCtors := c.getADTConstructors(adtName)
 		if len(allCtors) > 0 {
 			var missing []string
@@ -304,6 +304,7 @@ func extractConstructors(p ast.Pattern) []string {
 }
 
 var ADTRegistry = make(map[string][]string)
+var OpenADTRegistry = make(map[string]bool)
 
 func RegisterADT(name string, constructors []string) {
 	ADTRegistry[name] = constructors

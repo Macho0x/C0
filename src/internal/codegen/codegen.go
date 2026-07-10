@@ -49,16 +49,18 @@ type Generator struct {
 	goFileName string // suggested output file name
 
 	// type tracking
-	adts           map[string]*ast.TypeDecl // ADT declarations
-	records        map[string]*ast.TypeDecl // record declarations
-	opaqueTypes    map[string]*ast.TypeDecl // opaque (linear) type declarations
-	newtypes       map[string]*ast.TypeDecl // nominal newtype declarations
-	usedOption     map[string]string        // Go type name → element Go type
-	usedResult     map[string][]string      // Go type name → [okGoType, errGoType]
-	usedTuple      map[string][]string      // Go type name → field Go type names
-	funcRetType    map[string]string        // Goop func name → Go return type (for ?)
-	funcParamCount map[string]int           // Goop func name → number of parameters
-	funcParamTypes map[string][]string      // Goop func name → Go types of parameters
+	adts            map[string]*ast.TypeDecl // ADT declarations
+	records         map[string]*ast.TypeDecl // record declarations
+	opaqueTypes     map[string]*ast.TypeDecl // opaque (linear) type declarations
+	newtypes        map[string]*ast.TypeDecl // nominal newtype declarations
+	classes         map[string]*ast.ClassDecl
+	extensibleCases map[string][]ast.ADTCase
+	usedOption      map[string]string   // Go type name → element Go type
+	usedResult      map[string][]string // Go type name → [okGoType, errGoType]
+	usedTuple       map[string][]string // Go type name → field Go type names
+	funcRetType     map[string]string   // Goop func name → Go return type (for ?)
+	funcParamCount  map[string]int      // Goop func name → number of parameters
+	funcParamTypes  map[string][]string // Goop func name → Go types of parameters
 
 	// inferred types from typechecker (for polymorphic codegen)
 	typeMap    typeinfo.TypeMap
@@ -86,12 +88,14 @@ type Generator struct {
 	rowParams    map[string][]string
 	rowParamName map[string]string // funcName → row param name
 
-	currentFunc string // function being generated (for ? operator)
-	varCounter  int    // for generating unique tmp variable names
-	needFmt     bool // whether to import "fmt"
-	usedChan    bool // whether any channel operations are used in this module
-	usedHTTP    bool // whether HTTP/JSON helpers are needed
-	needsEffectRuntime bool
+	currentFunc         string // function being generated (for ? operator)
+	varCounter          int    // for generating unique tmp variable names
+	needFmt             bool   // whether to import "fmt"
+	usedChan            bool   // whether any channel operations are used in this module
+	usedHTTP            bool   // whether HTTP/JSON helpers are needed
+	needsEffectRuntime  bool
+	needsLazyRuntime    bool
+	needsPolyvarRuntime bool
 
 	// refinement contract tracking
 	provenSites      refine.ProvenSites        // call sites proven safe by refinement solver
@@ -127,14 +131,16 @@ func NewGenerator(srcFile string, cfg *config.Config) *Generator {
 		records:          make(map[string]*ast.TypeDecl),
 		opaqueTypes:      make(map[string]*ast.TypeDecl),
 		newtypes:         make(map[string]*ast.TypeDecl),
+		classes:          make(map[string]*ast.ClassDecl),
+		extensibleCases:  make(map[string][]ast.ADTCase),
 		usedOption:       make(map[string]string),
 		usedResult:       make(map[string][]string),
 		usedTuple:        make(map[string][]string),
 		funcRetType:      make(map[string]string),
 		funcParamCount:   make(map[string]int),
 		funcParamTypes:   make(map[string][]string),
-		goopToGo:           make(map[string]string),
-		goToGoop:           make(map[string]string),
+		goopToGo:         make(map[string]string),
+		goToGoop:         make(map[string]string),
 		refinementParams: make(map[string][]refinedParam),
 		funcAllProven:    make(map[string]bool),
 		funcPrivate:      make(map[string]bool),
@@ -344,6 +350,8 @@ func (g *Generator) Generate(mod *ast.Module) (string, error) {
 
 	// Effect CPS runtime
 	g.emitEffectHelpers()
+	g.emitLazyHelpers()
+	g.emitPolyvarHelpers()
 
 	bodyStr := g.buf.String()
 	g.buf = origBuf
@@ -375,6 +383,9 @@ func (g *Generator) prescan(mod *ast.Module) {
 				g.adts[d.Name] = d
 				goName := g.goName(d.Name)
 				g.goopToGo[d.Name] = goName
+			case *ast.ExtensibleTypeKind:
+				g.adts[d.Name] = d
+				g.goopToGo[d.Name] = g.goName(d.Name)
 			case *ast.RecordTypeKind:
 				g.records[d.Name] = d
 				goName := g.goName(d.Name)
@@ -394,10 +405,18 @@ func (g *Generator) prescan(mod *ast.Module) {
 			}
 		case *ast.ClassDecl:
 			g.goopToGo[d.Name] = g.goName(d.Name)
+			g.classes[d.Name] = d
+		case *ast.ExtensibleVariantDecl:
+			g.extensibleCases[d.TypeName] = append(g.extensibleCases[d.TypeName], d.Cases...)
 		case *ast.LetDecl:
 			for _, b := range d.Bindings {
 				if b.RetType != nil {
 					g.funcRetType[b.Name] = g.typeToGo(b.RetType)
+				}
+				if containsCPSPerform(b.Body) {
+					// Effectful functions return an effect request until a
+					// surrounding handler resumes its continuation.
+					g.funcRetType[b.Name] = "interface{}"
 				}
 				// Filter empty-named params
 				realCount := 0
@@ -1007,6 +1026,9 @@ func (g *Generator) emitImports() {
 		imports["strconv"] = "strconv"
 		imports["time"] = "time"
 	}
+	if g.needsLazyRuntime {
+		imports["sync"] = "sync"
+	}
 	if len(imports) == 0 {
 		return
 	}
@@ -1201,6 +1223,8 @@ func (g *Generator) emitADTTypes() {
 			for _, c := range k.Cases {
 				cases = append(cases, ast.ADTCase{Name: c.Name, Arg: c.Arg})
 			}
+		case *ast.ExtensibleTypeKind:
+			cases = append(cases, g.extensibleCases[td.Name]...)
 		default:
 			continue
 		}
@@ -1464,7 +1488,10 @@ func (g *Generator) emitLetDecl(d *ast.LetDecl) {
 			g.emitParams(realParams)
 			hasReturn := b.RetType != nil && g.typeToGo(b.RetType) != "struct{}"
 			retGo := ""
-			if hasReturn {
+			if g.funcRetType[b.Name] == "interface{}" && containsCPSPerform(b.Body) {
+				hasReturn = true
+				retGo = "interface{}"
+			} else if hasReturn {
 				retGo = g.typeToGo(b.RetType)
 			} else if g.varTypeMap != nil {
 				if t, ok := g.varTypeMap[b.Name]; ok {
@@ -1673,6 +1700,8 @@ func (g *Generator) emitExpr(e ast.Expr, isStmt bool) {
 		g.emitRecordUpdate(e)
 	case *ast.FieldAccessExpr:
 		g.emitFieldAccess(e)
+	case *ast.MethodSendExpr:
+		g.emitMethodSend(e)
 	case *ast.TupleExpr:
 		g.emitTuple(e)
 	case *ast.ListExpr:
@@ -1720,8 +1749,34 @@ func (g *Generator) emitExpr(e ast.Expr, isStmt bool) {
 	case *ast.LetModuleExpr:
 		// Flatten: emit body only (decls already typechecked / opened)
 		g.emitExpr(e.Body, isStmt)
+	case *ast.LetOpenExpr:
+		g.emitExpr(e.Body, isStmt)
+	case *ast.LocalOpenExpr:
+		g.emitExpr(e.Body, isStmt)
+	case *ast.ContinueExpr:
+		// continue k x  →  k(x)
+		g.emitExpr(e.Cont, false)
+		g.buf.WriteString("(")
+		g.emitExpr(e.Arg, false)
+		g.buf.WriteString(")")
+	case *ast.DiscontinueExpr:
+		g.buf.WriteString("(func() interface{} { panic(")
+		g.emitExpr(e.Exn, false)
+		g.buf.WriteString("); return nil })()")
 	case *ast.ModuleAppExpr:
 		g.buf.WriteString("struct{}{}")
+	case *ast.PackModuleExpr:
+		if isStmt {
+			g.buf.WriteString("_ = struct{}{}")
+		} else {
+			g.buf.WriteString("struct{}{}")
+		}
+	case *ast.UnpackModuleExpr:
+		if isStmt {
+			g.buf.WriteString("_ = struct{}{}")
+		} else {
+			g.buf.WriteString("struct{}{}")
+		}
 	case *ast.IsExpr:
 		g.emitIsExpr(e)
 	case *ast.AsMatchExpr:
@@ -2185,6 +2240,24 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 
 	// Function application
 	// Check if this is a method-like call on a constructor (e.g., Console.print_line)
+	if send, ok := e.Func.(*ast.MethodSendExpr); ok {
+		args := g.collectArgs(e)
+		g.emitExpr(send.Target, false)
+		g.buf.WriteString(".")
+		g.buf.WriteString(exported(send.Method))
+		g.buf.WriteString("(")
+		for i, arg := range args[1:] {
+			if i > 0 {
+				g.buf.WriteString(", ")
+			}
+			g.emitExpr(arg, false)
+		}
+		g.buf.WriteString(")")
+		if isStmt {
+			g.buf.WriteString("\n")
+		}
+		return
+	}
 	if field, ok := e.Func.(*ast.FieldAccessExpr); ok {
 		// Check prelude for qualified names like Console.print_line
 		qualifiedName := g.fieldAccessName(field)
@@ -2585,6 +2658,28 @@ func (g *Generator) emitPreludeCall(b *prelude.Binding, args []ast.Expr, callExp
 		g.buf.WriteString("; return &v }()")
 		return
 
+	case "lazy_force":
+		g.needsLazyRuntime = true
+		g.buf.WriteString("__goop_lazy_force(")
+		if len(args) >= 1 {
+			g.emitExpr(args[0], false)
+		} else {
+			g.buf.WriteString("nil")
+		}
+		g.buf.WriteString(")")
+		return
+
+	case "lazy_from_val":
+		g.needsLazyRuntime = true
+		g.buf.WriteString("__goop_lazy_from_val(")
+		if len(args) >= 1 {
+			g.emitExpr(args[0], false)
+		} else {
+			g.buf.WriteString("nil")
+		}
+		g.buf.WriteString(")")
+		return
+
 	case "owned_chan_make":
 		// OwnedChan.make () → C0ChanMake()
 		g.usedChan = true
@@ -2795,6 +2890,12 @@ func (g *Generator) emitMatch(e *ast.MatchExpr) {
 		g.emitResultMatch(e)
 		return
 	}
+	for _, arm := range e.Arms {
+		if _, ok := arm.Pattern.(*ast.PolyvarPattern); ok {
+			g.emitPolyvarMatch(e)
+			return
+		}
+	}
 
 	// Store scrutinee in a temp for use in pattern bindings
 	g.varCounter++
@@ -2941,9 +3042,13 @@ func (g *Generator) emitReturnExpr(e ast.Expr) {
 
 	// Emit as a return statement if it's not already a statement
 	switch e.(type) {
-	case *ast.IfExpr, *ast.MatchExpr, *ast.LetInExpr, *ast.AsMatchExpr, *ast.GuardExpr, *ast.TryExpr:
+	case *ast.IfExpr, *ast.MatchExpr, *ast.LetInExpr, *ast.AsMatchExpr, *ast.GuardExpr:
 		// These emit their own stmt structure
 		g.emitExpr(e, true)
+	case *ast.TryExpr:
+		g.emitf("return ")
+		g.emitTry(e.(*ast.TryExpr), false)
+		g.buf.WriteString("\n")
 	case *ast.AssignExpr, *ast.ForExpr, *ast.WhileExpr, *ast.AssertExpr:
 		g.emitExpr(e, true)
 	case *ast.BeginExpr:
@@ -3012,7 +3117,8 @@ func (g *Generator) findVariantStruct(ctorName, typePrefix string) string {
 		if typePrefix != "" && td.Name != typePrefix {
 			continue
 		}
-		for _, c := range adtCasesOf(td) {
+		cases := append(adtCasesOf(td), g.extensibleCases[td.Name]...)
+		for _, c := range cases {
 			if c.Name == ctorName {
 				return g.goName(td.Name) + exported(c.Name)
 			}
@@ -3027,7 +3133,8 @@ func (g *Generator) findVariantStruct(ctorName, typePrefix string) string {
 // as individual arguments or pass the record expression as-is.
 func (g *Generator) isVariantRecordPayload(ctorName string) bool {
 	for _, td := range g.adts {
-		for _, c := range adtCasesOf(td) {
+		cases := append(adtCasesOf(td), g.extensibleCases[td.Name]...)
+		for _, c := range cases {
 			if c.Name == ctorName && c.Arg != nil {
 				_, ok := c.Arg.(*ast.TRecord)
 				return ok
@@ -3040,7 +3147,8 @@ func (g *Generator) isVariantRecordPayload(ctorName string) bool {
 // adtVariantField returns the struct field name for a constructor's payload.
 func (g *Generator) adtVariantField(ctorName string) string {
 	for _, td := range g.adts {
-		for _, c := range adtCasesOf(td) {
+		cases := append(adtCasesOf(td), g.extensibleCases[td.Name]...)
+		for _, c := range cases {
 			if c.Name == ctorName && c.Arg != nil {
 				return g.variantFieldName(c.Arg, td.Name, c.Name)
 			}
@@ -3205,11 +3313,34 @@ func (g *Generator) emitTry(e *ast.TryExpr, isStmt bool) {
 	g.emitf("if r := recover(); r != nil {\n")
 	g.indent++
 	if len(e.Arms) > 0 {
-		// Approximate: bind recovered value and run first arm body.
-		g.emitf("_ = r\n")
-		g.emitf("ret = ")
-		g.emitExpr(e.Arms[0].Body, false)
-		g.buf.WriteString("\n")
+		for i, arm := range e.Arms {
+			pat := arm.Pattern
+			if ep, ok := pat.(*ast.ExceptionPattern); ok {
+				pat = ep.Pattern
+			}
+			cond := "true"
+			switch p := pat.(type) {
+			case *ast.WildcardPattern, *ast.IdentPattern:
+				cond = "true"
+			case *ast.ConstructorPattern:
+				cond = fmt.Sprintf("r == %s", g.goName(p.Name))
+			}
+			if i == 0 {
+				g.emitf("if %s {\n", cond)
+			} else {
+				g.emitf("} else if %s {\n", cond)
+			}
+			g.indent++
+			if ip, ok := pat.(*ast.IdentPattern); ok {
+				g.emitf("%s := r\n", g.goName(ip.Name))
+				_ = ip
+			}
+			g.emitf("ret = ")
+			g.emitExpr(arm.Body, false)
+			g.buf.WriteString("\n")
+			g.indent--
+		}
+		g.emitf("}\n")
 	}
 	g.indent--
 	g.emitf("}\n")
@@ -3222,15 +3353,27 @@ func (g *Generator) emitTry(e *ast.TryExpr, isStmt bool) {
 		g.indent--
 		g.emitf("}()\n")
 	}
-	g.emitf("ret = ")
-	g.emitExpr(e.Body, false)
-	g.buf.WriteString("\n")
+	if _, isRaise := e.Body.(*ast.RaiseExpr); isRaise {
+		g.emitExpr(e.Body, true)
+		g.buf.WriteString("\n")
+	} else {
+		g.emitf("ret = ")
+		g.emitExpr(e.Body, false)
+		g.buf.WriteString("\n")
+	}
 	g.emitf("return\n")
 	g.indent--
 	g.buf.WriteString("}()")
 	if isStmt {
 		g.buf.WriteString("\n")
 	}
+}
+
+func (g *Generator) emitLazy(e *ast.LazyExpr) {
+	g.needsLazyRuntime = true
+	g.buf.WriteString("__goop_lazy_make(func() interface{} { return ")
+	g.emitExpr(e.Value, false)
+	g.buf.WriteString(" })")
 }
 
 func (g *Generator) emitRaise(e *ast.RaiseExpr) {
@@ -3246,25 +3389,6 @@ func (g *Generator) emitAssertExpr(e *ast.AssertExpr, isStmt bool) {
 	if isStmt {
 		g.buf.WriteString("\n")
 	}
-}
-
-func (g *Generator) emitLazy(e *ast.LazyExpr) {
-	retGo := "interface{}"
-	if g.typeMap != nil {
-		if t, ok := g.typeMap[e]; ok {
-			if tc, ok := t.(*types.TCon); ok && tc.Name == "lazy" && len(tc.Args) > 0 {
-				retGo = g.internalTypeToGo(tc.Args[0])
-			}
-		}
-		if retGo == "interface{}" {
-			if t, ok := g.typeMap[e.Value]; ok {
-				retGo = g.internalTypeToGo(t)
-			}
-		}
-	}
-	g.buf.WriteString("func() " + retGo + " { return ")
-	g.emitExpr(e.Value, false)
-	g.buf.WriteString(" }")
 }
 
 func (g *Generator) emitPerform(e *ast.PerformExpr) {
@@ -3309,19 +3433,35 @@ func (g *Generator) emitEffectHandlerMatch(e *ast.MatchExpr) {
 	g.emitf("%s := ", scrutVar)
 	g.emitExpr(e.Scrutinee, false)
 	g.buf.WriteString("\n")
-	g.emitf("_ = %s\n", scrutVar)
 
 	for _, arm := range e.Arms {
 		if !arm.EffectHandler {
 			continue
 		}
+		tag := effectPatternTag(arm.Pattern)
+		g.emitf("if _eff, _handled := %s.(__goop_eff); _handled && _eff.Tag == %q {\n", scrutVar, tag)
+		g.indent++
 		cont := arm.ContName
 		if cont == "" {
 			cont = "_k"
 		}
-		g.emitf("%s := func(x bool) bool { return x }\n", cont)
-		g.emitReturnExpr(arm.Body)
-		return
+		retGo := g.effectMatchGoType(e)
+		argGo := g.effectContinuationArgGoType(arm, retGo)
+		if retGo == "interface{}" {
+			g.emitf("%s := func(x %s) interface{} { return _eff.Cont(x) }\n", cont, argGo)
+		} else {
+			g.emitf("%s := func(x %s) %s { return _eff.Cont(x).(%s) }\n", cont, argGo, retGo, retGo)
+		}
+		g.emitf("_ = %s\n", cont)
+		if d, ok := arm.Body.(*ast.DiscontinueExpr); ok {
+			g.emitf("panic(")
+			g.emitExpr(d.Exn, false)
+			g.buf.WriteString(")\n")
+		} else {
+			g.emitReturnExpr(arm.Body)
+		}
+		g.indent--
+		g.emitf("}\n")
 	}
 	for _, arm := range e.Arms {
 		if arm.EffectHandler {
@@ -3329,11 +3469,75 @@ func (g *Generator) emitEffectHandlerMatch(e *ast.MatchExpr) {
 		}
 		if ip, ok := arm.Pattern.(*ast.IdentPattern); ok {
 			g.emitf("%s := %s\n", ip.Name, scrutVar)
+			if retGo := g.effectMatchGoType(e); retGo != "interface{}" {
+				g.emitf("return %s.(%s)\n", ip.Name, retGo)
+				return
+			}
 		}
 		g.emitReturnExpr(arm.Body)
 		return
 	}
 	g.emitf("panic(\"unreachable: effect match\")\n")
+}
+
+func (g *Generator) effectMatchGoType(e *ast.MatchExpr) string {
+	if g.typeMap != nil {
+		if typ, ok := g.typeMap[e]; ok {
+			return g.internalTypeToGo(typ)
+		}
+	}
+	return "interface{}"
+}
+
+func (g *Generator) effectContinuationArgGoType(arm ast.MatchArm, fallback string) string {
+	if c, ok := arm.Body.(*ast.ContinueExpr); ok && g.typeMap != nil {
+		if typ, ok := g.typeMap[c.Arg]; ok {
+			return g.internalTypeToGo(typ)
+		}
+	}
+	return fallback
+}
+
+func effectPatternTag(p ast.Pattern) string {
+	if p, ok := p.(*ast.ConstructorPattern); ok {
+		return p.Name
+	}
+	return ""
+}
+
+func containsCPSPerform(e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.AppExpr:
+		if id, ok := e.Func.(*ast.IdentExpr); ok && id.Name == "__goop_perform" {
+			return true
+		}
+		return containsCPSPerform(e.Func) || containsCPSPerform(e.Arg)
+	case *ast.BeginExpr:
+		for _, stmt := range e.Stmts {
+			if containsCPSPerform(stmt) {
+				return true
+			}
+		}
+	case *ast.MatchExpr:
+		if containsCPSPerform(e.Scrutinee) {
+			return true
+		}
+		for _, arm := range e.Arms {
+			if containsCPSPerform(arm.Body) || containsCPSPerform(arm.Guard) {
+				return true
+			}
+		}
+	case *ast.LetInExpr:
+		for _, binding := range e.Bindings {
+			if containsCPSPerform(binding.Body) {
+				return true
+			}
+		}
+		return containsCPSPerform(e.Body)
+	case *ast.IfExpr:
+		return containsCPSPerform(e.Cond) || containsCPSPerform(e.ThenBranch) || containsCPSPerform(e.ElseBranch)
+	}
+	return false
 }
 
 func (g *Generator) emitArrayLit(e *ast.ArrayLitExpr) {
@@ -3356,27 +3560,69 @@ func (g *Generator) emitArrayLit(e *ast.ArrayLitExpr) {
 }
 
 func (g *Generator) emitPolyvar(e *ast.PolyvarExpr) {
+	g.needsPolyvarRuntime = true
 	if e.Arg != nil {
-		g.buf.WriteString("struct{ Tag string; Arg interface{} }{Tag: ")
+		g.buf.WriteString("__goop_polyvar{Tag: ")
 		g.buf.WriteString(fmt.Sprintf("%q", e.Tag))
 		g.buf.WriteString(", Arg: ")
 		g.emitExpr(e.Arg, false)
 		g.buf.WriteString("}")
 		return
 	}
-	g.buf.WriteString("struct{ Tag string }{Tag: ")
+	g.buf.WriteString("__goop_polyvar{Tag: ")
 	g.buf.WriteString(fmt.Sprintf("%q", e.Tag))
 	g.buf.WriteString("}")
+}
+
+func (g *Generator) emitPolyvarMatch(e *ast.MatchExpr) {
+	g.needsPolyvarRuntime = true
+	g.varCounter++
+	tmp := fmt.Sprintf("_pv%d", g.varCounter)
+	g.emitf("%s := ", tmp)
+	g.emitExpr(e.Scrutinee, false)
+	g.buf.WriteString(".(__goop_polyvar)\n")
+	for i, arm := range e.Arms {
+		prefix := "if "
+		if i > 0 {
+			prefix = "} else if "
+		}
+		cond := "true"
+		if p, ok := arm.Pattern.(*ast.PolyvarPattern); ok {
+			cond = tmp + ".Tag == " + fmt.Sprintf("%q", p.Tag)
+		}
+		if cond == "true" && i > 0 {
+			g.emitf("} else {\n")
+		} else {
+			g.emitf("%s%s {\n", prefix, cond)
+		}
+		g.indent++
+		if p, ok := arm.Pattern.(*ast.PolyvarPattern); ok && p.Arg != nil {
+			g.emitPatternBinding(p.Arg, tmp+".Arg")
+		} else if ip, ok := arm.Pattern.(*ast.IdentPattern); ok {
+			g.emitf("%s := %s\n", ip.Name, tmp)
+		}
+		g.emitReturnExpr(arm.Body)
+		g.indent--
+	}
+	g.emitf("}\n")
+	g.emitf("panic(\"unreachable: unhandled polymorphic variant\")\n")
 }
 
 func (g *Generator) emitFor(e *ast.ForExpr, isStmt bool) {
 	g.emitf("for %s := ", e.Var)
 	g.emitExpr(e.From, false)
 	g.buf.WriteString("; ")
-	g.emitf("%s <= ", e.Var)
-	g.emitExpr(e.To, false)
-	g.buf.WriteString("; ")
-	g.emitf("%s++ {\n", e.Var)
+	if e.Down {
+		g.emitf("%s >= ", e.Var)
+		g.emitExpr(e.To, false)
+		g.buf.WriteString("; ")
+		g.emitf("%s-- {\n", e.Var)
+	} else {
+		g.emitf("%s <= ", e.Var)
+		g.emitExpr(e.To, false)
+		g.buf.WriteString("; ")
+		g.emitf("%s++ {\n", e.Var)
+	}
 	g.indent++
 	g.emitExpr(e.Body, true)
 	g.indent--
@@ -3404,10 +3650,22 @@ func (g *Generator) emitBegin(e *ast.BeginExpr, isStmt bool) {
 			retGo = g.internalTypeToGo(t)
 		}
 	}
+	if containsCPSPerform(e) {
+		retGo = "interface{}"
+	}
 	g.buf.WriteString("func() " + retGo + " {\n")
 	g.indent++
 	for i, s := range e.Stmts {
 		if i < len(e.Stmts)-1 {
+			if containsCPSPerform(s) {
+				// A shallow handler receives the suspended request at the
+				// nearest function boundary. Its continuation is carried in
+				// __goop_eff and is invoked by `continue`.
+				g.emitf("return ")
+				g.emitExpr(s, false)
+				g.buf.WriteString("\n")
+				break
+			}
 			switch s.(type) {
 			case *ast.ForExpr, *ast.AssignExpr:
 				g.emitExpr(s, true)
@@ -3919,6 +4177,13 @@ func (g *Generator) emitFieldAccess(e *ast.FieldAccessExpr) {
 	g.emitExpr(e.Left, false)
 	g.buf.WriteString(".")
 	g.buf.WriteString(exported(e.Field))
+}
+
+func (g *Generator) emitMethodSend(e *ast.MethodSendExpr) {
+	g.emitExpr(e.Target, false)
+	g.buf.WriteString(".")
+	g.buf.WriteString(exported(e.Method))
+	g.buf.WriteString("()")
 }
 
 func (g *Generator) emitTuple(e *ast.TupleExpr) {

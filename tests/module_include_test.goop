@@ -1,0 +1,14 @@
+module ModuleIncludeTest
+
+module Source = struct
+  let answer : int = 42
+end
+
+module Reexport = struct
+  include Source
+end
+
+open Reexport
+
+let main () =
+  assert (answer = 42)

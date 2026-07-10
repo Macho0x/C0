@@ -44,8 +44,10 @@ func Parse(file string, src []byte) (*ast.Module, error) {
 	if err != nil {
 		return nil, err
 	}
+	toks, attrs := stripAttributes(toks)
 	p := &Parser{file: file, src: src, tokens: toks}
 	mod := p.parseModule()
+	mod.Attributes = attrs
 	if len(p.errs) > 0 {
 		// Return the module along with the first error so callers can inspect
 		// partial results.
@@ -75,6 +77,13 @@ func (p *Parser) peek() token.Token {
 		return token.Token{Type: token.EOF}
 	}
 	return p.tokens[p.pos+1]
+}
+
+func (p *Parser) peekN(n int) token.Token {
+	if p.pos+n >= len(p.tokens) {
+		return token.Token{Type: token.EOF}
+	}
+	return p.tokens[p.pos+n]
 }
 
 func (p *Parser) advance() token.Token {
@@ -253,8 +262,8 @@ func (p *Parser) canStartExpr(t token.Token) bool {
 func (p *Parser) canStartPattern(t token.Token) bool {
 	switch t.Type {
 	case token.UNDERSCORE, token.IDENT, token.CONSTRUCTOR,
-		token.INT, token.FLOAT, token.STRING, token.CHAR,
-		token.TRUE, token.FALSE,
+		token.POLYVAR, token.INT, token.FLOAT, token.STRING, token.CHAR,
+		token.TRUE, token.FALSE, token.EXCEPTION, token.LAZY,
 		token.LPAREN, token.LBRACE, token.LBRACKET:
 		return true
 	default:
@@ -265,7 +274,7 @@ func (p *Parser) canStartPattern(t token.Token) bool {
 func (p *Parser) canStartType(t token.Token) bool {
 	switch t.Type {
 	case token.IDENT, token.CONSTRUCTOR, token.TYVAR,
-		token.LPAREN, token.LBRACE:
+		token.LPAREN, token.LBRACE, token.LBRACKET:
 		return true
 	default:
 		return false
@@ -282,11 +291,11 @@ func (p *Parser) parseModule() *ast.Module {
 	// Optional `module Name` file header (not `module M =` / `module type` / functor)
 	if p.cur().Type == token.MODULE {
 		next := p.peek().Type
-		if next != token.TYPE && next != token.EQUALS {
+		if next != token.TYPE && next != token.REC && next != token.EQUALS {
 			saved := p.pos
 			p.advance() // module
 			name := p.parseQualifiedName()
-			if p.cur().Type == token.EQUALS || p.cur().Type == token.LPAREN {
+			if p.cur().Type == token.EQUALS || p.cur().Type == token.LPAREN || p.cur().Type == token.COLON {
 				// Nested module / functor — rewind for top-decl parsing
 				p.pos = saved
 			} else {
@@ -512,6 +521,9 @@ func (p *Parser) parseParams() []ast.Param {
 				param.Name = tok.Lexeme
 				param.Label = tok.Lexeme
 			}
+			if p.match(token.EQUALS) {
+				param.Default = p.parsePrefix()
+			}
 			params = append(params, param)
 		case token.IDENT:
 			tok := p.advance()
@@ -542,6 +554,19 @@ func (p *Parser) parseParams() []ast.Param {
 
 func (p *Parser) parseTypeDecl(isPrivate bool) ast.TopDecl {
 	p.expect(token.TYPE)
+	// Extensible variant extension: `type t += C of ...`.
+	if (p.cur().Type == token.IDENT || p.cur().Type == token.CONSTRUCTOR) &&
+		p.peek().Type == token.PLUS && p.peekN(2).Type == token.EQUALS {
+		name := p.advance().Lexeme
+		p.advance() // +
+		p.advance() // =
+		kind := p.parseADTOrGADT()
+		if adt, ok := kind.(*ast.ADTTypeKind); ok {
+			return &ast.ExtensibleVariantDecl{TypeName: name, Cases: adt.Cases}
+		}
+		p.errorf("extensible variants must use ordinary constructors")
+		return &ast.ExtensibleVariantDecl{TypeName: name}
+	}
 
 	// We handle the first binding inline; `and` produces additional decls.
 	// NOTE: `and`-connected type decls are returned one at a time.
@@ -622,6 +647,12 @@ func (p *Parser) parseTypeBinding() *ast.TypeDecl {
 	}
 
 	p.expect(token.EQUALS)
+	if p.cur().Type == token.DOT && p.peek().Type == token.DOT {
+		p.advance()
+		p.advance()
+		d.Kind = &ast.ExtensibleTypeKind{}
+		return d
+	}
 
 	// Determine the kind of RHS
 	switch {
@@ -1026,6 +1057,12 @@ func (p *Parser) parseExpr(minPrec int) ast.Expr {
 			}
 			left = p.parseFieldAccessExpr(left)
 			continue
+		case token.HASH:
+			if precPostfix < minPrec {
+				return left
+			}
+			left = p.parseMethodSendExpr(left)
+			continue
 		case token.IS:
 			if precCompare < minPrec {
 				return left
@@ -1052,7 +1089,7 @@ func (p *Parser) parseExpr(minPrec int) ast.Expr {
 
 		// Function application (juxtaposition) — highest precedence
 		// after postfix. Only apply when on the same line (offside rule).
-		if p.canStartExpr(cur) && precApp >= minPrec && cur.Loc.Line == leftLine {
+		if (p.canStartExpr(cur) || cur.Type == token.QUESTION) && precApp >= minPrec && cur.Loc.Line == leftLine {
 			appLoc := cur.Loc // location of the argument start
 			arg := p.parsePrefix()
 			left = &ast.AppExpr{Func: left, Arg: arg, Loc: appLoc}
@@ -1093,6 +1130,8 @@ func (p *Parser) applyPostfix(left ast.Expr) ast.Expr {
 		switch p.cur().Type {
 		case token.DOT:
 			left = p.parseFieldAccessExpr(left)
+		case token.HASH:
+			left = p.parseMethodSendExpr(left)
 		default:
 			return left
 		}
@@ -1183,12 +1222,17 @@ func (p *Parser) parsePrefix() ast.Expr {
 		varName := p.parseIdentName()
 		p.expect(token.EQUALS)
 		from := p.parseExpr(0)
-		p.expect(token.TO)
+		down := false
+		if p.match(token.DOWNTO) {
+			down = true
+		} else {
+			p.expect(token.TO)
+		}
 		to := p.parseExpr(0)
 		p.expect(token.DO)
 		body := p.parseExpr(0)
 		p.expect(token.DONE)
-		return &ast.ForExpr{Var: varName, From: from, To: to, Body: body, Loc: forTok.Loc}
+		return &ast.ForExpr{Var: varName, From: from, To: to, Down: down, Body: body, Loc: forTok.Loc}
 
 	case token.WHILE:
 		whileTok := p.advance()
@@ -1253,6 +1297,16 @@ func (p *Parser) parsePrefix() ast.Expr {
 	case token.PERFORM:
 		perfTok := p.advance()
 		return &ast.PerformExpr{Op: p.parseExpr(precUnary), Loc: perfTok.Loc}
+	case token.CONTINUE:
+		contTok := p.advance()
+		k := p.parseExpr(precUnary)
+		arg := p.parseExpr(precUnary)
+		return &ast.ContinueExpr{Cont: k, Arg: arg, Loc: contTok.Loc}
+	case token.DISCONTINUE:
+		discTok := p.advance()
+		k := p.parseExpr(precUnary)
+		exn := p.parseExpr(precUnary)
+		return &ast.DiscontinueExpr{Cont: k, Exn: exn, Loc: discTok.Loc}
 	case token.REF:
 		refTok := p.advance()
 		return &ast.RefExpr{Value: p.parseExpr(precUnary), Loc: refTok.Loc}
@@ -1265,6 +1319,8 @@ func (p *Parser) parsePrefix() ast.Expr {
 		return p.parseNewExpr()
 	case token.TILDE:
 		return p.parseLabelledArg()
+	case token.QUESTION:
+		return p.parseOptionalLabelledArg()
 	case token.GUARD:
 		return p.parseGuardExpr()
 	case token.PANIC:
@@ -1310,6 +1366,25 @@ func (p *Parser) parsePrefix() ast.Expr {
 func (p *Parser) parseParenOrTupleExpr() ast.Expr {
 	lparenLoc := p.cur().Loc
 	p.expect(token.LPAREN)
+	// First-class modules: `(module M : S)` and `(val e : S)`.
+	if p.match(token.MODULE) {
+		module := p.parseQualifiedName()
+		sig := ""
+		if p.match(token.COLON) {
+			sig = p.parseSignatureRef()
+		}
+		p.expect(token.RPAREN)
+		return &ast.PackModuleExpr{Module: module, Sig: sig, Loc: lparenLoc}
+	}
+	if p.match(token.VAL) {
+		value := p.parseExpr(0)
+		sig := ""
+		if p.match(token.COLON) {
+			sig = p.parseSignatureRef()
+		}
+		p.expect(token.RPAREN)
+		return &ast.UnpackModuleExpr{Value: value, Sig: sig, Loc: lparenLoc}
+	}
 	// Unit literal
 	if p.match(token.RPAREN) {
 		return &ast.LitExpr{Value: nil, Kind: token.UNIT, Loc: lparenLoc}
@@ -1523,6 +1598,16 @@ func (p *Parser) parseLetInExpr() ast.Expr {
 	if p.peek().Type == token.MODULE {
 		return p.parseLetModuleExpr()
 	}
+	// `let open[!] M in expr`
+	if p.peek().Type == token.OPEN {
+		p.advance() // let
+		p.expect(token.OPEN)
+		force := p.match(token.BANG)
+		path := p.parseQualifiedName()
+		p.match(token.IN)
+		body := p.parseExpr(0)
+		return &ast.LetOpenExpr{Path: path, Force: force, Body: body, Loc: letLoc}
+	}
 	decl := p.parseLetDecl(false)
 	// `in` is optional — when absent the offside rule treats the next
 	// expression at the same or greater indentation as the body.
@@ -1593,6 +1678,12 @@ func (p *Parser) parseFieldAccessExpr(left ast.Expr) ast.Expr {
 	p.advance() // consume .
 	if p.cur().Type == token.LPAREN {
 		p.advance()
+		// Module local open: M.( expr ) when left is a capitalized path.
+		if path, ok := modulePathOf(left); ok {
+			body := p.parseExpr(0)
+			p.expect(token.RPAREN)
+			return &ast.LocalOpenExpr{Path: path, Body: body, Loc: dotLoc}
+		}
 		idx := p.parseExpr(0)
 		p.expect(token.RPAREN)
 		return &ast.IndexExpr{Target: left, Index: idx, Loc: dotLoc}
@@ -1604,6 +1695,40 @@ func (p *Parser) parseFieldAccessExpr(left ast.Expr) ast.Expr {
 	}
 	p.errorf("expected field name or index after '.', got %s", tok.Type)
 	return left
+}
+
+func (p *Parser) parseMethodSendExpr(target ast.Expr) ast.Expr {
+	loc := p.cur().Loc
+	p.expect(token.HASH)
+	tok := p.cur()
+	if tok.Type != token.IDENT && tok.Type != token.CONSTRUCTOR {
+		p.errorf("expected method name after #, got %s", tok.Type)
+		return target
+	}
+	p.advance()
+	return &ast.MethodSendExpr{Target: target, Method: tok.Lexeme, Loc: loc}
+}
+
+// modulePathOf returns a module path if e looks like a capitalized module reference.
+func modulePathOf(e ast.Expr) (string, bool) {
+	switch e := e.(type) {
+	case *ast.ConstructorExpr:
+		if e.Arg == nil && e.Name != "" && e.Name[0] >= 'A' && e.Name[0] <= 'Z' {
+			if e.TypePrefix != "" {
+				return e.TypePrefix + "." + e.Name, true
+			}
+			return e.Name, true
+		}
+	case *ast.IdentExpr:
+		if e.Name != "" && e.Name[0] >= 'A' && e.Name[0] <= 'Z' {
+			return e.Name, true
+		}
+	case *ast.FieldAccessExpr:
+		if base, ok := modulePathOf(e.Left); ok {
+			return base + "." + e.Field, true
+		}
+	}
+	return "", false
 }
 
 // parseQualifiedCtorName parses Type.Ctor after the first constructor token was consumed.
@@ -1686,6 +1811,23 @@ func (p *Parser) parseSimplePattern() ast.Pattern {
 			cp.Arg = p.parseSimplePattern()
 		}
 		return cp
+
+	case token.POLYVAR:
+		tok := p.advance()
+		tag, _ := tok.Literal.(string)
+		pp := &ast.PolyvarPattern{Tag: tag}
+		if p.canStartPattern(p.cur()) {
+			pp.Arg = p.parseSimplePattern()
+		}
+		return pp
+
+	case token.EXCEPTION:
+		p.advance()
+		return &ast.ExceptionPattern{Pattern: p.parseSimplePattern()}
+
+	case token.LAZY:
+		p.advance()
+		return &ast.LazyPattern{Pattern: p.parseSimplePattern()}
 
 	case token.INT, token.FLOAT, token.STRING, token.CHAR, token.TRUE, token.FALSE:
 		tok := p.advance()
@@ -1967,6 +2109,57 @@ func (p *Parser) parsePrimaryType() ast.Type {
 		}
 		p.expect(token.RBRACE)
 		return rt
+	case token.LT:
+		p.advance()
+		ot := &ast.TObject{}
+		for p.cur().Type != token.GT && p.cur().Type != token.EOF {
+			if p.match(token.PIPE) {
+				if p.cur().Type == token.DOT && p.peek().Type == token.DOT {
+					p.advance()
+					p.advance()
+					ot.Open = true
+					break
+				}
+				p.errorf("expected '..' after '|' in object type")
+				break
+			}
+			tok := p.cur()
+			if tok.Type != token.IDENT && tok.Type != token.CONSTRUCTOR {
+				p.errorf("expected method name in object type, got %s", tok.Type)
+				break
+			}
+			p.advance()
+			p.expect(token.COLON)
+			ot.Methods = append(ot.Methods, ast.FieldType{Name: tok.Lexeme, Type: p.parseType()})
+			if !p.match(token.SEMI) {
+				break
+			}
+		}
+		p.expect(token.GT)
+		return ot
+	case token.LBRACKET:
+		p.advance()
+		pt := &ast.TPolyVariant{}
+		if p.match(token.GT) {
+			pt.Open = true
+		} else if p.match(token.LT) {
+			pt.UpperBound = true
+		}
+		p.match(token.PIPE)
+		for p.cur().Type == token.POLYVAR {
+			tok := p.advance()
+			tag, _ := tok.Literal.(string)
+			cs := ast.ADTCase{Name: tag}
+			if p.match(token.OF) {
+				cs.Arg = p.parseType()
+			}
+			pt.Cases = append(pt.Cases, cs)
+			if !p.match(token.PIPE) {
+				break
+			}
+		}
+		p.expect(token.RBRACKET)
+		return pt
 	default:
 		p.errorf("unexpected token %s in type", cur.Type)
 		p.advance()

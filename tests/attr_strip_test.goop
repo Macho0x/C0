@@ -1,0 +1,12 @@
+module AttrStripTest
+
+[@@deriving show]
+
+let answer = [@inline always] [%constant 42]
+
+[%%generated
+let extra = 1
+]
+
+let main () =
+  assert (answer + extra = 43)

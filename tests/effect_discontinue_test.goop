@@ -1,0 +1,23 @@
+module EffectDiscontinueTest
+
+effect Stop : unit -> int
+exception Stopped
+
+let value () : int =
+  begin
+    perform (Stop ());
+    99
+  end
+
+let run () : int =
+  match value () with
+  | effect (Stop _) k -> discontinue k Stopped
+  | v -> v
+
+let main () =
+  assert (
+    try
+      run () = 0
+    with
+    | exception Stopped -> true
+  )
