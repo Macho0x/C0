@@ -12,15 +12,15 @@ Non-exhaustive `match` is a **compile error** by default:
 
 Example: [`trading_order.goop`](../examples/trading_order.goop) — all `OrderAck` variants handled.
 
-## Nominal newtypes
+## Nominal branding (single-ctor ADT)
 
-Brand primitive types so they cannot be confused:
+Brand primitive types so they cannot be confused (no `newtype` keyword):
 
 ```goop
-type order_id = newtype string
-type symbol = newtype string
+type order_id = Order_id of string
+type symbol = Symbol of string
 
-let oid = OrderId "ord-1"
+let oid = Order_id "ord-1"
 let sym = Symbol "ETH-USD"
 ```
 
@@ -30,9 +30,9 @@ Raw strings cannot be assigned to `order_id` without the constructor. See [`newt
 
 Using a channel before initialization is rejected. See [`channel_safety.goop`](../examples/channel_safety.goop).
 
-## Refinement contracts
+## Refinement contracts + SMT
 
-The refine pass proves simple arithmetic VCs at compile time. **Proven** call sites skip runtime guards; **unproven** sites emit call-site checks in generated Go; **disproven** sites are compile errors (REFINE001).
+The refine pass proves simple arithmetic VCs at compile time. Optional Z3 (`[check] smt = true`) strengthens proofs. **Proven** call sites skip runtime guards; **unproven** sites emit call-site checks; **disproven** sites are compile errors (REFINE001).
 
 ```goop
 let safeDiv (a: int) (b: int where b <> 0) : int = a / b
@@ -43,11 +43,10 @@ let compute (x: int) (y: int) : int =
 
 See [`refinement_solving.goop`](../examples/refinement_solving.goop) and [`contracts.goop`](../examples/contracts.goop).
 
-Configure unproven severity:
-
 ```toml
 [check]
 refinement_unproven = "warn"   # warn | error | off
+smt = false                    # optional Z3
 ```
 
 ## `goop.toml` check severities
@@ -56,15 +55,15 @@ refinement_unproven = "warn"   # warn | error | off
 |---|---|---|
 | `exhaust_redundant` | `warn` | EXHAUST001/002 |
 | `exhaust_missing` | `error` | EXHAUST003 |
-| `effect_inference` | `true` | Infer `with` from bodies |
 | `concurrent` | `error` | LINEAR006/007/008 race warnings |
 | `refinement_unproven` | `warn` | REFINE002 unproven VCs |
 | `deadlock` | `warn` | DEADLOCK001 channel deadlock lint |
+| `smt` | `false` | Optional Z3 for refinements |
 
 ## Error code reference
 
 - [Trading bot safety matrix](../design/12-trading-bot-safety.md)
-- [Full error catalog](../design/10-error-reference.md)
+- [Full error catalog](../design/10-error-reference.md) (includes PARSE-MIG010–018)
 
 ## Next steps
 

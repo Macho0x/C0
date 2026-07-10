@@ -136,11 +136,21 @@ func Default() *Prelude {
 		&pureEff,
 	)
 
-	// panic_message : string -> 'a
-	p.addWithEffects("panic_message",
+	// failwith : string -> 'a
+	p.addWithEffects("failwith",
 		types.Mono(&types.TFun{From: types.String, To: b}),
 		Lowering{Func: "panic", Pkg: ""},
 		&panicEff,
+	)
+
+	// ref : 'a -> 'a ref
+	p.addWithEffects("ref",
+		&types.Scheme{
+			Vars: []*types.TVar{a},
+			Type: &types.TFun{From: a, To: types.RefType(a)},
+		},
+		Lowering{Custom: "ref_make"},
+		&pureEff,
 	)
 
 	p.addWithEffects("Console.print_line",

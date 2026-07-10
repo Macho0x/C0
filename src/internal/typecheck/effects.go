@@ -298,6 +298,76 @@ func (c *Checker) walkEffects(e ast.Expr, out *[]string) {
 		}
 	case *ast.ParenExpr:
 		c.walkEffects(v.Inner, out)
+	case *ast.IndexExpr:
+		c.walkEffects(v.Target, out)
+		c.walkEffects(v.Index, out)
+	case *ast.AssignExpr:
+		c.walkEffects(v.Target, out)
+		c.walkEffects(v.Value, out)
+	case *ast.ForExpr:
+		c.walkEffects(v.From, out)
+		c.walkEffects(v.To, out)
+		c.walkEffects(v.Body, out)
+	case *ast.BeginExpr:
+		for _, s := range v.Stmts {
+			c.walkEffects(s, out)
+		}
+	case *ast.WhileExpr:
+		c.walkEffects(v.Cond, out)
+		c.walkEffects(v.Body, out)
+	case *ast.FunctionExpr:
+		for _, arm := range v.Arms {
+			if arm.Guard != nil {
+				c.walkEffects(arm.Guard, out)
+			}
+			c.walkEffects(arm.Body, out)
+		}
+	case *ast.RefExpr:
+		c.walkEffects(v.Value, out)
+	case *ast.DerefExpr:
+		c.walkEffects(v.Target, out)
+	case *ast.TryExpr:
+		c.walkEffects(v.Body, out)
+		for _, arm := range v.Arms {
+			if arm.Guard != nil {
+				c.walkEffects(arm.Guard, out)
+			}
+			c.walkEffects(arm.Body, out)
+		}
+		if v.Finally != nil {
+			c.walkEffects(v.Finally, out)
+		}
+	case *ast.RaiseExpr:
+		*out = c.unionEffects(*out, []string{"panic"})
+		c.walkEffects(v.Exn, out)
+	case *ast.AssertExpr:
+		*out = c.unionEffects(*out, []string{"panic"})
+		c.walkEffects(v.Cond, out)
+	case *ast.LazyExpr:
+		c.walkEffects(v.Value, out)
+	case *ast.PerformExpr:
+		c.walkEffects(v.Op, out)
+	case *ast.ArrayLitExpr:
+		for _, el := range v.Elems {
+			c.walkEffects(el, out)
+		}
+	case *ast.PolyvarExpr:
+		if v.Arg != nil {
+			c.walkEffects(v.Arg, out)
+		}
+	case *ast.ObjectExpr:
+		for _, f := range v.Fields {
+			c.walkEffects(f.Value, out)
+		}
+		for _, m := range v.Methods {
+			c.walkEffects(m.Body, out)
+		}
+	case *ast.LetModuleExpr:
+		c.walkEffects(v.Body, out)
+	case *ast.LabelledArgExpr:
+		c.walkEffects(v.Value, out)
+	case *ast.NewExpr, *ast.ModuleAppExpr:
+		// no nested exprs
 	case *ast.CompExpr, *ast.RegionExpr:
 		c.walkCompEffects(v, out)
 	}

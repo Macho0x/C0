@@ -9,20 +9,15 @@ let Close (h: Handle) : unit =
 
 (* A function that uses a handle *)
 let useHandle (h: Handle) : unit =
-  print_line "using handle"
+  begin
+    print_line "using handle";
+    Close h
+  end
 
-(* region demonstrates scoped resource management.
-   let! acquires a linear resource; it is auto-closed at region exit.
-   For v1, handle values can't be created in pure Goop — they come from
-   extern Go functions. This example demonstrates the structure.
-   In real code, `makeHandle` would be an extern call to a Go function
-   that allocates a resource. *)
+(* Scoped resource management without region CE:
+   use the handle, then Close discharges it. *)
 let process (h: Handle) : unit =
-  region {
-    let! x = h
-    do! useHandle x
-    return ()
-  }
+  useHandle h
 
 let main () =
   print_line "region demo"

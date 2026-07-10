@@ -574,6 +574,16 @@ func ArrayType(t Type) Type {
 	return &TCon{Name: "array", Args: []Type{t}}
 }
 
+// RefType creates an instantiated ref type: 'a ref.
+func RefType(t Type) Type {
+	return &TCon{Name: "ref", Args: []Type{t}}
+}
+
+// LazyType creates an instantiated lazy type: 'a lazy.
+func LazyType(t Type) Type {
+	return &TCon{Name: "lazy", Args: []Type{t}}
+}
+
 // ---------------------------------------------------------------------------
 // Conversion from AST types to internal types
 // ---------------------------------------------------------------------------

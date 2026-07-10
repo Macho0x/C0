@@ -1,6 +1,6 @@
 module Trading.AllMidsBot
 
-type symbol = newtype string
+type symbol = | Symbol of string
 
 let midPrice (sym: symbol) : float =
   100.0
@@ -8,7 +8,7 @@ let midPrice (sym: symbol) : float =
 let decide (px: float) : string =
   if px > 100.0 then "sell" else "buy"
 
-let main () : unit with { io } =
+let main () : unit =
   let sym = Symbol "BTC-USD" in
   let px = midPrice sym in
   print_line (decide px)

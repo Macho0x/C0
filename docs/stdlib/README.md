@@ -12,11 +12,11 @@ For production code, **Go’s standard library** is the main dependency — use 
 
 ## Prelude
 
-[Prelude reference](prelude.md) — `print_line`, `Chan.*`, `OwnedChan.*`, string helpers, assertions.
+[Prelude reference](prelude.md) — `print_line`, `ref`, `failwith`, `Chan.*`, `OwnedChan.*`, string helpers, assertions.
 
 ## Builtins
 
-[Language builtins](builtins.md) — primitive types, `list`, `option`, `result`.
+[Language builtins](builtins.md) — primitive types, `list`, `array`, `ref`, `option`, `result`.
 
 ## std.* modules
 

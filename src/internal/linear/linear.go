@@ -15,10 +15,11 @@
 // Linear types are erased in Go output — this is purely compile-time checking.
 //
 // Goroutine sharing analysis: extends the linear checker to detect potential
-// data races when `mutable` variables are captured by `go` closures while
-// still accessible in the spawning scope. Flow-sensitive liveness suppresses
-// false positives when the spawning scope does not access the variable after `go`.
-// Linear variables captured by `go` are handed off to the goroutine.
+// data races when `ref` cells (and legacy mutable bindings) are captured by
+// `go` closures while still accessible in the spawning scope. Flow-sensitive
+// liveness suppresses false positives when the spawning scope does not access
+// the variable after `go`. Linear variables captured by `go` are handed off
+// to the goroutine.
 package linear
 
 import (
@@ -78,10 +79,10 @@ type checker struct {
 	errors            []*Error        // accumulated errors
 	live              map[string]bool // live linear variables
 	allLinear         map[string]bool // all linear variables ever bound (for double-use detection)
-	mutableVars       map[string]bool // mutable variables currently in scope
-	goroutineCaptured map[string]bool // mutable vars already captured by a go (per-binding)
-	pendingGoRace     map[string]bool // mutable captures pending liveness check at scope end
-	accessedAfterGo   map[string]bool // mutable vars accessed after a go in current scope
+	mutableVars       map[string]bool // ref/mutable cells currently in scope
+	goroutineCaptured map[string]bool // ref/mutable vars already captured by a go (per-binding)
+	pendingGoRace     map[string]bool // ref/mutable captures pending liveness check at scope end
+	accessedAfterGo   map[string]bool // ref/mutable vars accessed after a go in current scope
 	goSeenInSeq       bool            // sequential go seen in current binding body
 	borrowVarName     string          // when set, useVar treats this variable as a borrow (no discharge)
 	inGoHandoff       bool            // checking closure body handed off to goroutine
@@ -212,18 +213,34 @@ func (c *checker) useVar(name string) {
 // Module-level dispatch
 // ---------------------------------------------------------------------------
 
+// isRefAlloc reports whether e is a `ref …` allocation (parens unwrapped).
+func isRefAlloc(e ast.Expr) bool {
+	for {
+		switch v := e.(type) {
+		case *ast.ParenExpr:
+			e = v.Inner
+		case *ast.RefExpr:
+			return true
+		default:
+			return false
+		}
+	}
+}
+
 func (c *checker) checkModule(mod *ast.Module) {
-	// Initialize module-level mutable tracking
+	// Initialize module-level mutable/ref tracking
 	c.mutableVars = make(map[string]bool)
 	c.pendingGoRace = make(map[string]bool)
 	c.accessedAfterGo = make(map[string]bool)
 
-	// First pass: collect module-level mutable variable declarations.
+	// First pass: collect module-level mutable/ref variable declarations.
 	// These variables are visible to all subsequent bindings.
 	for _, d := range mod.Decls {
-		if d, ok := d.(*ast.LetDecl); ok && d.Mutable {
+		if d, ok := d.(*ast.LetDecl); ok {
 			for _, b := range d.Bindings {
-				c.mutableVars[b.Name] = true
+				if d.Mutable || (len(b.Params) == 0 && isRefAlloc(b.Body)) {
+					c.mutableVars[b.Name] = true
+				}
 			}
 		}
 	}
@@ -368,8 +385,8 @@ func (c *checker) checkExpr(e ast.Expr) {
 					c.bindLinear(b.Name)
 				}
 
-				// If the LetInExpr is mutable, track the binding as mutable
-				if e.Mutable {
+				// Track legacy mutable bindings and `ref` allocations as mutable cells
+				if e.Mutable || isRefAlloc(b.Body) {
 					c.mutableVars[b.Name] = true
 				}
 			} else {
@@ -446,6 +463,21 @@ func (c *checker) checkExpr(e ast.Expr) {
 	case *ast.BinaryExpr:
 		c.checkExpr(e.Left)
 		c.checkExpr(e.Right)
+
+	case *ast.AssignExpr:
+		c.checkExpr(e.Target)
+		c.checkExpr(e.Value)
+
+	case *ast.RefExpr:
+		c.checkExpr(e.Value)
+
+	case *ast.DerefExpr:
+		c.checkExpr(e.Target)
+
+	case *ast.BeginExpr:
+		for _, s := range e.Stmts {
+			c.checkExpr(s)
+		}
 
 	case *ast.PipeExpr:
 		c.checkExpr(e.Left)
@@ -743,6 +775,21 @@ func (c *checker) collectFreeVars(e ast.Expr, locals map[string]bool) map[string
 	case *ast.BinaryExpr:
 		mergeInto(result, c.collectFreeVars(e.Left, locals))
 		mergeInto(result, c.collectFreeVars(e.Right, locals))
+
+	case *ast.AssignExpr:
+		mergeInto(result, c.collectFreeVars(e.Target, locals))
+		mergeInto(result, c.collectFreeVars(e.Value, locals))
+
+	case *ast.RefExpr:
+		mergeInto(result, c.collectFreeVars(e.Value, locals))
+
+	case *ast.DerefExpr:
+		mergeInto(result, c.collectFreeVars(e.Target, locals))
+
+	case *ast.BeginExpr:
+		for _, s := range e.Stmts {
+			mergeInto(result, c.collectFreeVars(s, locals))
+		}
 
 	case *ast.PipeExpr:
 		mergeInto(result, c.collectFreeVars(e.Left, locals))

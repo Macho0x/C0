@@ -1,9 +1,9 @@
 // Package lexer implements a hand-written lexer for Goop.
 //
 // It handles:
-//   - Nested block comments (* ... *)
+//   - Nested block comments (* ... *) and line comments //
 //   - Double-quoted strings (no escape sequences yet)
-//   - Integers, floats, chars
+//   - Integers, floats, chars, polymorphic variants (`Tag)
 //   - All keywords and operators defined in the token package
 package lexer
 
@@ -83,8 +83,12 @@ func (l *Lexer) run() {
 			l.skipWhitespace()
 		case r == '(' && l.peekByte(1) == '*':
 			l.skipBlockComment()
+		case r == '/' && l.peekByte(1) == '/':
+			l.skipLineComment()
 		case r == '"':
 			l.lexString()
+		case r == '`':
+			l.lexPolyvar()
 		case r == '\'':
 			l.lexCharOrTyvar()
 		case r == '-' && l.peekByte(1) == '>':
@@ -104,15 +108,22 @@ func (l *Lexer) run() {
 			case l.peekByte(1) == '|':
 				l.consumeN(2)
 				l.emit(token.PIPEPIPE, "||", nil)
+			case l.peekByte(1) == ']':
+				l.consumeN(2)
+				l.emit(token.PIPERBRACKET, "|]", nil)
 			default:
 				l.consumeN(1)
 				l.emit(token.PIPE, "|", nil)
 			}
 		case r == ':':
-			if l.peekByte(1) == ':' {
+			switch {
+			case l.peekByte(1) == ':':
 				l.consumeN(2)
 				l.emit(token.CONS, "::", nil)
-			} else {
+			case l.peekByte(1) == '=':
+				l.consumeN(2)
+				l.emit(token.COLONEQ, ":=", nil)
+			default:
 				l.consumeN(1)
 				l.emit(token.COLON, ":", nil)
 			}
@@ -189,6 +200,7 @@ func (l *Lexer) run() {
 				l.emit(token.STAR, "*", nil)
 			}
 		case r == '/':
+			// // already handled above; /. is float div
 			if l.peekByte(1) == '.' {
 				l.consumeN(2)
 				l.emit(token.SLASHDOT, "/.", nil)
@@ -208,6 +220,9 @@ func (l *Lexer) run() {
 		case r == '?':
 			l.consumeN(1)
 			l.emit(token.QUESTION, "?", nil)
+		case r == '~':
+			l.consumeN(1)
+			l.emit(token.TILDE, "~", nil)
 		case r == '(':
 			l.consumeN(1)
 			l.emit(token.LPAREN, "(", nil)
@@ -221,8 +236,13 @@ func (l *Lexer) run() {
 			l.consumeN(1)
 			l.emit(token.RBRACE, "}", nil)
 		case r == '[':
-			l.consumeN(1)
-			l.emit(token.LBRACKET, "[", nil)
+			if l.peekByte(1) == '|' {
+				l.consumeN(2)
+				l.emit(token.LBRACKETPIPE, "[|", nil)
+			} else {
+				l.consumeN(1)
+				l.emit(token.LBRACKET, "[", nil)
+			}
 		case r == ']':
 			l.consumeN(1)
 			l.emit(token.RBRACKET, "]", nil)
@@ -349,6 +369,37 @@ func (l *Lexer) skipBlockComment() {
 		}
 	}
 	l.errorf("unterminated block comment (depth %d)", depth)
+}
+
+func (l *Lexer) skipLineComment() {
+	l.consumeN(2) // skip //
+	for l.pos < len(l.src) {
+		r, _ := l.peekRune()
+		if r == '\n' || r == 0 {
+			return
+		}
+		l.advance()
+	}
+}
+
+func (l *Lexer) lexPolyvar() {
+	l.consumeN(1) // skip `
+	start := l.pos
+	r, _ := l.peekRune()
+	if !isIdentStart(r) && !unicode.IsUpper(r) {
+		l.errorf("expected constructor name after '`'")
+		return
+	}
+	l.advance()
+	for {
+		r, _ := l.peekRune()
+		if !isIdentContinue(r) {
+			break
+		}
+		l.advance()
+	}
+	name := string(l.src[start:l.pos])
+	l.emit(token.POLYVAR, "`"+name, name)
 }
 
 // ---------------------------------------------------------------------------

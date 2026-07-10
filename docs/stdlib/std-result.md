@@ -21,4 +21,4 @@ let succeeded (r: (int, string) result) : bool =
   isOk r
 ```
 
-For control flow, use `match` or `result { ... }` with `?` propagation — see [tutorial chapter 3](../tutorial/03-errors-and-effects.md).
+For control flow, use `match` on `result` — see [tutorial chapter 3](../tutorial/03-errors-and-effects.md).

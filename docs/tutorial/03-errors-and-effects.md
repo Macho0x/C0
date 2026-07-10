@@ -1,59 +1,49 @@
 # 3. Errors and effects
 
-## Result type and `?`
+## Result type
 
-`result` models success or failure. Use `?` inside `result { ... }` blocks to propagate errors:
-
-```goop
-let parseInt (s: string) : int result = ...
-
-let compute (input: string) : int result =
-  result {
-    let! n = parseInt input;
-    let! doubled = Ok (n + n);
-    return doubled
-  }
-```
-
-See [`result.goop`](../examples/result.goop) and [`computation.goop`](../examples/computation.goop).
-
-## Effect rows
-
-Functions can declare which **effects** they use: `io`, `async`, `panic`, and others tracked by the type checker.
+`result` models success or failure. Propagate with `match` (there is no `?` operator):
 
 ```goop
-let greet () : unit with { io } =
-  print_line "hello"
+let parseInt (s: string) : (int, string) result = ...
 
-let main () : unit with { io } =
-  greet ()
+let compute (input: string) : (int, string) result =
+  match parseInt input with
+  | Error e -> Error e
+  | Ok n -> Ok (n + n)
 ```
 
-A function annotated `with { }` (pure) cannot call `print_line` — the compiler reports **UNIFY018**:
+See [`result.goop`](../examples/result.goop). Prefer `result` for recoverable trading/venue errors.
 
-```
-function declared pure `with {}` but body uses effects: io
-```
-
-`goop.toml` enables body effect inference by default:
-
-```toml
-[check]
-effect_inference = true
-```
-
-When inference is on, omitted `with` clauses are inferred from the body. Explicit `with { }` still means “must be pure.”
-
-## Async computation expressions
+## Exceptions and `failwith`
 
 ```goop
-let compute () : int chan =
-  async {
-    return 42
-  }
+exception Boom
+
+let bad () = failwith "invariant broken"
+
+let run () =
+  try
+    raise Boom
+  with
+  | Boom -> "caught"
 ```
 
-See [`async.goop`](../examples/async.goop).
+Use `failwith` / `raise` for bugs. See [STYLE.md](../design/STYLE.md).
+
+## Effect handlers
+
+Goop 1.0 supports OCaml 5-style effects (minimal). Declare with `effect`, invoke with `perform`, handle in `match` / `try`. Effectful code may CPS-lower to non-idiomatic Go.
+
+```goop
+effect Flip : unit -> bool
+```
+
+Surface `with { io }` rows are removed. See [`effects.goop`](../examples/effects.goop) and [06-effects-and-safety.md](../design/06-effects-and-safety.md).
+
+## Async / channels
+
+Prefer `go` and `chan` over removed `async { }` computation expressions. See [chapter 5](05-concurrency.md) and [`async.goop`](../examples/async.goop).
 
 ## Next
 

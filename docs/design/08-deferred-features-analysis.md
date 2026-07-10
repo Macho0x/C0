@@ -624,12 +624,12 @@ This is Rust-style const generics, not full dependent types. It's practical, low
 
 ---
 
-## Summary Verdicts
+## Summary Verdicts (updated for Goop 1.0)
 
 | Feature | Verdict | Reasoning (one paragraph) |
 |---|---|---|
-| **Resumptive effect system** | **Reject** | Go has no stack capture or continuations. Lowering resumptive effects requires CPS or free monads, both of which produce Go that no senior engineer would write — violating Goop's core constraint. Single-purpose state machines (generators) are viable via Go 1.23 `iter.Seq`, but a general effect handler system is not. |
-| **Effect tracking (row-polymorphic, no resumption)** | **Feasible-with-effort** | Effect rows are a natural extension of Goop's existing row polymorphism. They require ~200 lines of type-checker code, erase to nothing in Go, and are fully backward compatible. This gives purity tracking, effect composition, and a foundation for capability-passing to extern Go. This is the feature Goop should actually ship. |
-| **Full dependent/refinement types** | **Defer-indefinitely** | Full dependent types require bidirectional checking (killing HM inference), a proof language, and a custom runtime — all incompatible with Go lowering and Goop's audience. The value-add for trading/infrastructure code is near-zero. |
-| **Lightweight refinement contracts (runtime asserts)** | **Feasible-minimal** | `where` clauses on type annotations lowering to runtime `panic` guards is ~100 lines of codegen, fully backward compatible, idiomatic Go, and no dependency required. Ship this now. The same syntax supports future SMT-based compile-time checking if demand justifies it. |
-| **Const generics (fixed-size arrays)** | **Feasible-with-effort** | Go supports `[N]T` arrays. Goop can monomorphize compile-time-known sizes at the Goop→Go boundary. This is a practical subset of dependent types that doesn't need SMT or bidirectional checking. |
+| **Resumptive effect system** | **Ship via CPS / free-monad** | Go has no stack capture. Goop 1.0 accepts CPS / free-monad lowering for OCaml 5-style `effect` / `perform` / handlers. Generated Go for effectful code is **not** idiomatic; pure code stays direct-style. This is an intentional exception to the senior-Go constraint (see [01-overview.md](01-overview.md)). |
+| **Effect rows `with { io }`** | **Removed** | Replaced by OCaml 5 effect handlers. Row annotations on arrow types are parse errors (PARSE-MIG016). |
+| **Full dependent/refinement types** | **Ship with Z3 SMT** | Goop 1.0 integrates Z3 for compile-time VCs on `where` / `requires` / `ensures`. HM remains for non-dependent code; bidirectional checking covers dependent fragments. Unproven sites retain runtime guards. |
+| **Lightweight refinement contracts (runtime asserts)** | **Kept as fallback** | `where` clauses still lower to runtime guards when SMT cannot prove the VC. |
+| **Const generics (fixed-size arrays)** | **Ship** | `[| … |]` and fixed-size array types monomorphize to Go `[N]T` where size is known. |

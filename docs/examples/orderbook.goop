@@ -1,7 +1,7 @@
 module Trading.OrderBook
 
-type order_id = newtype string
-type symbol = newtype string
+type order_id = | Order_id of string
+type symbol = | Symbol of string
 
 type Side = Buy | Sell
 

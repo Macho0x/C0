@@ -1,7 +1,7 @@
 module Main
 
-let greet () : unit with { io } =
+let greet () : unit =
   print_line "effect inference ok"
 
-let main () : unit with { io } =
+let main () : unit =
   greet ()

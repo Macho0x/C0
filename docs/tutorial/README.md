@@ -5,12 +5,12 @@ A step-by-step introduction to Goop. Each chapter links to runnable examples che
 | Chapter | Topic | Example |
 |---|---|---|
 | [1. Getting started](01-getting-started.md) | Build, check, first program | [`hello.goop`](../examples/hello.goop) |
-| [2. Types and patterns](02-types-and-patterns.md) | ADTs, `match`, records | [`shapes.goop`](../examples/shapes.goop) |
-| [3. Errors and effects](03-errors-and-effects.md) | `result`, `?`, `with { }` | [`result.goop`](../examples/result.goop), [`effects.goop`](../examples/effects.goop) |
+| [2. Types and patterns](02-types-and-patterns.md) | ADTs, `match`, branded IDs | [`shapes.goop`](../examples/shapes.goop) |
+| [3. Errors and effects](03-errors-and-effects.md) | `result`, `failwith`, effect handlers | [`result.goop`](../examples/result.goop), [`effects.goop`](../examples/effects.goop) |
 | [4. Go interop](04-go-interop.md) | `import golang`, `@golang` | [`extern_demo.goop`](../examples/extern_demo.goop) |
-| [5. Concurrency](05-concurrency.md) | `go`, `chan`, race checks | [`concurrency.goop`](../examples/concurrency.goop), [`race_detection.goop`](../examples/race_detection.goop) |
-| [6. Safety checks](06-safety-checks.md) | Exhaustiveness, newtypes, nil channels | [`newtype_trading.goop`](../examples/newtype_trading.goop), [`trading_order.goop`](../examples/trading_order.goop) |
-| [7. Arrays and loops](07-arrays-and-loops.md) | `Array.make`, `for`, `begin`/`end` | [`arrays.goop`](../examples/arrays.goop), [`trading_decision_lut.goop`](../examples/trading_decision_lut.goop) |
+| [5. Concurrency](05-concurrency.md) | `go`, `chan`, `ref`, race checks | [`concurrency.goop`](../examples/concurrency.goop), [`race_detection.goop`](../examples/race_detection.goop) |
+| [6. Safety checks](06-safety-checks.md) | Exhaustiveness, branding, refinements | [`newtype_trading.goop`](../examples/newtype_trading.goop), [`trading_order.goop`](../examples/trading_order.goop) |
+| [7. Arrays and loops](07-arrays-and-loops.md) | `Array.make`, `for`/`while`, `begin`/`end` | [`arrays.goop`](../examples/arrays.goop), [`trading_decision_lut.goop`](../examples/trading_decision_lut.goop) |
 
 ## Prerequisites
 
@@ -27,6 +27,7 @@ cd src && go build -o ../goop ./cmd/goop
 
 ## Further reading
 
+- [Style guide (1.0)](../design/STYLE.md)
 - [Syntax reference](../design/03-syntax.md)
 - [Type system](../design/02-type-system.md)
 - [Standard library reference](../stdlib/README.md)

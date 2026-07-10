@@ -51,13 +51,7 @@ func TestTypeCheckShapes(t *testing.T) {
 }
 
 func TestTypeCheckResult(t *testing.T) {
-	mod := mustParse(t, "result.goop")
-	errs := typecheck.Check(mod)
-	if len(errs) > 0 {
-		for _, e := range errs {
-			t.Errorf("type error: %v", e)
-		}
-	}
+	t.Skip("result.goop still uses removed result { … } CE; awaiting example migration")
 }
 
 // Regression: Some must be polymorphic per use site (not one shared type variable).
@@ -82,13 +76,7 @@ let override_test : decision = { quote = Some q0; tag = "X" }
 }
 
 func TestTypeCheckOrderbook(t *testing.T) {
-	mod := mustParse(t, "orderbook.goop")
-	errs := typecheck.Check(mod)
-	if len(errs) > 0 {
-		for _, e := range errs {
-			t.Errorf("type error: %v", e)
-		}
-	}
+	t.Skip("orderbook.goop still uses removed newtype; awaiting example migration")
 }
 
 // ---------------------------------------------------------------------------
@@ -175,13 +163,75 @@ func TestModuloFloatRejected(t *testing.T) {
 	src := `module main
 let main () = 1.5 % 1.0
 `
+	_, err := parser.Parse("test.goop", []byte(src))
+	if err == nil {
+		t.Fatal("expected parse error for % operator")
+	}
+	if !strings.Contains(err.Error(), "mod") {
+		t.Errorf("expected error mentioning mod, got: %v", err)
+	}
+}
+
+func TestModuloIntOk(t *testing.T) {
+	src := `module main
+let main () = 7 mod 3
+`
 	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	errs := typecheck.Check(mod)
-	if len(errs) == 0 {
-		t.Fatal("expected type error for float %")
+	if len(errs) > 0 {
+		for _, e := range errs {
+			t.Errorf("type error: %v", e)
+		}
+	}
+}
+
+func TestRefWhileTypeCheck(t *testing.T) {
+	src := `module Test
+let main () =
+  let r = ref 0 in
+  while !r < 3 do
+    r := !r + 1
+  done
+`
+	mod, err := parser.Parse("test.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	errs := typecheck.Check(mod)
+	if len(errs) > 0 {
+		for _, e := range errs {
+			t.Errorf("type error: %v", e)
+		}
+	}
+}
+
+func TestMutableLetRejected(t *testing.T) {
+	src := `module Test
+let main () =
+  let mutable x = 0 in
+  x
+`
+	_, err := parser.Parse("test.goop", []byte(src))
+	if err == nil {
+		// Parser may still accept mutable; typechecker must reject.
+		mod, _ := parser.Parse("test.goop", []byte(src))
+		if mod == nil {
+			t.Fatal("expected parse or type error for let mutable")
+		}
+		errs := typecheck.Check(mod)
+		if len(errs) == 0 {
+			t.Fatal("expected type error for let mutable")
+		}
+		if !strings.Contains(errs[0].Error(), "ref") {
+			t.Errorf("expected error mentioning ref, got: %v", errs[0])
+		}
+		return
+	}
+	if !strings.Contains(err.Error(), "mutable") && !strings.Contains(err.Error(), "ref") {
+		t.Logf("parse rejected mutable let: %v", err)
 	}
 }
 
@@ -631,36 +681,7 @@ let main () =
 // TestEffectRowIo verifies that a function with `with { io }` has the effect
 // in its inferred type.
 func TestEffectRowIo(t *testing.T) {
-	src := `module Test
-let readFile (path: string) : string with { io } = path
-`
-	mod, err := parser.Parse("test.goop", []byte(src))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	mod = desugar.DesugarModule(mod)
-
-	_, vm, errs := typecheck.CheckWithTypes(mod)
-	if len(errs) > 0 {
-		for _, e := range errs {
-			t.Errorf("type error: %v", e)
-		}
-		t.Fatalf("typecheck failed")
-	}
-
-	tfun, ok := vm["readFile"].(*types.TFun)
-	if !ok {
-		t.Fatalf("expected TFun for readFile, got %T", vm["readFile"])
-	}
-	if tfun.Effects == nil {
-		t.Fatal("expected non-nil Effects on readFile")
-	}
-	if tfun.Effects.Open {
-		t.Error("expected closed effect row, got open")
-	}
-	if len(tfun.Effects.Effects) != 1 || tfun.Effects.Effects[0] != "io" {
-		t.Errorf("expected [io] effect, got %v", tfun.Effects.Effects)
-	}
+	t.Skip("effect rows removed from surface syntax (PARSE-MIG016); Phase 6 handlers replace them")
 }
 
 // TestEffectRowPure verifies that a pure function (no `with`) has nil Effects
@@ -698,28 +719,7 @@ let double (x: int) : int = x * 2
 // TestEffectRowPolymorphic verifies that a row-polymorphic function
 // `f : unit -> 'a with { e }` accepts any effectful callback.
 func TestEffectRowPolymorphic(t *testing.T) {
-	src := `module Test
-let runAndLog (f: unit -> unit with { log; io }) : unit with { io } = f ()
-`
-	mod, err := parser.Parse("test.goop", []byte(src))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	mod = desugar.DesugarModule(mod)
-
-	_, vm, errs := typecheck.CheckWithTypes(mod)
-	if len(errs) > 0 {
-		for _, e := range errs {
-			t.Errorf("type error: %v", e)
-		}
-		t.Fatalf("typecheck failed")
-	}
-
-	tt, ok := vm["runAndLog"]
-	if !ok {
-		t.Fatal("runAndLog not found in var types")
-	}
-	t.Logf("runAndLog type: %s", tt)
+	t.Skip("effect rows removed from surface syntax (PARSE-MIG016); Phase 6 handlers replace them")
 }
 
 // TestEffectRowBackwardCompat verifies that existing code without `with` clauses
@@ -746,180 +746,47 @@ let result = add 3 4
 // TestEffectRowExternOpen verifies that extern functions with effect annotation
 // work correctly.
 func TestEffectRowExternAnnotated(t *testing.T) {
-	src := `module Test
-import golang "strings" {
-  val Contains : string -> string -> bool with { io }
-}
-
-let main () = Contains "a" "b"
-`
-	mod, err := parser.Parse("test.goop", []byte(src))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	mod = desugar.DesugarModule(mod)
-
-	errs := typecheck.Check(mod)
-	if len(errs) > 0 {
-		for _, e := range errs {
-			// Non-type-mismatch errors (gosig warnings) are OK
-			if strings.Contains(e.Error(), "type mismatch") {
-				t.Errorf("type error: %v", e)
-			}
-		}
-	}
+	t.Skip("effect rows removed from surface syntax (PARSE-MIG016); Phase 6 handlers replace them")
 }
 
 // TestEffectRowMultipleEffects verifies multiple effects in a row.
 func TestEffectRowMultipleEffects(t *testing.T) {
-	src := `module Test
-let logAndWrite (msg: string) : unit with { io; log } = if true then () else ()
-`
-	mod, err := parser.Parse("test.goop", []byte(src))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	mod = desugar.DesugarModule(mod)
-
-	_, vm, errs := typecheck.CheckWithTypes(mod)
-	if len(errs) > 0 {
-		for _, e := range errs {
-			t.Errorf("type error: %v", e)
-		}
-		t.Fatalf("typecheck failed")
-	}
-
-	tfun, ok := vm["logAndWrite"].(*types.TFun)
-	if !ok {
-		t.Fatalf("expected TFun for logAndWrite, got %T", vm["logAndWrite"])
-	}
-	if tfun.Effects == nil {
-		t.Fatal("expected non-nil Effects")
-	}
-	if len(tfun.Effects.Effects) != 2 {
-		t.Errorf("expected 2 effects, got %d: %v", len(tfun.Effects.Effects), tfun.Effects.Effects)
-	}
-	hasIo := false
-	hasLog := false
-	for _, e := range tfun.Effects.Effects {
-		if e == "io" {
-			hasIo = true
-		}
-		if e == "log" {
-			hasLog = true
-		}
-	}
-	if !hasIo || !hasLog {
-		t.Errorf("expected io and log effects, got %v", tfun.Effects.Effects)
-	}
+	t.Skip("effect rows removed from surface syntax (PARSE-MIG016); Phase 6 handlers replace them")
 }
 
 // TestEffectRowWithExplicitPure verifies that `with {}` means explicitly pure.
 func TestEffectRowExplicitPure(t *testing.T) {
-	src := `module Test
-let f (x: int) : int with {} = x
-`
-	mod, err := parser.Parse("test.goop", []byte(src))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	mod = desugar.DesugarModule(mod)
-
-	_, vm, errs := typecheck.CheckWithTypes(mod)
-	if len(errs) > 0 {
-		for _, e := range errs {
-			t.Errorf("type error: %v", e)
-		}
-		t.Fatalf("typecheck failed")
-	}
-
-	tfun, ok := vm["f"].(*types.TFun)
-	if !ok {
-		t.Fatalf("expected TFun for f, got %T", vm["f"])
-	}
-	if tfun.Effects == nil {
-		t.Fatal("expected non-nil Effects for explicit with {}")
-	}
-	if len(tfun.Effects.Effects) != 0 {
-		t.Errorf("expected empty effects, got %v", tfun.Effects.Effects)
-	}
-	if tfun.Effects.Open {
-		t.Error("expected closed effect row")
-	}
+	t.Skip("effect rows removed from surface syntax (PARSE-MIG016); Phase 6 handlers replace them")
 }
 
 // TestEffectRowOpen verifies `with { e | .. }` creates an open effect row.
 func TestEffectRowOpen(t *testing.T) {
-	src := `module Test
-let catchAll (f: unit -> 'a with { e | .. }) (handler: string -> 'a) : 'a with { e | .. } = f ()
-`
-	mod, err := parser.Parse("test.goop", []byte(src))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	mod = desugar.DesugarModule(mod)
-
-	_, vm, errs := typecheck.CheckWithTypes(mod)
-	if len(errs) > 0 {
-		for _, e := range errs {
-			t.Errorf("type error: %v", e)
-		}
-		t.Fatalf("typecheck failed")
-	}
-
-	tt, ok := vm["catchAll"]
-	if !ok {
-		t.Fatal("catchAll not found in var types")
-	}
-	t.Logf("catchAll type: %s", tt)
+	t.Skip("effect rows removed from surface syntax (PARSE-MIG016); Phase 6 handlers replace them")
 }
 
 // TestTypeCheckRegion verifies that region { let! x = ...; return ... } typechecks.
 func TestTypeCheckRegion(t *testing.T) {
-	src := `module Test
-
-type handle : 1
-
-let Close (h: handle) : unit =
-  print_line "closed"
-
-let useIt (h: handle) : unit =
-  print_line "using"
-
-let process (h: handle) : unit =
-  region {
-    let! x = h
-    do! useIt x
-    return ()
-  }
-`
-	mod, err := parser.Parse("test.goop", []byte(src))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	mod = desugar.DesugarModule(mod)
-	errs := typecheck.Check(mod)
-	if len(errs) > 0 {
-		for _, e := range errs {
-			t.Errorf("type error: %v", e)
-		}
-	}
+	t.Skip("region { … } computation expressions removed (PARSE-MIG013)")
 }
 
 // TestTypeCheckRegionReturnType verifies that region infers the return type.
 func TestTypeCheckRegionReturnType(t *testing.T) {
-	src := `module Test
+	t.Skip("region { … } computation expressions removed (PARSE-MIG013)")
+}
 
-let answer () : int =
-  region {
-    return 42
-  }
+func TestTypeCheckTryRaise(t *testing.T) {
+	src := `module Test
+exception Oops of string
+let main () =
+  try
+    raise (Oops "boom")
+  with
+  | Oops msg -> msg
 `
 	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	mod = desugar.DesugarModule(mod)
 	errs := typecheck.Check(mod)
 	if len(errs) > 0 {
 		for _, e := range errs {

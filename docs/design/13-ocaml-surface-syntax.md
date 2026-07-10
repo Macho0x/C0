@@ -1,6 +1,8 @@
-# OCaml Surface Syntax (v0.8.0)
+# OCaml Surface Syntax (1.0)
 
-Goop standardizes on **one OCaml-canonical imperative surface** for LUTs, loops, and mutation. Rust/Go-style alternatives (`arr[i]`, C `for(;;)`, brace blocks) are intentionally rejected.
+Goop standardizes on **one OCaml-canonical surface**. Rust/Go-style alternatives (`arr[i]`, C `for(;;)`, brace blocks as primary) are rejected.
+
+v0.8 introduced arrays, `for`/`done`, `begin`/`end`, and qualified constructors. **Goop 1.0 expands** that surface to full OCaml alignment for everyday code: `ref`/`!`/`:=`, `while`, `function`, exceptions, `failwith`, `mod`, modules/`sig`/functors, objects, effect handlers, SMT refinements, and removal of F#/Kit/Dingo duplicates. See [STYLE.md](STYLE.md) and [14-ocaml-parity.md](14-ocaml-parity.md).
 
 ## Arrays
 
@@ -9,8 +11,16 @@ Goop standardizes on **one OCaml-canonical imperative surface** for LUTs, loops,
 - Length: `Array.length arr` → Go `len(arr)`
 - Read: `arr.(i)` → Go `arr[i]`
 - Write: `arr.(i) <- v` → Go `arr[i] = v`
+- Const arrays: `[| … |]` supported in 1.0
 
-Const-size arrays (`[| ... |]`, `[T; N]`) remain **deferred** — see [08-deferred-features-analysis.md](08-deferred-features-analysis.md).
+## Refs and while
+
+```goop
+let r = ref 0 in
+while !r < n do
+  r := !r + 1
+done
+```
 
 ## For loops
 
@@ -32,8 +42,6 @@ begin
 end
 ```
 
-Lowers to a block; the last expression is the value (or `return` inside functions).
-
 ## Qualified constructors
 
 ```goop
@@ -41,14 +49,7 @@ Color.Red
 match c with Color.Green -> ...
 ```
 
-Use **PascalCase type names** (`PriceVsMean.FarBelow`, `TradeSide.Buy`, `OrderAck.Filled`). Qualified forms on **lowercase** types (`quote_slot.NoQuote`, `risk_action.ReduceOnly`) typecheck today but codegen may emit invalid Go field access — keep those constructors unqualified until the compiler maps them to `New…` helpers.
-
-## Codegen fixes (0.8.0)
-
-- Top-level record literals no longer become thunks
-- `(a -. b) /. c` preserves float precedence via Go parentheses
-- `option` in record fields registers `OptionT` structs during prescan
-- Tuple `match` on `(a, b)` with literal patterns
+Prefer **PascalCase type names** for qualified forms. Lowercase-type qualified constructors may codegen poorly — keep those unqualified until mapped to `New…` helpers.
 
 ## LUT pattern
 

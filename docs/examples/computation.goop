@@ -5,11 +5,12 @@ let div (x: float) (y: float) : (float, string) result =
   else Ok (x/.y)
 
 let compute () : (float, string) result =
-  result {
-    let! a = div 10.0 2.0
-    let! b = div 6.0 3.0
-    return a+.b
-  }
+  match div 10.0 2.0 with
+  | Error e -> Error e
+  | Ok a ->
+      match div 6.0 3.0 with
+      | Error e -> Error e
+      | Ok b -> Ok (a+.b)
 
 let main () =
   match compute () with

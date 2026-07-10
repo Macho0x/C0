@@ -13,11 +13,12 @@ let validateName (u: User) : (User, UserError) result =
   else Ok u
 
 let loadUser (id: int) : (User, UserError) result =
-  result {
-    let! user = findUser id
-    let! validated = validateName user
-    return validated
-  }
+  match findUser id with
+  | Error e -> Error e
+  | Ok user ->
+      match validateName user with
+      | Error e -> Error e
+      | Ok validated -> Ok validated
 
 let getUserName (id: int) : string =
   match loadUser id with

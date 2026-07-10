@@ -111,8 +111,10 @@ type LetBinding struct {
 
 // Param is a function parameter.
 type Param struct {
-	Name string
-	Type Type // nil if unannotated (e.g. `fun x ->`)
+	Name     string
+	Type     Type   // nil if unannotated (e.g. `fun x ->`)
+	Label    string // labelled arg `~x` / `~label:x` (empty = positional)
+	Optional bool   // `?x` optional labelled arg
 }
 
 // ---------------------------------------------------------------------------
@@ -156,16 +158,31 @@ type OpaqueTypeKind struct{}
 
 func (*OpaqueTypeKind) typeKindNode() {}
 
+// GADTTypeKind is `type _ t = | C : int -> int t` (approximate GADT support).
+type GADTTypeKind struct {
+	Cases []GADTCase
+}
+
+func (*GADTTypeKind) typeKindNode() {}
+
+// GADTCase is one GADT constructor: `C : arg -> ret` or `C : ret`.
+type GADTCase struct {
+	Name   string
+	Arg    Type // nil if nullary (`C : int t`)
+	Result Type // return type annotation (e.g. `int t`)
+}
+
 // ADTCase is one constructor alternative in an ADT.
 type ADTCase struct {
 	Name string
 	Arg  Type // nil if no payload (e.g. `| Point`)
 }
 
-// FieldType is a record field declaration: `name : Type`.
+// FieldType is a record field declaration: `name : Type` or `mutable name : Type`.
 type FieldType struct {
-	Name string
-	Type Type
+	Name    string
+	Type    Type
+	Mutable bool
 }
 
 // ---------------------------------------------------------------------------
@@ -317,9 +334,11 @@ func (*MatchExpr) exprNode() {}
 
 // MatchArm is one branch of a match expression.
 type MatchArm struct {
-	Pattern Pattern
-	Guard   Expr // nil if no `when`
-	Body    Expr
+	Pattern       Pattern
+	Guard         Expr // nil if no `when`
+	Body          Expr
+	EffectHandler bool   // `effect (E x) k ->` arm
+	ContName      string // continuation name `k` for effect handlers
 }
 
 // LetInExpr is `let binding in body`.
@@ -470,11 +489,12 @@ type IndexExpr struct {
 
 func (*IndexExpr) exprNode() {}
 
-// AssignExpr is in-place mutation: `target <- value`.
+// AssignExpr is in-place mutation: `target <- value` (array/field) or `target := value` (ref).
 type AssignExpr struct {
-	Target Expr
-	Value  Expr
-	Loc    token.SourceLoc
+	Target  Expr
+	Value   Expr
+	Coloneq bool // true for :=, false for <-
+	Loc     token.SourceLoc
 }
 
 func (*AssignExpr) exprNode() {}
@@ -498,7 +518,229 @@ type BeginExpr struct {
 
 func (*BeginExpr) exprNode() {}
 
-// CompExpr is a computation expression: `builder { ops }`.
+// WhileExpr is `while cond do body done`.
+type WhileExpr struct {
+	Cond Expr
+	Body Expr
+	Loc  token.SourceLoc
+}
+
+func (*WhileExpr) exprNode() {}
+
+// FunctionExpr is `function | p -> e | ...` (desugars to fun x -> match x with ...).
+type FunctionExpr struct {
+	Arms []MatchArm
+	Loc  token.SourceLoc
+}
+
+func (*FunctionExpr) exprNode() {}
+
+// RefExpr is `ref e` — allocate a reference cell.
+type RefExpr struct {
+	Value Expr
+	Loc   token.SourceLoc
+}
+
+func (*RefExpr) exprNode() {}
+
+// DerefExpr is `!e` — dereference a ref cell.
+type DerefExpr struct {
+	Target Expr
+	Loc    token.SourceLoc
+}
+
+func (*DerefExpr) exprNode() {}
+
+// TryExpr is `try e with | ...` or `try e finally e`.
+type TryExpr struct {
+	Body    Expr
+	Arms    []MatchArm // nil if finally-only
+	Finally Expr       // nil if with-only
+	Loc     token.SourceLoc
+}
+
+func (*TryExpr) exprNode() {}
+
+// RaiseExpr is `raise e`.
+type RaiseExpr struct {
+	Exn Expr
+	Loc token.SourceLoc
+}
+
+func (*RaiseExpr) exprNode() {}
+
+// AssertExpr is `assert e`.
+type AssertExpr struct {
+	Cond Expr
+	Loc  token.SourceLoc
+}
+
+func (*AssertExpr) exprNode() {}
+
+// LazyExpr is `lazy e`.
+type LazyExpr struct {
+	Value Expr
+	Loc   token.SourceLoc
+}
+
+func (*LazyExpr) exprNode() {}
+
+// PerformExpr is `perform e` (OCaml 5 effects).
+type PerformExpr struct {
+	Op  Expr
+	Loc token.SourceLoc
+}
+
+func (*PerformExpr) exprNode() {}
+
+// ArrayLitExpr is `[| e1; e2; ... |]`.
+type ArrayLitExpr struct {
+	Elems []Expr
+	Loc   token.SourceLoc
+}
+
+func (*ArrayLitExpr) exprNode() {}
+
+// PolyvarExpr is `` `Tag `` or `` `Tag e ``.
+type PolyvarExpr struct {
+	Tag string
+	Arg Expr // nil if no payload
+	Loc token.SourceLoc
+}
+
+func (*PolyvarExpr) exprNode() {}
+
+// ObjectExpr is `object (self) ... end`.
+type ObjectExpr struct {
+	Self    string
+	Fields  []ClassField
+	Methods []ClassMethod
+	Loc     token.SourceLoc
+}
+
+func (*ObjectExpr) exprNode() {}
+
+// NewExpr is `new C`.
+type NewExpr struct {
+	Class string
+	Loc   token.SourceLoc
+}
+
+func (*NewExpr) exprNode() {}
+
+// LetModuleExpr is `let module M = struct ... end in expr`.
+type LetModuleExpr struct {
+	Name  string
+	Decls []TopDecl
+	Body  Expr
+	Loc   token.SourceLoc
+}
+
+func (*LetModuleExpr) exprNode() {}
+
+// ModuleAppExpr is functor application `F(M)` used as a module RHS.
+type ModuleAppExpr struct {
+	Func string
+	Arg  string
+	Loc  token.SourceLoc
+}
+
+func (*ModuleAppExpr) exprNode() {}
+
+// LabelledArgExpr is `~x` or `~x:e` used as a function argument.
+type LabelledArgExpr struct {
+	Label string
+	Value Expr // nil means punning `~x` ≡ `~x:x`
+	Loc   token.SourceLoc
+}
+
+func (*LabelledArgExpr) exprNode() {}
+
+// ExceptionDecl is `exception E` or `exception E of t`.
+type ExceptionDecl struct {
+	Name string
+	Arg  Type // nil if no payload
+}
+
+func (*ExceptionDecl) topDeclNode() {}
+
+// EffectDecl is `effect E : a -> b`.
+type EffectDecl struct {
+	Name string
+	From Type
+	To   Type
+}
+
+func (*EffectDecl) topDeclNode() {}
+
+// NestedModuleDecl is `module M = struct ... end` or a functor
+// `module F (X : S) = struct ... end`.
+type NestedModuleDecl struct {
+	Name       string
+	FunctorArg string // empty if not a functor; param name e.g. "X"
+	FunctorSig string // signature name e.g. "S"
+	Decls      []TopDecl
+	IsApp      bool   // true for `module M = F(N)` application
+	AppFunc    string // functor name when IsApp
+	AppArg     string // argument module when IsApp
+}
+
+func (*NestedModuleDecl) topDeclNode() {}
+
+// ModuleTypeDecl is `module type S = sig ... end`.
+type ModuleTypeDecl struct {
+	Name  string
+	Items []SigItem
+}
+
+func (*ModuleTypeDecl) topDeclNode() {}
+
+// SigItem is one item inside a `sig ... end` (minimal: val / type).
+type SigItem struct {
+	Kind string // "val" or "type"
+	Name string
+	Type Type // for val; nil for type
+}
+
+// OpenModuleDecl is `open M` (module path).
+type OpenModuleDecl struct {
+	Path string
+}
+
+func (*OpenModuleDecl) topDeclNode() {}
+
+// IncludeDecl is `include M`.
+type IncludeDecl struct {
+	Path string
+}
+
+func (*IncludeDecl) topDeclNode() {}
+
+// ClassDecl is `class c = object (self) ... end`.
+type ClassDecl struct {
+	Name    string
+	Self    string // optional self name
+	Fields  []ClassField
+	Methods []ClassMethod
+}
+
+func (*ClassDecl) topDeclNode() {}
+
+// ClassField is `val [mutable] x = e` inside an object.
+type ClassField struct {
+	Name    string
+	Mutable bool
+	Value   Expr
+}
+
+// ClassMethod is `method name = e` or `method name params = e`.
+type ClassMethod struct {
+	Name   string
+	Params []Param
+	Body   Expr
+}
+
+// CompExpr is a computation expression: `builder { ops }` (removed in 1.0; kept for AST compat during migration errors).
 type CompExpr struct {
 	Builder string // e.g. "result", "async"
 	Ops     []CompOp
@@ -639,6 +881,14 @@ type ConstructorPattern struct {
 }
 
 func (*ConstructorPattern) patternNode() {}
+
+// OrPattern is `| A | B` (or-pattern).
+type OrPattern struct {
+	Left  Pattern
+	Right Pattern
+}
+
+func (*OrPattern) patternNode() {}
 
 // RecordPattern matches a record: `{ x; y }` or `{ x = pat }`.
 type RecordPattern struct {
@@ -839,7 +1089,11 @@ func ExprString(e Expr) string {
 	case *IndexExpr:
 		return ExprString(e.Target) + ".(" + ExprString(e.Index) + ")"
 	case *AssignExpr:
-		return ExprString(e.Target) + " <- " + ExprString(e.Value)
+		op := " <- "
+		if e.Coloneq {
+			op = " := "
+		}
+		return ExprString(e.Target) + op + ExprString(e.Value)
 	case *ForExpr:
 		return fmt.Sprintf("for %s = %s to %s do %s done", e.Var, ExprString(e.From), ExprString(e.To), ExprString(e.Body))
 	case *BeginExpr:
@@ -903,8 +1157,166 @@ func ExprString(e Expr) string {
 			}
 		}
 		return "region { " + strings.Join(ops, "; ") + " }"
+	case *WhileExpr:
+		return fmt.Sprintf("while %s do %s done", ExprString(e.Cond), ExprString(e.Body))
+	case *FunctionExpr:
+		arms := make([]string, len(e.Arms))
+		for i, a := range e.Arms {
+			arms[i] = patternString(a.Pattern) + " -> " + ExprString(a.Body)
+		}
+		return "function [" + strings.Join(arms, " | ") + "]"
+	case *RefExpr:
+		return "ref " + ExprString(e.Value)
+	case *DerefExpr:
+		return "!" + ExprString(e.Target)
+	case *TryExpr:
+		s := "try " + ExprString(e.Body)
+		if len(e.Arms) > 0 {
+			arms := make([]string, len(e.Arms))
+			for i, a := range e.Arms {
+				arms[i] = patternString(a.Pattern) + " -> " + ExprString(a.Body)
+			}
+			s += " with [" + strings.Join(arms, " | ") + "]"
+		}
+		if e.Finally != nil {
+			s += " finally " + ExprString(e.Finally)
+		}
+		return s
+	case *RaiseExpr:
+		return "raise " + ExprString(e.Exn)
+	case *AssertExpr:
+		return "assert " + ExprString(e.Cond)
+	case *LazyExpr:
+		return "lazy " + ExprString(e.Value)
+	case *PerformExpr:
+		return "perform " + ExprString(e.Op)
+	case *ArrayLitExpr:
+		parts := make([]string, len(e.Elems))
+		for i, el := range e.Elems {
+			parts[i] = ExprString(el)
+		}
+		return "[|" + strings.Join(parts, "; ") + "|]"
+	case *PolyvarExpr:
+		if e.Arg != nil {
+			return "`" + e.Tag + " " + ExprString(e.Arg)
+		}
+		return "`" + e.Tag
+	case *ObjectExpr:
+		return "object ... end"
+	case *NewExpr:
+		return "new " + e.Class
+	case *LetModuleExpr:
+		return "let module " + e.Name + " = struct ... end in " + ExprString(e.Body)
+	case *ModuleAppExpr:
+		return e.Func + "(" + e.Arg + ")"
+	case *LabelledArgExpr:
+		if e.Value != nil {
+			return "~" + e.Label + ":" + ExprString(e.Value)
+		}
+		return "~" + e.Label
 	default:
 		return "<unknown expr>"
+	}
+}
+
+// ExprLoc returns the source location of an expression, or zero if unknown.
+func ExprLoc(e Expr) token.SourceLoc {
+	if e == nil {
+		return token.SourceLoc{}
+	}
+	switch e := e.(type) {
+	case *LitExpr:
+		return e.Loc
+	case *IdentExpr:
+		return e.Loc
+	case *ConstructorExpr:
+		return e.Loc
+	case *AppExpr:
+		return e.Loc
+	case *IfExpr:
+		return e.Loc
+	case *MatchExpr:
+		return e.Loc
+	case *LetInExpr:
+		return e.Loc
+	case *FunExpr:
+		return e.Loc
+	case *GuardExpr:
+		return e.Loc
+	case *IsExpr:
+		return e.Loc
+	case *AsMatchExpr:
+		return e.Loc
+	case *BinaryExpr:
+		return e.Loc
+	case *PipeExpr:
+		return e.Loc
+	case *QuestionExpr:
+		return e.Loc
+	case *RecordExpr:
+		return e.Loc
+	case *RecordUpdateExpr:
+		return e.Loc
+	case *FieldAccessExpr:
+		return e.Loc
+	case *TupleExpr:
+		return e.Loc
+	case *ListExpr:
+		return e.Loc
+	case *ParenExpr:
+		return e.Loc
+	case *IndexExpr:
+		return e.Loc
+	case *AssignExpr:
+		return e.Loc
+	case *ForExpr:
+		return e.Loc
+	case *BeginExpr:
+		return e.Loc
+	case *WhileExpr:
+		return e.Loc
+	case *FunctionExpr:
+		return e.Loc
+	case *RefExpr:
+		return e.Loc
+	case *DerefExpr:
+		return e.Loc
+	case *TryExpr:
+		return e.Loc
+	case *RaiseExpr:
+		return e.Loc
+	case *AssertExpr:
+		return e.Loc
+	case *LazyExpr:
+		return e.Loc
+	case *PerformExpr:
+		return e.Loc
+	case *ArrayLitExpr:
+		return e.Loc
+	case *PolyvarExpr:
+		return e.Loc
+	case *ObjectExpr:
+		return e.Loc
+	case *NewExpr:
+		return e.Loc
+	case *LetModuleExpr:
+		return e.Loc
+	case *ModuleAppExpr:
+		return e.Loc
+	case *LabelledArgExpr:
+		return e.Loc
+	case *GoExpr:
+		return e.Loc
+	case *SelectExpr:
+		return e.Loc
+	case *UsingExpr:
+		return e.Loc
+	case *RegionExpr:
+		return e.Loc
+	case *CompExpr:
+		return e.Loc
+	default:
+		return token.SourceLoc{}
 	}
 }
 
@@ -955,6 +1367,8 @@ func patternString(p Pattern) string {
 		return patternString(p.Head) + " :: " + patternString(p.Tail)
 	case *AliasPattern:
 		return patternString(p.Pattern) + " as " + p.Name
+	case *OrPattern:
+		return patternString(p.Left) + " | " + patternString(p.Right)
 	default:
 		return "<unknown pattern>"
 	}

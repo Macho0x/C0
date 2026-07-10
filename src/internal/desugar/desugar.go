@@ -47,6 +47,17 @@ func desugarDecl(d ast.TopDecl) {
 		// Extern declarations contain types, not expressions
 	case *ast.GolangEmbedDecl:
 		// @golang embed blocks contain raw Go, not Goop expressions
+	case *ast.NestedModuleDecl:
+		for _, nd := range d.Decls {
+			desugarDecl(nd)
+		}
+	case *ast.ClassDecl:
+		for i := range d.Fields {
+			d.Fields[i].Value = DesugarExpr(d.Fields[i].Value)
+		}
+		for i := range d.Methods {
+			d.Methods[i].Body = DesugarExpr(d.Methods[i].Body)
+		}
 	}
 }
 
@@ -88,6 +99,9 @@ func DesugarExpr(e ast.Expr) ast.Expr {
 	case *ast.FunExpr:
 		e.Body = DesugarExpr(e.Body)
 		return e
+
+	case *ast.FunctionExpr:
+		return desugarFunction(e)
 
 	case *ast.AppExpr:
 		e.Func = DesugarExpr(e.Func)
@@ -148,6 +162,107 @@ func DesugarExpr(e ast.Expr) ast.Expr {
 		e.Inner = DesugarExpr(e.Inner)
 		return e
 
+	case *ast.IndexExpr:
+		e.Target = DesugarExpr(e.Target)
+		e.Index = DesugarExpr(e.Index)
+		return e
+
+	case *ast.AssignExpr:
+		e.Target = DesugarExpr(e.Target)
+		e.Value = DesugarExpr(e.Value)
+		return e
+
+	case *ast.ForExpr:
+		e.From = DesugarExpr(e.From)
+		e.To = DesugarExpr(e.To)
+		e.Body = DesugarExpr(e.Body)
+		return e
+
+	case *ast.BeginExpr:
+		for i := range e.Stmts {
+			e.Stmts[i] = DesugarExpr(e.Stmts[i])
+		}
+		return e
+
+	case *ast.WhileExpr:
+		e.Cond = DesugarExpr(e.Cond)
+		e.Body = DesugarExpr(e.Body)
+		return e
+
+	case *ast.RefExpr:
+		e.Value = DesugarExpr(e.Value)
+		return e
+
+	case *ast.DerefExpr:
+		e.Target = DesugarExpr(e.Target)
+		return e
+
+	case *ast.TryExpr:
+		e.Body = DesugarExpr(e.Body)
+		for i := range e.Arms {
+			e.Arms[i].Body = DesugarExpr(e.Arms[i].Body)
+			if e.Arms[i].Guard != nil {
+				e.Arms[i].Guard = DesugarExpr(e.Arms[i].Guard)
+			}
+		}
+		if e.Finally != nil {
+			e.Finally = DesugarExpr(e.Finally)
+		}
+		return e
+
+	case *ast.RaiseExpr:
+		e.Exn = DesugarExpr(e.Exn)
+		return e
+
+	case *ast.AssertExpr:
+		e.Cond = DesugarExpr(e.Cond)
+		return e
+
+	case *ast.LazyExpr:
+		e.Value = DesugarExpr(e.Value)
+		return e
+
+	case *ast.PerformExpr:
+		e.Op = DesugarExpr(e.Op)
+		return e
+
+	case *ast.ArrayLitExpr:
+		for i := range e.Elems {
+			e.Elems[i] = DesugarExpr(e.Elems[i])
+		}
+		return e
+
+	case *ast.PolyvarExpr:
+		if e.Arg != nil {
+			e.Arg = DesugarExpr(e.Arg)
+		}
+		return e
+
+	case *ast.ObjectExpr:
+		for i := range e.Fields {
+			e.Fields[i].Value = DesugarExpr(e.Fields[i].Value)
+		}
+		for i := range e.Methods {
+			e.Methods[i].Body = DesugarExpr(e.Methods[i].Body)
+		}
+		return e
+
+	case *ast.NewExpr:
+		return e
+
+	case *ast.LetModuleExpr:
+		for _, d := range e.Decls {
+			desugarDecl(d)
+		}
+		e.Body = DesugarExpr(e.Body)
+		return e
+
+	case *ast.LabelledArgExpr:
+		if e.Value != nil {
+			e.Value = DesugarExpr(e.Value)
+		}
+		return e
+
 	case *ast.GoExpr:
 		e.Expr = DesugarExpr(e.Expr)
 		return e
@@ -191,8 +306,31 @@ func DesugarExpr(e ast.Expr) ast.Expr {
 	}
 }
 
+// desugarFunction turns `function | p -> e | ...` into
+// `fun __fn_arg -> match __fn_arg with | p -> e | ...`.
+func desugarFunction(e *ast.FunctionExpr) ast.Expr {
+	arms := make([]ast.MatchArm, len(e.Arms))
+	for i, arm := range e.Arms {
+		arms[i] = ast.MatchArm{
+			Pattern: arm.Pattern,
+			Guard:   DesugarExpr(arm.Guard),
+			Body:    DesugarExpr(arm.Body),
+		}
+	}
+	arg := "__fn_arg"
+	return &ast.FunExpr{
+		Params: []ast.Param{{Name: arg}},
+		Body: &ast.MatchExpr{
+			Scrutinee: &ast.IdentExpr{Name: arg, Loc: e.Loc},
+			Arms:      arms,
+			Loc:       e.Loc,
+		},
+		Loc: e.Loc,
+	}
+}
+
 // ---------------------------------------------------------------------------
-// Desugaring rules
+// Desugaring rules (legacy match macros — kept for migration)
 // ---------------------------------------------------------------------------
 
 // expr is pattern → match expr with | pattern -> true | _ -> false

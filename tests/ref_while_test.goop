@@ -1,0 +1,10 @@
+module RefWhileTest
+
+let main () =
+  let r = ref 0 in
+  begin
+    while !r < 3 do
+      r := !r + 1
+    done;
+    assert (!r = 3)
+  end

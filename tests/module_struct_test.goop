@@ -1,0 +1,10 @@
+module ModuleStructTest
+
+module Inner = struct
+  let add (a: int) (b: int) : int = a + b
+end
+
+open Inner
+
+let main () =
+  assert (add 2 3 = 5)

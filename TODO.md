@@ -21,31 +21,27 @@ This file tracks the remaining work to make Goop a usable language. It is kept i
 
 ## Language features
 
-- [x] Core syntax design
+- [x] Core syntax design (OCaml-aligned 1.0 — see [STYLE.md](docs/design/STYLE.md))
 - [x] ADTs and pattern matching
 - [x] Records and tuples
 - [x] Lists
 - [x] `option` and `result`
-- [x] `?` error propagation
-- [x] Mutable fields and bindings
-- [x] OCaml-style arrays, for loops, begin/end, qualified constructors (v0.8.0)
+- [x] `ref` / `!` / `:=`, `while`, `function`, exceptions, `failwith`, `mod`
+- [x] Mutable record fields
+- [x] OCaml-style arrays, for loops, begin/end, qualified constructors
 - [x] Active patterns
-- [x] Match macros (`is`, `as`, `guard`)
-- [x] F#-style computation expressions (`result { ... }`, `async { ... }`)
 - [x] Row polymorphism
 - [x] Concurrency primitives (`go`, `chan`, `select`)
-- [x] `using` for resource cleanup
 - [x] Go interop (`import golang`, `@golang { }` embed blocks)
 - [x] Unified imports (`import golang` / `import goop`, dot and aliased forms)
-- [x] `private` module visibility
-- [x] `%` modulo operator
+- [x] `private` module visibility; branding via single-ctor ADT (no `newtype`)
+- [x] Nested modules / `sig` / functors / `.mli` (minimal)
 - [x] Golang import 2-tuple returns
 - [x] Flow-sensitive goroutine liveness (fewer race false positives)
 - [x] std/ modules (`std.io`, `std.list`, `std.array`, `std.option`, `std.result`)
-- [x] Effect rows (erased, row-polymorphic effect tracking in types)
+- [x] Effect handlers (OCaml 5-style, CPS-lowered)
 - [x] Linear resource types (modal linearity, opt-in for resource-kinded types)
-- [x] Region scopes (computation expression for scoped resource cleanup)
-- [x] Runtime refinement contracts (`where` clauses lowering to runtime asserts)
+- [x] Runtime refinement contracts + optional Z3 SMT
 
 ## Compile-time safety checks
 
@@ -54,6 +50,7 @@ This file tracks the remaining work to make Goop a usable language. It is kept i
 - [x] Runtime-safe `Chan.close` (closed flag wrapper, clear panic messages)
 - [x] `OwnedChan` linear channel wrapper (compile-time close safety via linear discharge checking)
 - [x] Built-in refinement solver (compile-time VC checking for integer arithmetic)
+- [x] Optional Z3 SMT for refinements (`[check] smt = true`)
 - [x] Refinement call-site codegen (proven VCs skip guards; exported entry guards)
 - [x] Arithmetic refinement solver extensions
 - [x] Linear `go` handoff for owned resources
@@ -89,9 +86,9 @@ This file tracks the remaining work to make Goop a usable language. It is kept i
 
 ## Deferred or rejected
 
-- Full dependent types (Idris/Agda style) — see `docs/design/08-deferred-features-analysis.md`.
+- Full dependent types (Idris/Agda style) — SMT refinements cover the practical fragment; see `docs/design/08-deferred-features-analysis.md`.
 - Borrow checker with lifetimes (Rust style) — modal linearity for resources is the right level for a GC'd target.
-- Resumptive effect system — Go has no continuations; see `docs/design/08-deferred-features-analysis.md`.
 - QTT 0-quantity erasure — premature without dependent types or proof terms.
 - Capabilities that cannot be enforced at the Go boundary.
 - Runtime layer or bytecode VM.
+- F# CEs / Kit macros / Dingo `?` / effect rows / `newtype` / `panic` / `%` — **removed** in 1.0 (not deferred).

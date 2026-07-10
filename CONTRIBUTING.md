@@ -4,11 +4,15 @@ Thank you for contributing. This guide covers build/test workflow, documentation
 
 ## Before you start
 
-- [Design overview](docs/design/01-overview.md) and [roadmap](docs/design/07-roadmap.md)
+- [Design overview](docs/design/01-overview.md), [STYLE.md](docs/design/STYLE.md), and [roadmap](docs/design/07-roadmap.md)
 - [Language tutorial](docs/tutorial/README.md) — how the language fits together
 - [Standard library reference](docs/stdlib/README.md) — prelude, builtins, `std.*`
 - [TODO.md](TODO.md) — open work
 - Error codes: [10-error-reference.md](docs/design/10-error-reference.md), [12-trading-bot-safety.md](docs/design/12-trading-bot-safety.md)
+
+## OCaml-aligned style
+
+Goop 1.0 uses OCaml spelling for everyday constructs (`ref`/`!`/`:=`, `match`, `failwith`, `mod`, …). Do not reintroduce removed sugar (`?`, `result { }`, `let mutable`, `newtype`, `with { io }`, `panic`, `%`). See [STYLE.md](docs/design/STYLE.md).
 
 ## Build and test
 
@@ -25,6 +29,10 @@ go test ./...
 # All examples (CI does this)
 for f in ../docs/examples/*.goop; do ../goop check "$f"; done
 ```
+
+## Dependencies for optional checks
+
+- **Z3** (optional): when `[check] smt = true` in `goop.toml`, the refinement checker shells out to `z3 -in` to prove VCs, falling back to the built-in interval solver if Z3 is missing or inconclusive. Install via your package manager (`pacman -S z3`, `apt install z3`, `brew install z3`). CI does not require Z3 unless SMT tests are enabled. Without Z3, refinements still work via the built-in solver + runtime guards.
 
 ## Making changes
 
@@ -97,8 +105,8 @@ Documentation must match the compiler, not aspirational design:
 
 1. **Verify** — run `goop check` on any example you add or change.
 2. **Trace to source** — prelude from `prelude.go`, `std.*` from `std/*/*.goop`, syntax from `docs/design/03-syntax.md` and `src/internal/parser/`.
-3. **Update together** — compiler change + e2e test + relevant doc page (tutorial, stdlib, or design doc).
-4. **Error codes** — new diagnostics need entries in `docs/design/10-error-reference.md`.
+3. **Update together** — compiler change + e2e test + relevant doc page (tutorial, stdlib, or design doc). Prefer OCaml forms from [STYLE.md](docs/design/STYLE.md).
+4. **Error codes** — new diagnostics need entries in `docs/design/10-error-reference.md` (migration errors: PARSE-MIG010–018).
 
 ## Pull requests
 

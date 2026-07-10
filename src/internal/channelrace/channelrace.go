@@ -38,8 +38,8 @@ func CheckWithConfig(mod *ast.Module, cfg *config.Config) (errors, warnings []er
 	}
 	for _, d := range mod.Decls {
 		if ld, ok := d.(*ast.LetDecl); ok {
-			if ld.Mutable {
-				for _, b := range ld.Bindings {
+			for _, b := range ld.Bindings {
+				if ld.Mutable || (len(b.Params) == 0 && isRefAlloc(b.Body)) {
 					c.mutableVars[b.Name] = true
 				}
 			}
@@ -80,14 +80,28 @@ func (c *checker) checkLetBinding(b *ast.LetBinding) {
 	c.checkExpr(b.Body)
 }
 
+// isRefAlloc reports whether e is a `ref …` allocation (parens unwrapped).
+func isRefAlloc(e ast.Expr) bool {
+	for {
+		switch v := e.(type) {
+		case *ast.ParenExpr:
+			e = v.Inner
+		case *ast.RefExpr:
+			return true
+		default:
+			return false
+		}
+	}
+}
+
 func (c *checker) checkExpr(e ast.Expr) {
 	if e == nil {
 		return
 	}
 	switch e := e.(type) {
 	case *ast.LetInExpr:
-		if e.Mutable {
-			for _, b := range e.Bindings {
+		for _, b := range e.Bindings {
+			if e.Mutable || (len(b.Params) == 0 && isRefAlloc(b.Body)) {
 				c.mutableVars[b.Name] = true
 			}
 		}
@@ -109,6 +123,17 @@ func (c *checker) checkExpr(e ast.Expr) {
 		}
 		c.checkExpr(e.Left)
 		c.checkExpr(e.Right)
+	case *ast.AssignExpr:
+		c.checkExpr(e.Target)
+		c.checkExpr(e.Value)
+	case *ast.RefExpr:
+		c.checkExpr(e.Value)
+	case *ast.DerefExpr:
+		c.checkExpr(e.Target)
+	case *ast.BeginExpr:
+		for _, s := range e.Stmts {
+			c.checkExpr(s)
+		}
 	case *ast.IfExpr:
 		c.checkExpr(e.Cond)
 		c.checkExpr(e.ThenBranch)
@@ -187,8 +212,8 @@ func chanSendArg(app *ast.AppExpr) (ch, val string, loc token.SourceLoc, ok bool
 	for cur := app; cur != nil; {
 		if inner, isInner := cur.Func.(*ast.AppExpr); isInner {
 			if chID, l, found := chanSendPartial(inner); found {
-				if id, okID := cur.Arg.(*ast.IdentExpr); okID {
-					return chID, id.Name, l, true
+				if name, okID := mutableCellName(cur.Arg); okID {
+					return chID, name, l, true
 				}
 				return chID, "", l, true
 			}
@@ -203,6 +228,22 @@ func chanSendArg(app *ast.AppExpr) (ch, val string, loc token.SourceLoc, ok bool
 		break
 	}
 	return "", "", token.SourceLoc{}, false
+}
+
+// mutableCellName returns the ident of a ref/mutable cell, including `!x`.
+func mutableCellName(e ast.Expr) (string, bool) {
+	for {
+		switch v := e.(type) {
+		case *ast.ParenExpr:
+			e = v.Inner
+		case *ast.DerefExpr:
+			e = v.Target
+		case *ast.IdentExpr:
+			return v.Name, true
+		default:
+			return "", false
+		}
+	}
 }
 
 func moduleName(e ast.Expr) (string, bool) {

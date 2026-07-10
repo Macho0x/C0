@@ -1,9 +1,9 @@
 module Trading.Position
 
-let transfer (ch: int owned_chan) (value: int) : unit with { async } =
+let transfer (ch: int owned_chan) (value: int) : unit =
   let u = OwnedChan.send ch value in
   ()
 
-let main () : unit with { async } =
+let main () : unit =
   let ch = OwnedChan.make () in
   transfer ch 42

@@ -25,6 +25,7 @@ import (
 	"goop.dev/compiler/internal/color"
 	"goop.dev/compiler/internal/config"
 	"goop.dev/compiler/internal/desugar"
+	"goop.dev/compiler/internal/effects"
 	gfmt "goop.dev/compiler/internal/fmt"
 	lc0 "goop.dev/compiler/internal/lexer"
 	"goop.dev/compiler/internal/modresolve"
@@ -255,6 +256,7 @@ func main() {
 		}
 
 		// Generate Go code
+		mod = effects.TransformCPS(mod)
 		gen := codegen.NewGenerator(file, cfg)
 		gen.SetTypeMap(tm, vtm)
 		gen.SetProvenSites(proven)
@@ -321,6 +323,7 @@ func main() {
 		}
 
 		// Generate Go code
+		mod = effects.TransformCPS(mod)
 		gen := codegen.NewGenerator(file, cfg)
 		gen.SetTypeMap(tm, vtm)
 		gen.SetProvenSites(proven)
@@ -1018,6 +1021,7 @@ func compileGoopModuleToGo(goopPath string, cfg *config.Config) (string, string,
 	if len(typeErrs) > 0 {
 		return "", "", fmt.Errorf("type errors in %s: %v", goopPath, typeErrs[0])
 	}
+	mod = effects.TransformCPS(mod)
 	gen := codegen.NewGenerator(goopPath, cfg)
 	gen.SetTypeMap(tm, vtm)
 	goSrc, err := gen.Generate(mod)
@@ -1165,6 +1169,7 @@ func runTests(dir string) int {
 		gen.SetTypeMap(tm, vtm)
 		gen.SetProvenSites(proven)
 		gen.SetRefinementMeta(funcProven)
+		mod = effects.TransformCPS(mod)
 		goSrc, err := gen.Generate(mod)
 		if err != nil {
 			fmt.Printf("--- FAIL: %s (codegen: %v)\n", name, err)

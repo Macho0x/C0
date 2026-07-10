@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.0.0
+
+### Breaking — OCaml-aligned surface
+
+Removed non-OCaml duplicate syntax (PARSE-MIG010–018):
+
+- `let mutable` / binding `<-` → `ref` / `!` / `:=` (array `arr.(i) <-` kept)
+- `?`, `result { }`, `async { }`, `region { }`, `guard` / `is` / expr `as` → `match`
+- `newtype` → single-ctor ADT + `private`
+- `with { io }` effect rows → OCaml 5-style `effect` / `perform` / handlers (CPS-lowered)
+- `panic` / `panic_message` → `failwith`
+- `%` → `mod` (`land` / `lor` / `lxor` added)
+
+Kept: Go-style `import golang` / `import goop`, `go` / `go (move …)`, `@golang { }`, linear/`owned_chan`, `where` refinements.
+
+### Added
+
+- `while`, `function`, `exception` / `raise` / `try`/`with`/`finally`, `assert`, `lazy`, `//` comments
+- Nested modules (`struct`/`sig`/`open`/`include`/functors/`let module`), `.mli` export check
+- Polymorphic variants, GADTs (approx), labelled args, `[| … |]` array literals
+- Minimal OCaml OOP (`class` / `object` / `new`)
+- Effect handlers via CPS / free-monad lowering (effectful Go is not idiomatic by design)
+- Optional Z3 SMT for refinements (`[check] smt = true`)
+- Style guide: `docs/design/STYLE.md`, parity matrix: `docs/design/14-ocaml-parity.md`
+
+### Examples & tests
+
+- LUT decision logic refactored to `situation` ADT + `match`
+- 49 e2e tests; new coverage for ref/while, exceptions, mod, function, array lit, effects, modules
+
 ## 0.8.2
 
 ### Documentation
@@ -34,56 +64,3 @@
 ### Tests & docs
 - OCaml-style trading decision LUT test (375-cell universe)
 - Eight new integration tests; design doc 13 and std-array reference
-
-## 0.7.1
-
-### Parser & LSP
-- Allow `let _` discard bindings (idiomatic for `go` fire-and-forget)
-- Fix LSP hover/definition/completion returning invalid JSON-RPC when result is null
-- Check `scanner.Err()` after LSP header reads
-
-### Cleanup
-- Remove dead code: `parseExternDecl`, `localGoopPathForImport`, `writeOpenDependencies`
-- Drop unused parameters in `parseLetDecl` and `diagnosticFromError`
-- Promote `golang.org/x/tools` to a direct module dependency
-
-## 0.7.0
-
-### Formatter
-- New `src/internal/fmt` package; `goop fmt` formats the parse tree (no desugar)
-- Offside-rule layout for `match`, `if`, `let`; full `GoExpr` / `go (move ...)` support
-
-### Concurrency safety
-- Channel-mediated race tracking (`LINEAR008`, under `[check] concurrent`)
-- Narrow static deadlock lint (`DEADLOCK001`, `[check] deadlock`)
-
-## 0.6.0
-
-### Compile-time safety
-- Refinement call-site codegen: proven VCs skip guards; unproven emit call-site checks; exported entry guards for FFI
-- Arithmetic refinement solver (interval arithmetic, overflow-safe)
-- Linear `go` handoff for owned resources
-- `go (move ...)` syntax for explicit goroutine transfer
-- `goop.toml`: `concurrent` and `refinement_unproven` severity knobs
-
-### Examples & docs
-- `go_move.goop`, `linear_go_handoff.goop`, extended `refinement_solving.goop`
-- Tutorial and README updated for new check config keys
-
-## 0.5.5-dev
-
-### README
-- Language comparison matrix (Go / Rust / OCaml / F# / Goop)
-- Trading bot safety summary table with example links
-- Banner renders on light and dark mode via `<picture>` element
-- Renamed banner asset to `goop-banner-whitebg.jpg`
-
-### Editor (0.5.3)
-- Goopher branding assets and Zed file icons
-- Linguist language color updated to `#62c52e`
-
-## 0.5.2
-
-- Language tutorial and stdlib reference
-- VS Code highlighting/icons, GitHub Linguist package
-- Unified safety pipeline, NIL001, EXHAUST003, effect inference, newtypes

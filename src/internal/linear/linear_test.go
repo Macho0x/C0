@@ -200,9 +200,9 @@ let main () = print_line "test"
 	assertHasError(t, errs, "not discharged in else-branch")
 }
 
-// TestRegionAutoDischarge_NoError: region auto-discharges linear resources
-// acquired via let!, even if they are never explicitly discharged.
-func TestRegionAutoDischarge_NoError(t *testing.T) {
+// TestLinearUseDischarges_NoError: using a linear value (hand-off) discharges
+// it without an explicit Close — equivalent to the old region auto-discharge.
+func TestLinearUseDischarges_NoError(t *testing.T) {
 	src := `module Test
 type handle : 1
 
@@ -213,11 +213,7 @@ let useIt (h: handle) : unit =
   print_line "using"
 
 let process (h: handle) : unit =
-  region {
-    let! x = h
-    do! useIt x
-    return ()
-  }
+  useIt h
 
 let main () = print_line "test"
 `
@@ -226,9 +222,9 @@ let main () = print_line "test"
 	assertNoErrors(t, errs)
 }
 
-// TestRegionUnusedLinear_NoError: a linear resource acquired via let! in a
-// region that is never used is auto-discharged at region exit (no error).
-func TestRegionUnusedLinear_NoError(t *testing.T) {
+// TestUnusedLinearParam_AutoDischarge_NoError: unused linear parameters are
+// auto-discharged at function exit (no error).
+func TestUnusedLinearParam_AutoDischarge_NoError(t *testing.T) {
 	src := `module Test
 type handle : 1
 
@@ -236,10 +232,7 @@ let Close (h: handle) : unit =
   print_line "closed"
 
 let process (h: handle) : unit =
-  region {
-    let! x = h
-    return ()
-  }
+  ()
 
 let main () = print_line "test"
 `
@@ -248,9 +241,9 @@ let main () = print_line "test"
 	assertNoErrors(t, errs)
 }
 
-// TestRegionMultipleLetBang_NoError: region with multiple let! bindings
-// auto-discharges all of them.
-func TestRegionMultipleLetBang_NoError(t *testing.T) {
+// TestMultipleUnusedLinearParams_AutoDischarge_NoError: multiple unused linear
+// parameters are auto-discharged at function exit.
+func TestMultipleUnusedLinearParams_AutoDischarge_NoError(t *testing.T) {
 	src := `module Test
 type handle : 1
 
@@ -258,11 +251,7 @@ let Close (h: handle) : unit =
   print_line "closed"
 
 let process (h1: handle) (h2: handle) : unit =
-  region {
-    let! a = h1
-    let! b = h2
-    return ()
-  }
+  ()
 
 let main () = print_line "test"
 `
@@ -275,14 +264,14 @@ let main () = print_line "test"
 // Goroutine sharing analysis tests
 // ---------------------------------------------------------------------------
 
-// TestMutableGoCapture_NoErrorWhenNotUsedAfter: mutable captured by go but not
+// TestMutableGoCapture_NoErrorWhenNotUsedAfter: ref captured by go but not
 // used afterward in the spawning scope → no error (flow-sensitive liveness).
 func TestMutableGoCapture_NoErrorWhenNotUsedAfter(t *testing.T) {
 	src := `module Test
 
 let race () =
-  let mutable counter = 0 in
-  go (fun () -> counter)
+  let counter = ref 0 in
+  go (fun () -> !counter)
 
 let main () = print_line "test"
 `
@@ -291,15 +280,15 @@ let main () = print_line "test"
 	assertNoErrors(t, errs)
 }
 
-// TestMutableMultiGoCapture_Error: a mutable variable captured by two
+// TestMutableMultiGoCapture_Error: a ref cell captured by two
 // goroutines → error about sharing between multiple goroutines.
 func TestMutableMultiGoCapture_Error(t *testing.T) {
 	src := `module Test
 
 let race () =
-  let mutable counter = 0 in
-  let dummy = go (fun () -> counter) in
-  go (fun () -> counter)
+  let counter = ref 0 in
+  let dummy = go (fun () -> !counter) in
+  go (fun () -> !counter)
 
 let main () = print_line "test"
 `
@@ -340,16 +329,16 @@ let main () = print_line "test"
 	assertNoErrors(t, errs)
 }
 
-// TestMutableModuleLevelGoCapture_Error: module-level mutable used after go spawn.
+// TestMutableModuleLevelGoCapture_Error: module-level ref used after go spawn.
 func TestMutableModuleLevelGoCapture_Error(t *testing.T) {
 	src := `module Test
 
-let mutable counter = 0
+let counter = ref 0
 
 let race () =
-  let mutable counter = 0 in
-  let ignored = go (fun () -> counter) in
-  print_line (int_to_string counter)
+  let counter = ref 0 in
+  let ignored = go (fun () -> !counter) in
+  print_line (int_to_string !counter)
 
 let main () = print_line "test"
 `
@@ -359,13 +348,13 @@ let main () = print_line "test"
 }
 
 // TestMutableCapturedNotAccessed_NoError: flow-sensitive liveness — if the
-// spawning scope never accesses the mutable variable after go, no race error.
+// spawning scope never accesses the ref after go, no race error.
 func TestMutableCapturedNotAccessed_NoError(t *testing.T) {
 	src := `module Test
 
 let race () =
-  let mutable counter = 0 in
-  go (fun () -> counter)
+  let counter = ref 0 in
+  go (fun () -> !counter)
 
 let main () = print_line "test"
 `
@@ -374,14 +363,14 @@ let main () = print_line "test"
 	assertNoErrors(t, errs)
 }
 
-// TestMutableCapturedAndUsedAfterGo_Error: mutable variable used after go spawn.
+// TestMutableCapturedAndUsedAfterGo_Error: ref cell used after go spawn.
 func TestMutableCapturedAndUsedAfterGo_Error(t *testing.T) {
 	src := `module Test
 
 let race () =
-  let mutable counter = 0 in
-  let ignored = go (fun () -> counter) in
-  print_line (int_to_string counter)
+  let counter = ref 0 in
+  let ignored = go (fun () -> !counter) in
+  print_line (int_to_string !counter)
 
 let main () = print_line "test"
 `
@@ -519,8 +508,8 @@ func TestGoMove_SuppressesRace(t *testing.T) {
 	src := `module Test
 
 let ok () : unit =
-  let mutable counter = 0 in
-  go (move counter) (fun () -> let v = counter in ())
+  let counter = ref 0 in
+  go (move counter) (fun () -> counter := !counter + 1)
 
 let main () = print_line "test"
 `

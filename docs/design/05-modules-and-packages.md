@@ -8,11 +8,34 @@ Every Goop source file begins with a module declaration:
 module MyModule
 ```
 
-A module corresponds to a Go package. The module name determines the emitted Go package name and default file path.
+A file-level module corresponds to a Go package. The module name determines the emitted Go package name and default file path.
 
-## Unified imports (v0.3.0)
+## Nested modules (OCaml-style, minimal)
 
-Goop uses Go-style import syntax. Legacy `open` and `extern "go"` were removed in v0.3.0.
+```goop
+module Inner = struct
+  let add (a: int) (b: int) : int = a + b
+end
+
+open Inner
+```
+
+Also supported (minimal implementations):
+
+| Form | Role |
+|------|------|
+| `module M = struct … end` | Nested structure |
+| `module type S = sig … end` | Signature |
+| `module F (X : S) = struct … end` / `functor` | Functors |
+| `open` / `include` | Bring names into scope |
+| `let module M = … in …` | Local module |
+| `.mli` | Interface file (`sig` items) |
+
+See [14-ocaml-parity.md](14-ocaml-parity.md). Everyday projects still use one file-level `module` plus Go-style imports.
+
+## Unified imports (Go-style)
+
+Goop keeps Go-style import syntax (intentional extension). Legacy top-level-only `open` as the sole import mechanism and `extern "go"` were removed earlier.
 
 ```goop
 module Main
@@ -31,16 +54,14 @@ import goop . "std.list"   (* dot import: unqualified exports *)
 | Form | Meaning | `{ val … }` |
 |------|---------|-------------|
 | `import golang "path"` | Go package | Optional FFI signatures |
-| `import goop "path"` | Goop module (logical or canonical path) | Forbidden |
-| `import goop . "path"` | Dot import (replaces `open`) | Forbidden |
+| `import goop "path"` | Goop module | Forbidden |
+| `import goop . "path"` | Dot import | Forbidden |
 | `alias golang "path"` | Go import with local alias | Optional |
-| `alias goop "path"` | Qualified Goop import (`alias.Name`) | Forbidden |
+| `alias goop "path"` | Qualified Goop import | Forbidden |
 
 Logical paths like `"std.io"` resolve via `goop.toml` `[mappings]` or built-in defaults.
 
 ## Inline Go
-
-`@golang { … }` embeds Go source in the current file (unchanged from v0.2):
 
 ```goop
 @golang {
@@ -51,12 +72,12 @@ val helper : unit -> int
 
 ## Visibility
 
-Top-level `private` hides bindings from other modules:
-
 ```goop
 private let helper x = x + 1
 let main () = helper 1   (* OK in same module *)
 ```
+
+`private type` brands ADT constructors at the module boundary (preferred over removed `newtype`).
 
 ## Configuration
 
@@ -64,4 +85,4 @@ See [11-package-manager.md](11-package-manager.md) for `goop get`, `goop.lock`, 
 
 ## Compilation unit
 
-One Go package is emitted per Goop module file. Multi-file Goop packages are planned; v0.3 resolves transitive `import goop` for type-checking and test builds.
+One Go package is emitted per Goop module file. Transitive `import goop` is resolved for type-checking and test builds.

@@ -2,13 +2,11 @@
 //
 // It handles:
 //   - Module declarations with qualified names (dots)
-//   - Open statements
-//   - Let declarations (top-level and `let … in` expressions)
-//   - Type declarations (records, ADTs, aliases)
-//   - Extern declarations
-//   - Full expression language with proper precedence
+//   - Import declarations (golang / goop) and @golang embeds
+//   - Let / type / exception / effect declarations
+//   - OCaml-aligned expression language (match, try, while, ref, …)
 //   - Pattern matching (wildcard, identifier, literal, constructor, record, tuple, list, cons, alias)
-//   - Pipeline operator, error propagation, match macros
+//   - Migration errors (PARSE-MIG*) for removed pre-1.0 syntax
 package parser
 
 import (
@@ -237,10 +235,15 @@ func (p *Parser) canStartExpr(t token.Token) bool {
 	// which is parsed by parsePrefix().  Including LET here causes the
 	// function‑application juxtaposition loop to greedily consume a
 	// top‑level `let` declaration as if it were an argument.
-	case token.IDENT, token.CONSTRUCTOR, token.INT, token.FLOAT,
+	case token.IDENT, token.CONSTRUCTOR, token.POLYVAR, token.INT, token.FLOAT,
 		token.STRING, token.CHAR, token.TRUE, token.FALSE,
-		token.LPAREN, token.LBRACE, token.LBRACKET,
-		token.IF, token.MATCH, token.FUN, token.GUARD, token.FOR, token.BEGIN, token.GO, token.USING:
+		token.LPAREN, token.LBRACE, token.LBRACKET, token.LBRACKETPIPE,
+		token.IF, token.MATCH, token.FUN, token.FUNCTION,
+		token.FOR, token.WHILE, token.BEGIN, token.GO,
+		token.TRY, token.RAISE, token.ASSERT, token.LAZY, token.PERFORM,
+		token.FAILWITH, token.REF, token.BANG, token.OBJECT, token.NEW, token.TILDE,
+		// Migration keywords: still start an expr so we can emit PARSE-MIG*.
+		token.GUARD, token.USING, token.PANIC:
 		return true
 	default:
 		return false
@@ -276,17 +279,20 @@ func (p *Parser) canStartType(t token.Token) bool {
 func (p *Parser) parseModule() *ast.Module {
 	mod := &ast.Module{}
 
-	// Optional `module Name`
+	// Optional `module Name` file header (not `module M =` / `module type` / functor)
 	if p.cur().Type == token.MODULE {
-		p.advance()
-		mod.Name = p.parseQualifiedName()
-	}
-
-	// Reject legacy `open` with migration hint
-	if p.cur().Type == token.OPEN {
-		p.errorf("'open' is removed; use `import goop \"path\"` or `import goop . \"path\"` for dot import")
-		p.advance()
-		p.parseQualifiedName()
+		next := p.peek().Type
+		if next != token.TYPE && next != token.EQUALS {
+			saved := p.pos
+			p.advance() // module
+			name := p.parseQualifiedName()
+			if p.cur().Type == token.EQUALS || p.cur().Type == token.LPAREN {
+				// Nested module / functor — rewind for top-decl parsing
+				p.pos = saved
+			} else {
+				mod.Name = name
+			}
+		}
 	}
 
 	// Zero or more import declarations
@@ -352,6 +358,10 @@ func (p *Parser) parseTopDecl() ast.TopDecl {
 		return p.parseLetDecl(false)
 	case token.TYPE:
 		return p.parseTypeDecl(false)
+	case token.EXCEPTION:
+		return p.parseExceptionDecl()
+	case token.EFFECT:
+		return p.parseEffectDecl()
 	case token.EXTERN:
 		p.errorf("'extern' is removed; use `import golang \"path\"` or `import golang \"path\" { val ... }`")
 		return p.parseExternDeclSkip()
@@ -360,15 +370,13 @@ func (p *Parser) parseTopDecl() ast.TopDecl {
 		p.parseImportDecl()
 		return nil
 	case token.MODULE:
-		p.errorf("unexpected 'module' after first declaration")
-		p.advance()
-		p.parseQualifiedName()
-		return nil
+		return p.parseModuleDecl()
 	case token.OPEN:
-		p.errorf("'open' is removed; use `import goop \"path\"` or `import goop . \"path\"`")
-		p.advance()
-		p.parseQualifiedName()
-		return nil
+		return p.parseOpenDecl()
+	case token.INCLUDE:
+		return p.parseIncludeDecl()
+	case token.CLASS:
+		return p.parseClassDecl()
 	default:
 		p.errorf("unexpected token %s at top level", p.cur().Type)
 		p.advance()
@@ -414,8 +422,9 @@ func (p *Parser) parseLetDecl(isPrivate bool) *ast.LetDecl {
 	if p.match(token.REC) {
 		decl.Rec = true
 	}
-	if p.match(token.MUTABLE) {
-		decl.Mutable = true
+	if p.cur().Type == token.MUTABLE {
+		p.errorf("PARSE-MIG010: 'let mutable' is removed; use `ref` / `:=` / `!`")
+		p.advance()
 	}
 	decl.Bindings = append(decl.Bindings, p.parseBinding())
 	for p.match(token.AND) {
@@ -445,9 +454,10 @@ func (p *Parser) parseBinding() ast.LetBinding {
 	// Optional return type annotation
 	if p.match(token.COLON) {
 		b.RetType = p.parseType()
-		// Optional effect row after return type
-		if p.cur().Type == token.WITH {
-			b.RetEffects = p.parseEffectRow()
+		// Effect rows on return types are removed (PARSE-MIG016).
+		if p.cur().Type == token.WITH && p.peek().Type == token.LBRACE {
+			p.errorf("PARSE-MIG016: effect row `with { … }` is removed; use effect handlers")
+			_ = p.parseEffectRow() // parse and discard
 		}
 	}
 
@@ -465,6 +475,44 @@ func (p *Parser) parseParams() []ast.Param {
 	var params []ast.Param
 	for {
 		switch p.cur().Type {
+		case token.TILDE:
+			p.advance()
+			param := ast.Param{}
+			tok := p.cur()
+			if tok.Type == token.IDENT || tok.Type == token.CONSTRUCTOR {
+				p.advance()
+				param.Name = tok.Lexeme
+				param.Label = tok.Lexeme
+			}
+			if p.match(token.COLON) {
+				// ~label:name or ~label:(name : type) — treat next ident as name
+				if p.cur().Type == token.LPAREN {
+					p.advance()
+					nameTok := p.cur()
+					if nameTok.Type == token.IDENT {
+						p.advance()
+						param.Name = nameTok.Lexeme
+					}
+					if p.match(token.COLON) {
+						param.Type = p.parseType()
+					}
+					p.expect(token.RPAREN)
+				} else if p.cur().Type == token.IDENT {
+					nameTok := p.advance()
+					param.Name = nameTok.Lexeme
+				}
+			}
+			params = append(params, param)
+		case token.QUESTION:
+			p.advance()
+			param := ast.Param{Optional: true}
+			tok := p.cur()
+			if tok.Type == token.IDENT || tok.Type == token.CONSTRUCTOR {
+				p.advance()
+				param.Name = tok.Lexeme
+				param.Label = tok.Lexeme
+			}
+			params = append(params, param)
 		case token.IDENT:
 			tok := p.advance()
 			params = append(params, ast.Param{Name: tok.Lexeme})
@@ -522,6 +570,17 @@ func (p *Parser) parseTypeDecl(isPrivate bool) ast.TopDecl {
 func (p *Parser) parseTypeBinding() *ast.TypeDecl {
 	d := &ast.TypeDecl{}
 
+	// OCaml-style prefix params: `type 'a t` or `type _ t`
+	var prefixParams []string
+	for p.cur().Type == token.TYVAR || p.cur().Type == token.UNDERSCORE {
+		tok := p.advance()
+		if tok.Type == token.UNDERSCORE {
+			prefixParams = append(prefixParams, "_")
+		} else {
+			prefixParams = append(prefixParams, tok.Lexeme)
+		}
+	}
+
 	tok := p.cur()
 	if tok.Type == token.CONSTRUCTOR || tok.Type == token.IDENT {
 		p.advance()
@@ -531,11 +590,12 @@ func (p *Parser) parseTypeBinding() *ast.TypeDecl {
 		return d
 	}
 
-	// Optional type parameters: 'a 'b …
+	// Optional postfix type parameters: 'a 'b …
 	for p.cur().Type == token.TYVAR {
 		tv := p.advance()
 		d.TypeParams = append(d.TypeParams, tv.Lexeme)
 	}
+	d.TypeParams = append(prefixParams, d.TypeParams...)
 
 	// Check for `: 1` linear quantity annotation
 	// e.g. `type file_handle : 1` or `type file_handle : 1 = ...`
@@ -568,22 +628,20 @@ func (p *Parser) parseTypeBinding() *ast.TypeDecl {
 	case p.cur().Type == token.LBRACE:
 		d.Kind = p.parseRecordTypeKind()
 	case p.cur().Type == token.PIPE:
-		d.Kind = p.parseADTTypeKind()
+		d.Kind = p.parseADTOrGADT()
 	default:
 		// Could be ADT without leading pipe, or a type alias.
-		// ADT: starts with CONSTRUCTOR followed by PIPE or EOF/RBRACE/etc.
-		// Alias: any other type expression.
 		if p.cur().Type == token.CONSTRUCTOR {
-			// Peek ahead: if next is PIPE or RBRACE or EOF, it's an ADT.
-			// Otherwise it might be a qualified type name (A.B) or alias.
 			next := p.peek().Type
 			if next == token.PIPE || next == token.EOF || next == token.RBRACE ||
-				next == token.LET || next == token.TYPE || next == token.MODULE || next == token.OPEN {
-				d.Kind = p.parseADTTypeKindNoPipe()
+				next == token.LET || next == token.TYPE || next == token.MODULE || next == token.OPEN ||
+				next == token.COLON || next == token.OF || next == token.END {
+				d.Kind = p.parseADTOrGADT()
 				return d
 			}
 		}
 		if p.cur().Type == token.NEWTYPE {
+			p.errorf("PARSE-MIG015: 'newtype' is removed; use a single-constructor ADT and `private`")
 			p.advance()
 			d.Kind = &ast.NewtypeTypeKind{Rep: p.parseType()}
 			return d
@@ -593,11 +651,88 @@ func (p *Parser) parseTypeBinding() *ast.TypeDecl {
 	return d
 }
 
+// parseADTOrGADT parses ADT or GADT constructors after optional leading `|`.
+func (p *Parser) parseADTOrGADT() ast.TypeKind {
+	if p.cur().Type == token.PIPE {
+		p.advance()
+	}
+	// Peek first constructor: if followed by `:`, it's a GADT.
+	if p.cur().Type == token.CONSTRUCTOR && p.peek().Type == token.COLON {
+		return p.parseGADTTypeKind()
+	}
+	return p.parseADTTypeKindNoPipe()
+}
+
+func (p *Parser) parseGADTTypeKind() *ast.GADTTypeKind {
+	gk := &ast.GADTTypeKind{}
+	for {
+		c := ast.GADTCase{}
+		tok := p.cur()
+		if tok.Type != token.CONSTRUCTOR {
+			break
+		}
+		p.advance()
+		c.Name = tok.Lexeme
+		p.expect(token.COLON)
+		// Parse `arg -> result` or just `result`
+		t := p.parseType()
+		if p.match(token.ARROW) {
+			c.Arg = t
+			c.Result = p.parseType()
+		} else {
+			c.Result = t
+		}
+		gk.Cases = append(gk.Cases, c)
+		if !p.match(token.PIPE) {
+			break
+		}
+	}
+	return gk
+}
+
+func (p *Parser) parseExceptionDecl() *ast.ExceptionDecl {
+	p.expect(token.EXCEPTION)
+	d := &ast.ExceptionDecl{}
+	tok := p.cur()
+	if tok.Type != token.CONSTRUCTOR && tok.Type != token.IDENT {
+		p.errorf("expected exception name, got %s", tok.Type)
+		return d
+	}
+	p.advance()
+	d.Name = tok.Lexeme
+	if p.match(token.OF) {
+		d.Arg = p.parseType()
+	}
+	return d
+}
+
+func (p *Parser) parseEffectDecl() *ast.EffectDecl {
+	p.expect(token.EFFECT)
+	d := &ast.EffectDecl{}
+	tok := p.cur()
+	if tok.Type != token.CONSTRUCTOR && tok.Type != token.IDENT {
+		p.errorf("expected effect name, got %s", tok.Type)
+		return d
+	}
+	p.advance()
+	d.Name = tok.Lexeme
+	p.expect(token.COLON)
+	from := p.parseTupleType()
+	p.expect(token.ARROW)
+	to := p.parseType()
+	d.From = from
+	d.To = to
+	return d
+}
+
 func (p *Parser) parseRecordTypeKind() *ast.RecordTypeKind {
 	p.expect(token.LBRACE)
 	rk := &ast.RecordTypeKind{}
 	for p.cur().Type != token.RBRACE && p.cur().Type != token.EOF {
 		ft := ast.FieldType{}
+		if p.match(token.MUTABLE) {
+			ft.Mutable = true
+		}
 		tok := p.cur()
 		if tok.Type == token.IDENT {
 			p.advance()
@@ -851,7 +986,8 @@ func (p *Parser) precedence(op token.TokenType) int {
 		return precCons
 	case token.PLUS, token.MINUS, token.CARET, token.PLUSDOT, token.MINUSDOT:
 		return precAdd
-	case token.STAR, token.SLASH, token.STARDOT, token.SLASHDOT, token.PERCENT:
+	case token.STAR, token.SLASH, token.STARDOT, token.SLASHDOT,
+		token.MOD, token.LAND, token.LOR, token.LXOR, token.PERCENT:
 		return precMul
 	default:
 		return 0
@@ -902,14 +1038,15 @@ func (p *Parser) parseExpr(minPrec int) ast.Expr {
 			}
 			left = p.parseAsMatchExpr(left)
 			continue
-		case token.LARROW:
+		case token.LARROW, token.COLONEQ:
 			if precAssign < minPrec {
 				return left
 			}
 			assignLoc := cur.Loc
+			coloneq := cur.Type == token.COLONEQ
 			p.advance()
 			right := p.parseExpr(precAssign)
-			left = &ast.AssignExpr{Target: left, Value: right, Loc: assignLoc}
+			left = &ast.AssignExpr{Target: left, Value: right, Coloneq: coloneq, Loc: assignLoc}
 			continue
 		}
 
@@ -931,6 +1068,10 @@ func (p *Parser) parseExpr(minPrec int) ast.Expr {
 
 		op := cur.Type
 		p.advance()
+		if op == token.PERCENT {
+			p.errorf("PARSE-MIG018: '%%' is removed; use `mod`")
+			op = token.MOD
+		}
 
 		nextMinPrec := prec
 		if !p.isRightAssoc(op) {
@@ -958,8 +1099,8 @@ func (p *Parser) applyPostfix(left ast.Expr) ast.Expr {
 	}
 }
 
-// parsePrefix handles prefix expressions: atoms, unary minus, let-in, if,
-// match, fun, guard.
+// parsePrefix handles prefix expressions: atoms, unary ops, let-in, if,
+// match, fun, function, while, try, raise, etc.
 func (p *Parser) parsePrefix() ast.Expr {
 	cur := p.cur()
 
@@ -975,10 +1116,23 @@ func (p *Parser) parsePrefix() ast.Expr {
 		tok := p.advance()
 		return &ast.LitExpr{Value: false, Kind: token.FALSE, Loc: tok.Loc}
 
+	// --- polymorphic variants ---
+	case token.POLYVAR:
+		tok := p.advance()
+		tag, _ := tok.Literal.(string)
+		if tag == "" {
+			tag = strings.TrimPrefix(tok.Lexeme, "`")
+		}
+		pe := &ast.PolyvarExpr{Tag: tag, Loc: tok.Loc}
+		if p.canStartExpr(p.cur()) {
+			pe.Arg = p.parsePrefix()
+		}
+		return p.applyPostfix(pe)
+
 	// --- identifiers ---
 	case token.IDENT:
 		tok := p.advance()
-		// Check for computation expression: builder { ... }
+		// Check for computation expression: builder { ... } (removed)
 		if isBuilder(tok.Lexeme) && p.cur().Type == token.LBRACE {
 			return p.parseCompExpr(tok.Loc, tok.Lexeme)
 		}
@@ -1006,6 +1160,7 @@ func (p *Parser) parsePrefix() ast.Expr {
 
 	case token.USING:
 		usingTok := p.advance()
+		p.errorf("PARSE-MIG013: 'using' / region CE is removed; use `try`/`finally` or explicit cleanup")
 		pat := p.parseSimplePattern()
 		p.expect(token.EQUALS)
 		expr := p.parseExpr(0)
@@ -1035,6 +1190,14 @@ func (p *Parser) parsePrefix() ast.Expr {
 		p.expect(token.DONE)
 		return &ast.ForExpr{Var: varName, From: from, To: to, Body: body, Loc: forTok.Loc}
 
+	case token.WHILE:
+		whileTok := p.advance()
+		cond := p.parseExpr(0)
+		p.expect(token.DO)
+		body := p.parseExpr(0)
+		p.expect(token.DONE)
+		return &ast.WhileExpr{Cond: cond, Body: body, Loc: whileTok.Loc}
+
 	case token.BEGIN:
 		beginTok := p.advance()
 		stmts := []ast.Expr{p.parseExpr(0)}
@@ -1047,25 +1210,67 @@ func (p *Parser) parsePrefix() ast.Expr {
 		p.expect(token.END)
 		return &ast.BeginExpr{Stmts: stmts, Loc: beginTok.Loc}
 
-	// --- grouped / tuple / list ---
+	// --- grouped / tuple / list / array ---
 	case token.LPAREN:
 		return p.parseParenOrTupleExpr()
 	case token.LBRACE:
 		return p.parseRecordOrUpdateExpr()
 	case token.LBRACKET:
 		return p.parseListExpr()
+	case token.LBRACKETPIPE:
+		return p.parseArrayLitExpr()
 
 	// --- keyword expressions ---
 	case token.IF:
 		return p.parseIfExpr()
 	case token.MATCH:
 		return p.parseMatchExpr()
+	case token.TRY:
+		return p.parseTryExpr()
 	case token.LET:
 		return p.parseLetInExpr()
 	case token.FUN:
 		return p.parseFunExpr()
+	case token.FUNCTION:
+		return p.parseFunctionExpr()
+	case token.RAISE:
+		raiseTok := p.advance()
+		return &ast.RaiseExpr{Exn: p.parseExpr(precUnary), Loc: raiseTok.Loc}
+	case token.FAILWITH:
+		fwTok := p.advance()
+		arg := p.parseExpr(precUnary)
+		return &ast.AppExpr{
+			Func: &ast.IdentExpr{Name: "failwith", Loc: fwTok.Loc},
+			Arg:  arg,
+			Loc:  fwTok.Loc,
+		}
+	case token.ASSERT:
+		assertTok := p.advance()
+		return &ast.AssertExpr{Cond: p.parseExpr(precUnary), Loc: assertTok.Loc}
+	case token.LAZY:
+		lazyTok := p.advance()
+		return &ast.LazyExpr{Value: p.parseExpr(precUnary), Loc: lazyTok.Loc}
+	case token.PERFORM:
+		perfTok := p.advance()
+		return &ast.PerformExpr{Op: p.parseExpr(precUnary), Loc: perfTok.Loc}
+	case token.REF:
+		refTok := p.advance()
+		return &ast.RefExpr{Value: p.parseExpr(precUnary), Loc: refTok.Loc}
+	case token.BANG:
+		bangTok := p.advance()
+		return &ast.DerefExpr{Target: p.parseExpr(precUnary), Loc: bangTok.Loc}
+	case token.OBJECT:
+		return p.parseObjectExpr()
+	case token.NEW:
+		return p.parseNewExpr()
+	case token.TILDE:
+		return p.parseLabelledArg()
 	case token.GUARD:
 		return p.parseGuardExpr()
+	case token.PANIC:
+		panicTok := p.advance()
+		p.errorf("PARSE-MIG017: 'panic' is removed; use `failwith` / `raise`")
+		return &ast.RaiseExpr{Exn: p.parseExpr(precUnary), Loc: panicTok.Loc}
 
 	// --- unary minus ---
 	case token.MINUS:
@@ -1198,6 +1403,24 @@ func (p *Parser) parseListExpr() ast.Expr {
 	return &ast.ListExpr{Elems: elems, Loc: lbrackLoc}
 }
 
+func (p *Parser) parseArrayLitExpr() ast.Expr {
+	loc := p.cur().Loc
+	p.expect(token.LBRACKETPIPE)
+	if p.match(token.PIPERBRACKET) {
+		return &ast.ArrayLitExpr{Elems: nil, Loc: loc}
+	}
+	var elems []ast.Expr
+	elems = append(elems, p.parseExpr(0))
+	for p.match(token.SEMI) {
+		if p.cur().Type == token.PIPERBRACKET {
+			break
+		}
+		elems = append(elems, p.parseExpr(0))
+	}
+	p.expect(token.PIPERBRACKET)
+	return &ast.ArrayLitExpr{Elems: elems, Loc: loc}
+}
+
 func (p *Parser) parseIfExpr() ast.Expr {
 	ifLoc := p.cur().Loc
 	p.expect(token.IF)
@@ -1221,11 +1444,49 @@ func (p *Parser) parseMatchExpr() ast.Expr {
 	return &ast.MatchExpr{Scrutinee: scrutinee, Arms: arms, Loc: matchLoc}
 }
 
+func (p *Parser) parseTryExpr() ast.Expr {
+	tryLoc := p.cur().Loc
+	p.expect(token.TRY)
+	body := p.parseExpr(0)
+	te := &ast.TryExpr{Body: body, Loc: tryLoc}
+	if p.match(token.WITH) {
+		p.match(token.PIPE)
+		te.Arms = p.parseMatchArms()
+	}
+	if p.match(token.FINALLY) {
+		te.Finally = p.parseExpr(0)
+	}
+	if te.Arms == nil && te.Finally == nil {
+		p.errorf("expected 'with' or 'finally' after try body")
+	}
+	return te
+}
+
 func (p *Parser) parseMatchArms() []ast.MatchArm {
 	var arms []ast.MatchArm
-	for p.cur().Type != token.EOF && p.canStartPattern(p.cur()) {
+	for p.cur().Type != token.EOF && (p.canStartPattern(p.cur()) || p.cur().Type == token.EFFECT) {
 		arm := ast.MatchArm{}
-		arm.Pattern = p.parsePattern()
+
+		// Effect handler: `effect (E x) k ->` or `effect E k ->`
+		if p.cur().Type == token.EFFECT {
+			p.advance()
+			arm.EffectHandler = true
+			if p.match(token.LPAREN) {
+				arm.Pattern = p.parsePattern()
+				p.expect(token.RPAREN)
+			} else {
+				arm.Pattern = p.parsePattern()
+			}
+			tok := p.cur()
+			if tok.Type == token.IDENT {
+				p.advance()
+				arm.ContName = tok.Lexeme
+			} else {
+				p.errorf("expected continuation name after effect pattern, got %s", tok.Type)
+			}
+		} else {
+			arm.Pattern = p.parseOrPattern()
+		}
 
 		if p.match(token.WHEN) {
 			arm.Guard = p.parseExpr(0)
@@ -1238,15 +1499,30 @@ func (p *Parser) parseMatchArms() []ast.MatchArm {
 			break
 		}
 		// Allow trailing pipe at EOF or dedent
-		if !p.canStartPattern(p.cur()) && p.cur().Type != token.PIPE {
+		if !p.canStartPattern(p.cur()) && p.cur().Type != token.PIPE && p.cur().Type != token.EFFECT {
 			break
 		}
 	}
 	return arms
 }
 
+// parseOrPattern parses `p | q | r` or-patterns.
+func (p *Parser) parseOrPattern() ast.Pattern {
+	left := p.parsePattern()
+	for p.cur().Type == token.PIPE && p.canStartPattern(p.peek()) {
+		p.advance() // |
+		right := p.parsePattern()
+		left = &ast.OrPattern{Left: left, Right: right}
+	}
+	return left
+}
+
 func (p *Parser) parseLetInExpr() ast.Expr {
 	letLoc := p.cur().Loc
+	// `let module M = struct ... end in expr`
+	if p.peek().Type == token.MODULE {
+		return p.parseLetModuleExpr()
+	}
 	decl := p.parseLetDecl(false)
 	// `in` is optional — when absent the offside rule treats the next
 	// expression at the same or greater indentation as the body.
@@ -1264,9 +1540,18 @@ func (p *Parser) parseFunExpr() ast.Expr {
 	return &ast.FunExpr{Params: params, Body: body, Loc: funLoc}
 }
 
+func (p *Parser) parseFunctionExpr() ast.Expr {
+	funLoc := p.cur().Loc
+	p.expect(token.FUNCTION)
+	p.match(token.PIPE)
+	arms := p.parseMatchArms()
+	return &ast.FunctionExpr{Arms: arms, Loc: funLoc}
+}
+
 func (p *Parser) parseGuardExpr() ast.Expr {
 	guardLoc := p.cur().Loc
 	p.expect(token.GUARD)
+	p.errorf("PARSE-MIG014: 'guard' / 'is' / expression 'as' macros are removed; use `match`")
 	ge := &ast.GuardExpr{Loc: guardLoc}
 	// Parse first binding
 	pat := p.parsePattern()
@@ -1291,6 +1576,7 @@ func (p *Parser) parseQuestionExpr(left ast.Expr) ast.Expr {
 	qLoc := p.cur().Loc
 	qLine := qLoc.Line // line of the `?` token
 	p.advance()        // consume ?
+	p.errorf("PARSE-MIG012: '?' error propagation is removed; use `match` on `result`")
 	qe := &ast.QuestionExpr{Left: left, Loc: qLoc}
 	// Optional argument: only when on the same line (offside rule).
 	// Valid forms:  expr ?              (bare)
@@ -1335,6 +1621,7 @@ func (p *Parser) parseQualifiedCtorName(first token.Token) (typePrefix, name str
 func (p *Parser) parseIsExpr(left ast.Expr) ast.Expr {
 	isLoc := p.cur().Loc
 	p.advance() // consume is
+	p.errorf("PARSE-MIG014: 'guard' / 'is' / expression 'as' macros are removed; use `match`")
 	pat := p.parsePattern()
 	return &ast.IsExpr{Left: left, Pattern: pat, Loc: isLoc}
 }
@@ -1342,6 +1629,7 @@ func (p *Parser) parseIsExpr(left ast.Expr) ast.Expr {
 func (p *Parser) parseAsMatchExpr(left ast.Expr) ast.Expr {
 	asLoc := p.cur().Loc
 	p.advance() // consume as
+	p.errorf("PARSE-MIG014: 'guard' / 'is' / expression 'as' macros are removed; use `match`")
 	pat := p.parsePattern()
 	p.expect(token.ARROW)
 	body := p.parseExpr(4)
@@ -1477,15 +1765,16 @@ func (p *Parser) parseListPattern() ast.Pattern {
 
 // parseType parses a type expression.
 // Arrow `->` is right-associative and lowest precedence.
-// After parsing a function type, an optional `with { ... }` effect row is parsed.
+// Effect rows `with { … }` after function types are rejected (PARSE-MIG016).
 func (p *Parser) parseType() ast.Type {
 	left := p.parseTupleType()
 	if p.match(token.ARROW) {
 		right := p.parseType() // right-associative
 		fun := &ast.TFun{From: left, To: right}
-		// Optional effect row: `with { io; log }` or `with { e | .. }`
-		if p.cur().Type == token.WITH {
-			fun.Effects = p.parseEffectRow()
+		// Effect rows removed: emit migration error and discard.
+		if p.cur().Type == token.WITH && p.peek().Type == token.LBRACE {
+			p.errorf("PARSE-MIG016: effect row `with { … }` is removed; use effect handlers")
+			_ = p.parseEffectRow()
 		}
 		return fun
 	}
@@ -1592,6 +1881,11 @@ func (p *Parser) parseAppType() ast.Type {
 		p.advance()
 		return &ast.TChan{Elem: result}
 	}
+	// Postfix `ref`: `int ref` → TApp(ref, int)
+	if p.cur().Type == token.REF {
+		p.advance()
+		return &ast.TApp{Func: &ast.TIdent{Name: "ref"}, Arg: result}
+	}
 	// Postfix `where`: `int where x > 0` → RefinementType{Inner: int, Pred: x > 0}
 	if p.match(token.WHERE) {
 		p.wherePred = true
@@ -1645,6 +1939,9 @@ func (p *Parser) parsePrimaryType() ast.Type {
 				break
 			}
 			ft := ast.FieldType{}
+			if p.match(token.MUTABLE) {
+				ft.Mutable = true
+			}
 			tok := p.cur()
 			if tok.Type == token.IDENT {
 				p.advance()
@@ -1717,7 +2014,9 @@ func (p *Parser) parseSelectExpr(loc token.SourceLoc) ast.Expr {
 }
 
 // parseCompExpr parses `builder { ops }` where builder was already consumed.
+// Computation expressions are removed in 1.0 (PARSE-MIG013); still parsed for recovery.
 func (p *Parser) parseCompExpr(loc token.SourceLoc, builder string) ast.Expr {
+	p.errorf("PARSE-MIG013: '%s { … }' computation expressions are removed; use `match` / `try`/`finally`", builder)
 	p.expect(token.LBRACE)
 	ce := &ast.CompExpr{Builder: builder, Loc: loc}
 

@@ -1,0 +1,6 @@
+module ExceptionTest
+
+exception Boom
+exception Fail of string
+
+let main () = assert true

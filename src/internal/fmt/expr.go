@@ -37,7 +37,7 @@ func binPrec(op token.TokenType) int {
 		return precCons
 	case token.PLUS, token.MINUS, token.CARET, token.LARROW, token.PLUSDOT, token.MINUSDOT:
 		return precAdd
-	case token.STAR, token.SLASH, token.STARDOT, token.SLASHDOT, token.PERCENT:
+	case token.STAR, token.SLASH, token.STARDOT, token.SLASHDOT, token.PERCENT, token.MOD, token.LAND, token.LOR, token.LXOR:
 		return precMul
 	default:
 		return precLowest
@@ -145,7 +145,11 @@ func formatExprInline(e ast.Expr, minPrec int) string {
 	case *ast.IndexExpr:
 		return formatExprInline(e.Target, precPostfix) + ".(" + formatExprInline(e.Index, precLowest) + ")"
 	case *ast.AssignExpr:
-		s := formatExprInline(e.Target, precAssign) + " <- " + formatExprInline(e.Value, precAssign)
+		op := " <- "
+		if e.Coloneq {
+			op = " := "
+		}
+		s := formatExprInline(e.Target, precAssign) + op + formatExprInline(e.Value, precAssign)
 		if precAssign < minPrec {
 			return "(" + s + ")"
 		}
@@ -161,6 +165,76 @@ func formatExprInline(e ast.Expr, minPrec int) string {
 			parts[i] = formatExprInline(s, precLowest)
 		}
 		return "begin " + stringsJoin(parts, "; ") + " end"
+	case *ast.WhileExpr:
+		return "while " + formatExprInline(e.Cond, precLowest) + " do " +
+			formatExprInline(e.Body, precLowest) + " done"
+	case *ast.FunctionExpr:
+		var arms []string
+		for _, a := range e.Arms {
+			arm := formatPattern(a.Pattern)
+			if a.Guard != nil {
+				arm += " when " + formatExprInline(a.Guard, precLowest)
+			}
+			arm += " -> " + formatExprInline(a.Body, precLowest)
+			arms = append(arms, arm)
+		}
+		return "function " + stringsJoin(arms, " | ")
+	case *ast.RefExpr:
+		return "ref " + formatExprInline(e.Value, precApp)
+	case *ast.DerefExpr:
+		s := "!" + formatExprInline(e.Target, precUnary)
+		if precUnary < minPrec {
+			return "(" + s + ")"
+		}
+		return s
+	case *ast.TryExpr:
+		s := "try " + formatExprInline(e.Body, precLowest)
+		if len(e.Arms) > 0 {
+			var arms []string
+			for _, a := range e.Arms {
+				arm := formatPattern(a.Pattern)
+				if a.Guard != nil {
+					arm += " when " + formatExprInline(a.Guard, precLowest)
+				}
+				arm += " -> " + formatExprInline(a.Body, precLowest)
+				arms = append(arms, arm)
+			}
+			s += " with " + stringsJoin(arms, " | ")
+		}
+		if e.Finally != nil {
+			s += " finally " + formatExprInline(e.Finally, precLowest)
+		}
+		return s
+	case *ast.RaiseExpr:
+		return "raise " + formatExprInline(e.Exn, precApp)
+	case *ast.AssertExpr:
+		return "assert " + formatExprInline(e.Cond, precApp)
+	case *ast.LazyExpr:
+		return "lazy " + formatExprInline(e.Value, precApp)
+	case *ast.PerformExpr:
+		return "perform " + formatExprInline(e.Op, precApp)
+	case *ast.ArrayLitExpr:
+		var elems []string
+		for _, el := range e.Elems {
+			elems = append(elems, formatExprInline(el, precLowest))
+		}
+		return "[| " + stringsJoin(elems, "; ") + " |]"
+	case *ast.PolyvarExpr:
+		if e.Arg != nil {
+			return "`" + e.Tag + " " + formatExprInline(e.Arg, precApp)
+		}
+		return "`" + e.Tag
+	case *ast.ObjectExpr:
+		return "object ... end"
+	case *ast.NewExpr:
+		return "new " + e.Class
+	case *ast.LetModuleExpr:
+		return "let module " + e.Name + " in " + formatExprInline(e.Body, precLowest)
+	case *ast.LabelledArgExpr:
+		if e.Value != nil {
+			return "~" + e.Label + ":" + formatExprInline(e.Value, precApp)
+		}
+		return "~" + e.Label
 	case *ast.FunExpr:
 		var ps []string
 		for _, p := range e.Params {

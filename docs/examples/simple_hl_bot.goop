@@ -1,6 +1,6 @@
 module Trading.SimpleHLBot
 
-type order_id = newtype string
+type order_id = | Order_id of string
 
 type OrderAck =
   | Filled
@@ -13,6 +13,6 @@ let handle (ack: OrderAck) : string =
   | Rejected -> "rejected"
   | PartialFill -> "partial"
 
-let main () : unit with { io } =
-  let oid = OrderId "hl-1" in
+let main () : unit =
+  let oid = Order_id "hl-1" in
   print_line (handle Filled)

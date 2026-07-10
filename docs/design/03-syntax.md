@@ -1,25 +1,25 @@
-## Source style
+# Goop Syntax (1.0 — OCaml-aligned)
 
-Goop uses **offside-rule** syntax (like F# and Python): indentation defines block structure. The language is case-sensitive.
+Normative surface for Goop 1.0. Prefer OCaml spelling for every construct; see [STYLE.md](STYLE.md) and [14-ocaml-parity.md](14-ocaml-parity.md).
 
-Comments:
+Goop is case-sensitive. Blocks use explicit delimiters (`let … in`, `begin/end`, `for/do/done`, `while/do/done`). Indentation is stylistic, not structural.
+
+## Comments
 
 ```goop
-(* This is a block comment. *)
-(* Nested comments (* are supported *). *)
+(* Block comments; nested (* ok *). *)
+// Line comments also supported
 ```
-
-Line comments are not provided by default; block comments are sufficient and align with OCaml tradition.
 
 ## Identifiers and keywords
 
-- Identifiers start with a letter or underscore and continue with letters, digits, underscores, or apostrophes.
-- Type variables are written with a leading apostrophe: `'a`, `'key`.
-- Keywords include: `let`, `type`, `match`, `with`, `if`, `then`, `else`, `fun`, `module`, `import`, `golang`, `c0`, `mutable`, `rec`, `and`, `in`, `as`, `when`, `requires`, `returns`, `true`, `false`, `unit`, `private`, `go`, `move`, `chan`.
+- Identifiers: letter or `_`, then letters, digits, `_`, or `'`.
+- Type variables: `'a`, `'key`.
+- Keywords include: `let`, `type`, `match`, `with`, `if`, `then`, `else`, `fun`, `function`, `module`, `import`, `golang`, `goop`, `mutable` (record fields only), `rec`, `and`, `in`, `as` (patterns), `when`, `true`, `false`, `unit`, `private`, `go`, `move`, `chan`, `ref`, `while`, `for`, `do`, `done`, `begin`, `end`, `try`, `raise`, `exception`, `failwith`, `effect`, `perform`, `mod`, `open`, `include`, `struct`, `sig`, `functor`, `class`, `object`, `new`, `lazy`.
 
-## Modules
+Removed (PARSE-MIG010–018): `let mutable`, `?`, computation expressions, `is`/`guard`/expr `as`, `newtype`, `with { io }` rows, `panic`, `%`.
 
-A file begins with a module declaration and optional imports:
+## Modules and imports
 
 ```goop
 module MyModule
@@ -32,7 +32,7 @@ import (
 let x = 1
 ```
 
-See [05-modules-and-packages.md](../design/05-modules-and-packages.md) for import forms. Legacy `open` and `extern "go"` are parse errors in v0.3+.
+Keep Go-style `import golang` / `import goop`. Nested `module M = struct … end`, `sig`, functors, and `.mli` are supported (minimal). See [05-modules-and-packages.md](05-modules-and-packages.md).
 
 ## Value declarations
 
@@ -46,90 +46,39 @@ let rec factorial (n: int) : int =
   else n * factorial (n - 1)
 ```
 
-Mutability is explicit:
+### Mutation: `ref` / `!` / `:=`
 
 ```goop
-let mutable counter = 0
-counter <- counter + 1
+let r = ref 0 in
+r := !r + 1
 ```
+
+Record fields may be `mutable`. Array cells use `arr.(i) <- v`. There is no `let mutable` and no binding `<-` (PARSE-MIG010/011).
 
 ## Functions
 
-Functions are curried by default:
+Curried by default. Anonymous `fun` and pattern-matching `function`:
 
 ```goop
 let add (x: int) (y: int) : int = x + y
-let addFive = add 5
-```
-
-Anonymous functions:
-
-```goop
 let f = fun x -> x + 1
-let doubled = List.map (fun x -> x * 2) numbers
+let g = function | Some x -> x | None -> 0
 ```
 
 ## Type declarations
 
-Records:
-
 ```goop
 type point = { x: float; y: float }
-```
-
-ADTs:
-
-```goop
 type option 'a = None | Some of 'a
+type handle : 1   (* linear resource *)
 ```
 
-Type aliases:
+### Branding (no `newtype`)
 
 ```goop
-type user_id = string
+type order_id = Order_id of string
+(* or private type order_id = Order_id of string *)
 ```
-
-Linear resource types (opt-in modal linearity):
-
-```goop
-type handle : 1
-```
-
-Types without `: 1` are unrestricted (`ω`). Linear types must be discharged (used/handed-off) on every control-flow path. See `docs/examples/linear.goop`.
-
-## Effect row annotations
-
-Effect rows appear after a function return type with `with`:
-
-```goop
-(* Explicitly pure *)
-let double (x: int) : int with {} = x * 2
-
-(* Has IO effect *)
-let readFile (path: string) : string with { io } = ...
-
-(* Multiple effects *)
-let complex () : unit with { io; log } = ...
-
-(* Row-polymorphic: at least state, plus any others *)
-let withState (f: unit -> 'a with { state | e }) : 'a with { e } = ...
-```
-
-Effect rows are compile-time only and erased in Go output. See `docs/design/02-type-system.md` and `docs/examples/effects.goop`.
-
-## Refinement `where` clauses
-
-`where` is a postfix type modifier for runtime contract assertions:
-
-```goop
-(* `it` refers to the parameter value *)
-let safeDiv (a: int) (b: int where b <> 0) : int = a / b
-
-(* `result` refers to the return value *)
-let clamp (x: int) (lo: int) (hi: int where hi >= lo) : int where result >= lo && result <= hi = ...
-```
-
-Refinements lower to runtime `panic` guards. No SMT solver is involved. See `docs/design/02-type-system.md` and `docs/examples/contracts.goop`.
 
 ## Pattern matching
 
@@ -140,81 +89,51 @@ match expr with
 | _ -> default_expr
 ```
 
-Patterns include:
+Patterns: `_`, literals, constructors, tuples, lists, records, `as` aliases, `when` guards, or-patterns. No expr-level `is` / `as` / `guard` macros.
 
-- Wildcards: `_`
-- Literals: `42`, `"hello"`, `true`
-- Constructors: `Some x`, `Circle { radius }`
-- Tuples: `(x, y)`
-- Lists: `[]`, `x :: xs`, `[a; b; c]`
-- Records: `{ x; y }`, `{ name; age }`
-- Aliases: `p as point`
-- Guards: `when x > 0`
-
-## Match macros
-
-Goop provides three syntactic shortcuts that desugar to `match`:
-
-### `is`
+## Exceptions
 
 ```goop
-if status is Passed then ...
+exception Boom
+exception Fail of string
+
+let f () =
+  try
+    raise (Fail "oops")
+  with
+  | Fail msg -> msg
+  | Boom -> "boom"
 ```
 
-### `as`
+Bugs: `failwith "msg"` (lowers to Go `panic`). Recoverable domain errors: `('ok, 'err) result` + `match`.
+
+## Effects (OCaml 5-style, minimal)
 
 ```goop
-let name = getUser(id) as Some {name, ..} -> name else "Anonymous"
+effect Flip : unit -> bool
+
+(* perform / handlers; effectful code may CPS-lower — see 06-effects-and-safety.md *)
 ```
 
-### `guard`
+No `with { io }` effect rows on arrow types.
+
+## Pipelines and operators
 
 ```goop
-let processUser (id: int) : result<user, string> =
-  guard Some user = findUser id else Error "not found"
-  guard Ok validated = validate user else Error "validation failed"
-  Ok (transform validated)
+data |> List.filter (fun x -> x > 0) |> List.map (fun x -> x * 2)
 ```
 
-## Error propagation
+Integer remainder: `mod` (not `%`). Also `land` / `lor` / `lxor`.
 
-The `?` operator propagates `result` errors:
+## Refinement `where`
 
 ```goop
-let readConfig (path: string) : result<config, error> =
-  let bytes = File.readAllBytes path ?
-  let text = Encoding.utf8.getString bytes ?
-  let config = Json.parse<config> text ?
-  Ok config
+let safeDiv (a: int) (b: int where b <> 0) : int = a / b
 ```
 
-Three forms are supported:
+SMT (optional Z3) proves VCs when possible; otherwise runtime guards. See [02-type-system.md](02-type-system.md).
 
-```goop
-let x = f() ?                           (* bare *)
-let x = f() ? "context message"         (* wrap message *)
-let x = f() ? fun e -> wrapError e      (* transform error *)
-```
-
-## Pipelines
-
-Goop uses F#-style data-first pipelines:
-
-```goop
-let result =
-  data
-  |> List.filter (fun x -> x > 0)
-  |> List.map (fun x -> x * 2)
-  |> List.fold (fun acc x -> acc + x) 0
-```
-
-## Operator precedence
-
-Arithmetic and comparison operators follow ML precedence. Logical operators: `&&` (and), `||` (or), `not`. Function application binds tighter than operators.
-
-## Extern and Go interop
-
-Call into Go with unified imports and inline embed blocks (legacy `extern "go"` was removed in v0.3):
+## Go interop
 
 ```goop
 import (
@@ -229,142 +148,37 @@ import (
 val helper : unit -> int
 ```
 
-See [05-modules-and-packages.md](05-modules-and-packages.md) and [`extern_demo.goop`](../examples/extern_demo.goop).
-
-## Computation expressions
-
-Goop supports F#-style computation expressions for monadic programming. Two builders are provided: `result` and `async`.
-
-### `result { ... }`
-
-The `result` builder desugars `let!` bindings into nested `match` expressions that propagate errors:
-
-```goop
-let safeDiv (x: float) (y: float) : (float, string) result =
-  if y = 0.0 then Error "division by zero"
-  else Ok (x *. y)
-
-result {
-  let! a = safeDiv 10.0 2.0
-  let! b = safeDiv a 3.0
-  return a *. b
-}
-```
-
-Desugars to:
-```goop
-match safeDiv 10.0 2.0 with
-| Ok a ->
-    match safeDiv a 3.0 with
-    | Ok b -> Ok (a *. b)
-    | Error e -> Error e
-| Error e -> Error e
-```
-
-Operations inside `result { }`:
-- `let! pattern = expr` — bind a value from a result
-- `do! expr` — execute for effects (like `let! _ = expr`)
-- `return expr` — wrap in `Ok`
-- `return! expr` — return a result directly
-- `let pattern = expr` — regular let binding
-- Final expression — the body
-
-### `region { ... }`
-
-The `region` builder provides scoped resource management with guaranteed cleanup:
-
-```goop
-type handle : 1
-
-let Close (h: handle) : unit = ...
-
-let useResource (h: handle) : unit =
-  region {
-    let! x = h                     (* acquires a linear resource *)
-    do! useHandle x                (* uses the resource *)
-    return ()                      (* returns the result *)
-  }
-```
-
-Operations inside `region { }`:
-- `let! pattern = expr` — acquires a linear resource (emits `defer Close(varName)` in Go output). The variable is auto-discharged at region exit.
-- `let pattern = expr` — binds a non-linear value.
-- `do! expr` — performs an effect.
-- `return expr` — produces the final result.
-
-The linear discharge checker auto-discharges region-bound variables at scope exit. This replaces the legacy `using` block with compile-time-guaranteed cleanup.
-
-See `docs/examples/region.goop`.
-
 ## Concurrency
-
-Spawn a goroutine with `go`:
 
 ```goop
 let _ = go (fun () -> print_line "hello")
+
+let r = ref 0 in
+let _ = go (move r) (fun () -> r := !r + 1)
 ```
 
-Optionally transfer mutable bindings into the goroutine with `go (move ...)`:
+`go` / `go (move …)` and channels are intentional Goop extensions.
 
-```goop
-let mutable counter = 0
-let _ = go (move counter) (fun () -> counter <- counter + 1)
-```
-
-Listed names are treated as moved into the closure: the spawning scope must not use them afterward. This suppresses LINEAR007 (mutable capture race) when the parent no longer accesses the variable. Linear and `owned_chan` values captured by `go` are discharged in the spawning scope (linear handoff).
-
-See `docs/examples/go_move.goop` and `docs/tutorial/05-concurrency.md`.
-
-## Arrays
-
-OCaml-style dynamic arrays use postfix `'a array`:
+## Arrays, loops, sequencing
 
 ```goop
 let arr = Array.make 10 0 in
 arr.(0) <- 42
-assert (Array.length arr = 10 && arr.(0) = 42)
-```
 
-| Syntax | Meaning |
-|---|---|
-| `Array.make n default` | Allocate `n` slots initialized to `default` |
-| `Array.length arr` | Element count |
-| `arr.(i)` | Read index `i` |
-| `arr.(i) <- v` | Write index `i` in place |
-
-Element writes do not require `let mutable arr` — only rebinding the array variable does. See [13-ocaml-surface-syntax.md](13-ocaml-surface-syntax.md).
-
-## For loops
-
-```goop
 for i = 0 to n - 1 do
   arr.(i) <- f i
 done
-```
 
-Inclusive bounds on both ends (`from <= i <= to`). The loop variable is `int` in the body. Expression type is `unit`.
+while !r < 3 do
+  r := !r + 1
+done
 
-## Sequencing with `begin` / `end`
-
-```goop
 begin
   print_line "step 1";
-  print_line "step 2";
   42
 end
 ```
 
-Evaluates expressions left-to-right; the last expression is the value.
+## Modules / OOP / effects (brief)
 
-## Qualified constructors
-
-```goop
-type color = Red | Green | Blue
-
-let c = Color.Red
-match c with
-| Color.Green -> "green"
-| _ -> "other"
-```
-
-Use PascalCase type names (`OrderAck.Filled`, `TradeSide.Buy`). Lowercase-type qualified forms may codegen incorrectly — prefer unqualified constructors on lowercase ADTs.
+Minimal OCaml forms: nested `struct`/`sig`/functors, `class`/`object`/`new`, `effect`/`perform`/handlers. Prefer [STYLE.md](STYLE.md) for everyday code; see [14-ocaml-parity.md](14-ocaml-parity.md) for the parity matrix.

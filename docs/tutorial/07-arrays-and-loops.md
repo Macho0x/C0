@@ -1,6 +1,6 @@
 # 7. Arrays and loops
 
-Goop uses **OCaml-style** arrays and imperative loops for LUTs, buffers, and in-place updates. This is the canonical surface in v0.8.0 — not Rust/Go bracket syntax.
+Goop uses **OCaml-style** arrays and imperative loops for LUTs, buffers, and in-place updates. See [STYLE.md](../design/STYLE.md).
 
 ## Dynamic arrays
 
@@ -18,9 +18,9 @@ assert (Array.length arr = 10 && arr.(0) = 0)
 | `arr.(i)` | Read index `i` (`int`) |
 | `arr.(i) <- v` | Write index `i` in place |
 
-Element writes do **not** require `let mutable arr` — the slice cells are mutable. Use `mutable` only if you need to rebind the array variable itself.
+Element writes do **not** require a `ref` for the array binding — the slice cells are mutable. Use `ref` only if you need to rebind the array variable itself.
 
-See [`arrays.goop`](../examples/arrays.goop) and the full LUT example [`trading_decision_lut.goop`](../examples/trading_decision_lut.goop).
+See [`arrays.goop`](../examples/arrays.goop) and [`trading_decision_lut.goop`](../examples/trading_decision_lut.goop).
 
 ## Filling a LUT with `for`
 
@@ -32,12 +32,19 @@ done
 ```
 
 - Bounds `from` and `to` must be `int`.
-- The loop is **inclusive** on both ends (`0 .. 99` runs 100 times).
-- The loop variable (`i` here) is visible only inside `do ... done`.
+- The loop is **inclusive** on both ends.
+- The loop variable is visible only inside `do ... done`.
+
+## `while` and `ref`
+
+```goop
+let r = ref 0 in
+while !r < 3 do
+  r := !r + 1
+done
+```
 
 ## Sequencing with `begin` / `end`
-
-When a `let` body needs several steps before a result:
 
 ```goop
 let sum =
@@ -48,11 +55,7 @@ let sum =
   end
 ```
 
-Statements separated by `;` run in order. The last expression is the value of the whole `begin ... end`.
-
 ## Qualified constructors
-
-Disambiguate constructors in large modules:
 
 ```goop
 type Color = Red | Green | Blue
@@ -66,8 +69,6 @@ let label c =
 
 ## Optional `std.array` import
 
-Prelude bindings `Array.make` and `Array.length` need no import. For documentation-style qualified access:
-
 ```goop
 import goop . "std.array"
 
@@ -80,14 +81,14 @@ See [std.array](../stdlib/std-array.md).
 
 | Message | Cause | Fix |
 |---|---|---|
-| `cannot assign to immutable binding` | `x <- ...` on non-`mutable` `let` | Use `let mutable x = ... in` |
+| PARSE-MIG010 / MIG011 | `let mutable` or binding `<-` | Use `ref` / `:=` / `!`; keep `arr.(i) <-` |
 | `type mismatch` on `arr.(i)` | Index or array type wrong | Ensure `i : int` and `arr : 'a array` |
-| `expected DONE, got ...` | Missing `done` after `for` | Close the loop with `done` |
+| `expected DONE, got ...` | Missing `done` after `for`/`while` | Close with `done` |
 
 Full catalog: [error reference](../design/10-error-reference.md).
 
 ## Next steps
 
-- [Safety checks](06-safety-checks.md) — exhaustiveness, races, nil channels
-- [OCaml surface syntax](../design/13-ocaml-surface-syntax.md) — design rationale
-- [Go lowering](../design/04-go-lowering.md) — how arrays and loops become Go
+- [Safety checks](06-safety-checks.md)
+- [OCaml surface syntax](../design/13-ocaml-surface-syntax.md)
+- [Go lowering](../design/04-go-lowering.md)

@@ -12,7 +12,7 @@ let handleAck (ack: OrderAck) : string =
   | OrderAck.PartialFill { order_id; filled; remaining } ->
       "partial " ^ order_id ^ " " ^ int_to_string filled ^ "/" ^ int_to_string remaining
 
-let main () : unit with { io } =
+let main () : unit =
   begin
     let a = OrderAck.Filled { order_id = "o1"; qty = 10 } in
     print_line (handleAck a)

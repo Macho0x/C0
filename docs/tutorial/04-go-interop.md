@@ -28,7 +28,7 @@ import (
 }
 val greet : string -> string
 
-let main () : unit with { io } =
+let main () : unit =
   print_line (greet "Goop")
 ```
 

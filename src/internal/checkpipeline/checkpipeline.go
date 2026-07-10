@@ -71,13 +71,18 @@ func RegisterADTsFromModule(mod *ast.Module) {
 		if !ok {
 			continue
 		}
-		adt, ok := td.Kind.(*ast.ADTTypeKind)
-		if !ok {
-			continue
-		}
 		var ctors []string
-		for _, c := range adt.Cases {
-			ctors = append(ctors, c.Name)
+		switch k := td.Kind.(type) {
+		case *ast.ADTTypeKind:
+			for _, c := range k.Cases {
+				ctors = append(ctors, c.Name)
+			}
+		case *ast.GADTTypeKind:
+			for _, c := range k.Cases {
+				ctors = append(ctors, c.Name)
+			}
+		default:
+			continue
 		}
 		exhaustive.RegisterADT(td.Name, ctors)
 	}

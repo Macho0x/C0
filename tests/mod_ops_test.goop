@@ -1,0 +1,6 @@
+module ModOpsTest
+
+let main () =
+  let a = assert (10 mod 3 = 1) in
+  let b = assert ((-7) mod 3 = -1) in
+  assert (0 mod 5 = 0)

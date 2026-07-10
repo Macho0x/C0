@@ -1,7 +1,8 @@
 module TradingDecisionLutTest
 
 (* Inventory-aware market-making LUT — port of trading_decision_lut.ml
- * OCaml surface: Array.make · nested for · arr.(i) <- · set_decision · begin/end
+ * match/when decision logic + OCaml array surface:
+ * Array.make · nested for · arr.(i) <- · set_decision · begin/end
  * 300 states: inv[5] x sig[5] x vol[4] x liq[3] *)
 
 type side = Buy | Sell
@@ -108,61 +109,143 @@ let base_size_mult (vol: int) (liq: int) : float =
   else if vol = 2 && liq = 1 then 0.55
   else 1.0
 
-let pick_risk_action (inv: int) (extreme_inv: bool) (conflict: bool) : risk_action =
-  if extreme_inv && conflict then ReduceOnly
-  else if extreme_inv then ReduceOnly
-  else if abs_int inv = 1 && conflict then ReduceOnly
-  else AllowNewPositions
+type situation =
+  | ExtremeConflict
+  | ExtremeReduceLong
+  | ExtremeReduceShort
+  | ExtremeFlat
+  | MildConflict
+  | ReduceLong
+  | ReduceShort
+  | Neutral
 
-let pick_urgency (inv: int) (extreme_inv: bool) (conflict: bool) : urgency =
-  if extreme_inv && conflict then High
-  else if extreme_inv then Medium
-  else if abs_int inv = 1 && conflict then Medium
-  else Low
+let classify (inv: int) (sig_: int) : situation =
+  let extreme_inv = abs_int inv = 2 in
+  let long_inv = inv > 0 in
+  let short_inv = inv < 0 in
+  let buy_signal = sig_ > 0 in
+  let sell_signal = sig_ < 0 in
+  let conflict = (long_inv && buy_signal) || (short_inv && sell_signal) in
+  if extreme_inv && conflict then ExtremeConflict
+  else if extreme_inv && long_inv && sell_signal then ExtremeReduceLong
+  else if extreme_inv && short_inv && buy_signal then ExtremeReduceShort
+  else if extreme_inv then ExtremeFlat
+  else if abs_int inv = 1 && conflict then MildConflict
+  else if long_inv && sell_signal then ReduceLong
+  else if short_inv && buy_signal then ReduceShort
+  else Neutral
 
-let pick_extra_cap (inv: int) (extreme_inv: bool) (conflict: bool) : float =
-  if extreme_inv && conflict then 0.4
-  else if extreme_inv then 0.6
-  else if abs_int inv = 1 && conflict then 0.7
-  else 1.0
+let is_extreme (sit: situation) : bool =
+  match sit with
+  | ExtremeConflict -> true
+  | ExtremeReduceLong -> true
+  | ExtremeReduceShort -> true
+  | ExtremeFlat -> true
+  | _ -> false
 
-let skew_bid_mult (net_scaled: int) (reduce_long: bool) (reduce_short: bool) : float =
+let is_reduce_long (sit: situation) : bool =
+  match sit with
+  | ExtremeReduceLong -> true
+  | ReduceLong -> true
+  | _ -> false
+
+let is_reduce_short (sit: situation) : bool =
+  match sit with
+  | ExtremeReduceShort -> true
+  | ReduceShort -> true
+  | _ -> false
+
+let pick_risk_action (sit: situation) : risk_action =
+  match sit with
+  | ExtremeConflict -> ReduceOnly
+  | ExtremeReduceLong -> ReduceOnly
+  | ExtremeReduceShort -> ReduceOnly
+  | ExtremeFlat -> ReduceOnly
+  | MildConflict -> ReduceOnly
+  | ReduceLong -> AllowNewPositions
+  | ReduceShort -> AllowNewPositions
+  | Neutral -> AllowNewPositions
+
+let pick_urgency (sit: situation) : urgency =
+  match sit with
+  | ExtremeConflict -> High
+  | ExtremeReduceLong -> Medium
+  | ExtremeReduceShort -> Medium
+  | ExtremeFlat -> Medium
+  | MildConflict -> Medium
+  | ReduceLong -> Low
+  | ReduceShort -> Low
+  | Neutral -> Low
+
+let pick_extra_cap (sit: situation) : float =
+  match sit with
+  | ExtremeConflict -> 0.4
+  | ExtremeReduceLong -> 0.6
+  | ExtremeReduceShort -> 0.6
+  | ExtremeFlat -> 0.6
+  | MildConflict -> 0.7
+  | ReduceLong -> 1.0
+  | ReduceShort -> 1.0
+  | Neutral -> 1.0
+
+let skew_bid_mult (net_scaled: int) (sit: situation) : float =
   if net_scaled > 35 then 1.35
   else if net_scaled < -35 then 0.55
-  else if reduce_long then 0.70
-  else if reduce_short then 1.40
-  else 1.0
+  else
+    match sit with
+    | ExtremeReduceLong -> 0.70
+    | ReduceLong -> 0.70
+    | ExtremeReduceShort -> 1.40
+    | ReduceShort -> 1.40
+    | _ -> 1.0
 
-let skew_ask_mult (net_scaled: int) (reduce_long: bool) (reduce_short: bool) : float =
+let skew_ask_mult (net_scaled: int) (sit: situation) : float =
   if net_scaled > 35 then 0.55
   else if net_scaled < -35 then 1.35
-  else if reduce_long then 1.40
-  else if reduce_short then 0.70
-  else 1.0
+  else
+    match sit with
+    | ExtremeReduceLong -> 1.40
+    | ReduceLong -> 1.40
+    | ExtremeReduceShort -> 0.70
+    | ReduceShort -> 0.70
+    | _ -> 1.0
 
-let skew_bid_off_adj (net_scaled: int) (reduce_long: bool) (reduce_short: bool) : int =
+let skew_bid_off_adj (net_scaled: int) (sit: situation) : int =
   if net_scaled > 35 then -2
   else if net_scaled < -35 then 3
-  else if reduce_long then 4
-  else if reduce_short then -3
-  else 0
+  else
+    match sit with
+    | ExtremeReduceLong -> 4
+    | ReduceLong -> 4
+    | ExtremeReduceShort -> -3
+    | ReduceShort -> -3
+    | _ -> 0
 
-let skew_ask_off_adj (net_scaled: int) (reduce_long: bool) (reduce_short: bool) : int =
+let skew_ask_off_adj (net_scaled: int) (sit: situation) : int =
   if net_scaled > 35 then 3
   else if net_scaled < -35 then -2
-  else if reduce_long then -3
-  else if reduce_short then 4
-  else 0
+  else
+    match sit with
+    | ExtremeReduceLong -> -3
+    | ReduceLong -> -3
+    | ExtremeReduceShort -> 4
+    | ReduceShort -> 4
+    | _ -> 0
 
 let slippage_limit (take: bool) (bps: int) : int option =
   if take then Some (bps * 3) else no_slippage
 
-let log_tag_for (inv: int) (sig_: int) (vol: int) (extreme_inv: bool) (conflict: bool) : string =
-  if extreme_inv then "EXTREME_INV"
-  else if conflict then "CONFLICT"
-  else if abs_int sig_ = 2 then "STRONG_SIG"
-  else if vol >= 2 then "HIGH_VOL"
-  else "NORMAL"
+let log_tag_for (sit: situation) (sig_: int) (vol: int) : string =
+  match sit with
+  | ExtremeConflict -> "EXTREME_INV"
+  | ExtremeReduceLong -> "EXTREME_INV"
+  | ExtremeReduceShort -> "EXTREME_INV"
+  | ExtremeFlat -> "EXTREME_INV"
+  | MildConflict -> "CONFLICT"
+  | _ ->
+      if abs_int sig_ = 2 then "STRONG_SIG"
+      else if vol >= 2 then "HIGH_VOL"
+      else "NORMAL"
 
 let size_cap_for (vol: int) (extra_cap: float) : float =
   if vol = 3 then 0.005
@@ -172,28 +255,24 @@ let size_cap_for (vol: int) (extra_cap: float) : float =
 (* ------ Core base decision (integer-scaled net_bias: sig*55 - inv*85) ------ *)
 
 let compute_base_decision (inv: int) (sig_: int) (vol: int) (liq: int) : decision =
+  let sit = classify inv sig_ in
   let net_scaled = (sig_ * 55) - (inv * 85) in
-  let long_inv = inv > 0 in
-  let short_inv = inv < 0 in
-  let buy_signal = sig_ > 0 in
-  let sell_signal = sig_ < 0 in
-  let reduce_long_aligned = long_inv && sell_signal in
-  let reduce_short_aligned = short_inv && buy_signal in
-  let conflict = (long_inv && buy_signal) || (short_inv && sell_signal) in
-  let extreme_inv = abs_int inv = 2 in
+  let extreme_inv = is_extreme sit in
+  let reduce_long_aligned = is_reduce_long sit in
+  let reduce_short_aligned = is_reduce_short sit in
   let offset_bps = base_offset_bps vol in
   let size_mult = base_size_mult vol liq in
-  let risk_action = pick_risk_action inv extreme_inv conflict in
-  let urgency = pick_urgency inv extreme_inv conflict in
-  let extra_cap = pick_extra_cap inv extreme_inv conflict in
+  let risk_action = pick_risk_action sit in
+  let urgency = pick_urgency sit in
+  let extra_cap = pick_extra_cap sit in
   let take_liq =
     (extreme_inv && (reduce_long_aligned || reduce_short_aligned)) ||
     (abs_int sig_ = 2 && abs_int inv <= 1 && liq <= 1)
   in
-  let bid_mult = skew_bid_mult net_scaled reduce_long_aligned reduce_short_aligned in
-  let ask_mult = skew_ask_mult net_scaled reduce_long_aligned reduce_short_aligned in
-  let bid_off_adj = skew_bid_off_adj net_scaled reduce_long_aligned reduce_short_aligned in
-  let ask_off_adj = skew_ask_off_adj net_scaled reduce_long_aligned reduce_short_aligned in
+  let bid_mult = skew_bid_mult net_scaled sit in
+  let ask_mult = skew_ask_mult net_scaled sit in
+  let bid_off_adj = skew_bid_off_adj net_scaled sit in
+  let ask_off_adj = skew_ask_off_adj net_scaled sit in
   let final_bid_mult = size_mult *. bid_mult in
   let final_ask_mult = size_mult *. ask_mult in
   let qparams =
@@ -207,7 +286,7 @@ let compute_base_decision (inv: int) (sig_: int) (vol: int) (liq: int) : decisio
     ; max_slippage_bps = slippage_limit take_liq offset_bps
     }
   in
-  let tag = log_tag_for inv sig_ vol extreme_inv conflict in
+  let tag = log_tag_for sit sig_ vol in
   let reason =
     "inv=" ^ int_to_string inv ^ " sig=" ^ int_to_string sig_ ^
     " vol=" ^ int_to_string vol ^ " liq=" ^ int_to_string liq ^

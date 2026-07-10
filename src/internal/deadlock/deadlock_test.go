@@ -11,7 +11,7 @@ import (
 func TestDeadlockCycle(t *testing.T) {
 	src := `module DeadlockTest
 
-let run () : unit with { async; io } =
+let run () : unit =
   let ch1 : int chan = Chan.make () in
   let ch2 : int chan = Chan.make () in
   let g1 = go (fun () ->
@@ -37,7 +37,7 @@ let run () : unit with { async; io } =
 func TestDeadlockSelectSilent(t *testing.T) {
 	src := `module DeadlockSelect
 
-let main () : unit with { async; io } =
+let main () : unit =
   let ch : int chan = Chan.make () in
   let g = go (fun () ->
     select {

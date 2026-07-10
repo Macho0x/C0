@@ -1,6 +1,6 @@
-# Goop Grammar
+# Goop Grammar (1.0 — OCaml-aligned)
 
-This is a high-level grammar in EBNF-like notation. It is not a complete LALR(1) grammar; it describes the intended surface syntax for specification purposes.
+High-level EBNF for the Goop 1.0 surface. Not a complete LALR(1) grammar.
 
 ## Lexical elements
 
@@ -8,20 +8,27 @@ This is a high-level grammar in EBNF-like notation. It is not a complete LALR(1)
 ident    := [a-zA-Z_][a-zA-Z0-9_']*
 tyvar    := '\'' ident
 constr   := [A-Z][a-zA-Z0-9_']*
+polyvar  := '`' constr
 integer  := [0-9]+
 float    := [0-9]+ '.' [0-9]* | [0-9]* '.' [0-9]+
 string   := '"' [^"]* '"'
 char     := '\'' [^\']* '\''
 unit     := '()'
+line_comment := '//' [^\n]*
+block_comment := '(*' … '*)'   (* nestable *)
 ```
 
 ## Reserved words
 
 ```
-and as begin chan do done end for go goop else false fun golang guard if import in
-let match module move mutable of panic private rec region result
-requires returns select then to true type unit val when with async
+and as assert begin class constraint do done else end effect exception
+false for fun function go golang goop if in include inherit initializer
+lazy let match method mod module move mutable new object of open
+perform private raise rec sig struct then to true try type val virtual
+when while with
 ```
+
+Removed as keywords (parse migration errors): `guard`, `panic`, `region`, `async` (as CE builder), `newtype`.
 
 ## Program structure
 
@@ -29,60 +36,85 @@ requires returns select then to true type unit val when with async
 program      := module_decl import_decl* top_decl*
 module_decl  := 'module' constr ('.' constr)*
 import_decl  := 'import' import_spec | 'import' '(' import_spec* ')'
-import_spec  := ident? ('golang' | 'c0') '.'? string import_vals?
+import_spec  := ident? ('golang' | 'goop') string import_vals?
 import_vals  := '{' 'val' ident ':' type* '}'
-top_decl     := val_decl | type_decl | golang_embed_decl
+
+top_decl     := val_decl | type_decl | exception_decl | effect_decl
+              | nested_module | module_type_decl | class_decl
+              | golang_embed_decl
+
 golang_embed_decl := '@golang' '{' raw_go_code '}'
+exception_decl    := 'exception' constr ('of' type)?
+effect_decl       := 'effect' constr ':' type '->' type
 ```
+
+## Nested modules
+
+```
+nested_module    := 'module' constr functor_params? '=' module_expr
+module_type_decl := 'module' 'type' constr '=' module_type
+functor_params   := '(' constr ':' module_type ')'*
+module_expr      := 'struct' top_decl* 'end'
+                  | constr functor_app*
+                  | 'functor' '(' constr ':' module_type ')' '->' module_expr
+module_type      := 'sig' sig_item* 'end' | constr
+functor_app      := '(' module_expr ')'
+sig_item         := 'val' ident ':' type | 'type' type_binding | 'exception' …
+                  | 'module' constr ':' module_type | 'open' constr
+```
+
+`.mli` files use `sig_item*` (no `module` header required beyond package name).
 
 ## Value declarations
 
 ```
-val_decl     := 'let' rec? 'mutable'? binding ('and' binding)*
-binding      := ident param* (':' type)? '=' expr
+val_decl     := 'let' rec? binding ('and' binding)*
+binding      := ident labeled_param* (':' type)? '=' expr
+labeled_param := param | '~' ident | '?' ident | '?' '(' ident '=' expr ')'
 param        := ident | '(' ident ':' type ')'
 
-expr         := if_expr
-              | match_expr
-              | let_expr
-              | fun_expr
-              | guard_expr
-              | binary_expr
+expr         := if_expr | match_expr | try_expr | let_expr | fun_expr
+              | function_expr | while_expr | for_expr | begin_expr
+              | lazy_expr | assert_expr | raise_expr | perform_expr
+              | object_expr | new_expr | let_module_expr | binary_expr
 
 if_expr      := 'if' expr 'then' expr 'else' expr
 match_expr   := 'match' expr 'with' '|'? case ('|' case)*
 case         := pattern ('when' expr)? '->' expr
+              | 'effect' '(' constr pattern? ')' ident '->' expr
+try_expr     := 'try' expr 'with' '|'? case ('|' case)*
+              | 'try' expr 'finally' expr
 let_expr     := 'let' binding ('and' binding)* 'in' expr
-fun_expr     := 'fun' param+ '->' expr
-guard_expr   := 'guard' pattern '=' expr 'else' expr
+              | 'let' '*' binding 'in' expr
+              | 'let' '+' binding 'in' expr
+fun_expr     := 'fun' labeled_param+ '->' expr
+function_expr:= 'function' '|'? case ('|' case)*
+while_expr   := 'while' expr 'do' expr 'done'
+for_expr     := 'for' ident '=' expr 'to' expr 'do' expr 'done'
+begin_expr   := 'begin' expr (';' expr)* 'end'
+lazy_expr    := 'lazy' expr
+assert_expr  := 'assert' expr
+raise_expr   := 'raise' expr
+perform_expr := 'perform' expr
+let_module_expr := 'let' 'module' constr '=' module_expr 'in' expr
+object_expr  := 'object' ('(' ident ')')? object_item* 'end'
+new_expr     := 'new' constr expr*
+go_expr      := 'go' ('(' 'move' ident (',' ident)* ')')? expr
 
 binary_expr  := pipeline_expr
 pipeline_expr:= app_expr ('|>' app_expr)*
-app_expr     := primary_expr (primary_expr | '?' qarg?)*
-primary_expr := literal
-              | ident
-              | constr
-              | qualified_constr
-              | '(' expr ')'
-              | record_expr
-              | list_expr
-              | tuple_expr
-              | field_expr
-              | index_expr
-              | match_macro_expr
-              | go_expr
-              | for_expr
-              | begin_expr
+app_expr     := primary_expr primary_expr*
+primary_expr := literal | ident | constr | polyvar | qualified_constr
+              | '(' expr ')' | record_expr | list_expr | array_lit
+              | tuple_expr | field_expr | index_expr | go_expr
+              | deref_expr | ref_expr
 
-for_expr     := 'for' ident '=' expr 'to' expr 'do' expr 'done'
-begin_expr   := 'begin' expr (';' expr)* 'end'
+deref_expr   := '!' expr
+ref_expr     := 'ref' expr
 index_expr   := expr '.(' expr ')'
-assign_expr  := expr '<-' expr
+assign_expr  := expr ':=' expr | expr '.(' expr ')' '<-' expr
+array_lit    := '[|' (expr (';' expr)*)? '|]'
 qualified_constr := constr '.' constr
-
-go_expr      := 'go' ('(' 'move' ident (',' ident)* ')')? expr
-
-qarg         := string | expr
 
 literal      := integer | float | string | char | 'true' | 'false' | '()'
 record_expr  := '{' field_init (';' field_init)* '}'
@@ -90,88 +122,98 @@ field_init   := ident '=' expr | ident
 list_expr    := '[' (expr (';' expr)*)? ']'
 tuple_expr   := '(' expr (',' expr)+ ')'
 field_expr   := expr '.' ident
-
-match_macro_expr := expr 'is' pattern
-                  | expr 'as' pattern '->' expr 'else' expr
 ```
 
 ## Patterns
 
 ```
-pattern      := constr_pattern
-              | record_pattern
-              | tuple_pattern
-              | list_pattern
-              | literal_pattern
-              | ident_pattern
-              | wildcard_pattern
-              | alias_pattern
+pattern      := or_pattern
+or_pattern   := constr_pattern ('|' constr_pattern)*
+constr_pattern := constr pattern? | polyvar pattern? | record_pattern
+              | tuple_pattern | list_pattern | array_pattern
+              | literal_pattern | ident_pattern | wildcard_pattern
+              | alias_pattern | lazy_pattern | exception_pattern
 
-constr_pattern := constr ('of' pattern)?
-record_pattern := '{' field_pattern (';' field_pattern)* ('|' '..'' )? '}'
-field_pattern  := ident ('=' pattern)?
-tuple_pattern  := '(' pattern (',' pattern)+ ')'
-list_pattern   := '[' (pattern (';' pattern)*)? ']'
+record_pattern := '{' field_pattern (';' field_pattern)* ('|' '..')? '}'
+array_pattern  := '[|' (pattern (';' pattern)*)? '|]'
+lazy_pattern   := 'lazy' pattern
+exception_pattern := 'exception' pattern
 alias_pattern  := pattern 'as' ident
-wildcard_pattern := '_'
-ident_pattern  := ident
-literal_pattern:= literal
 ```
 
 ## Type expressions
 
 ```
 type         := fn_type
-fn_type      := tuple_type ('->' fn_type)? effect_row?
-effect_row   := 'with' '{' effect_list '}'
-effect_list  := effect (';' effect)* ('|' '..')?
-              | (* empty *)
-effect       := ident
-
-tuple_type   := app_type ('*' app_type)*
-app_type     := primary_type (primary_type)*
-primary_type := ident
-              | tyvar
-              | '(' type ')'
-              | type 'array'
+fn_type      := labeled_type ('->' fn_type)?
+labeled_type := ('~' ident ':' | '?' ident ':')? refined_type
+refined_type := product_type ('where' expr)?
+product_type := app_type ('*' app_type)*
+app_type     := primary_type primary_type*
+primary_type := ident | tyvar | '(' type ')' | type 'array' | type 'ref'
               | '{' field_type (';' field_type)* ('|' '..')? '}'
-              | '(' type (',' type)+ ')'
+              | '<' method_type (';' method_type)* ('|' '..')? '>'
+              | poly_variant_type | '(' type (',' type)+ ')'
 
-field_type   := ident ':' type
-
-(* Refinement contracts *)
-refined_type := type 'where' expr
+field_type   := 'mutable'? ident ':' type
+method_type  := ident ':' type
+poly_variant_type := '[' ['>'|'<']? poly_case ('|' poly_case)* ']'
+poly_case    := polyvar ('of' type)?
 ```
 
 ## Type declarations
 
 ```
 type_decl    := 'type' type_binding ('and' type_binding)*
-type_binding := ident type_param* linear? '=' type_rhs
-              | ident type_param* linear
+type_binding := 'private'? ident type_param* linear? '=' type_rhs
+              | 'private'? ident type_param* linear
 linear       := ':' '1'
-type_param   := tyvar
-type_rhs     := record_type
-              | adt_type
-              | type
-
+type_param   := tyvar | '_'
+type_rhs     := record_type | adt_type | gadt_type | type
 record_type  := '{' field_type (';' field_type)* '}'
 adt_type     := '|'? adt_case ('|' adt_case)*
 adt_case     := constr ('of' type)?
+gadt_type    := '|'? gadt_case ('|' gadt_case)*
+gadt_case    := constr (':' type)?   (* constr : args -> ret *)
 ```
 
-## Computation expressions
+## Classes (OCaml OOP)
 
 ```
-comp_expr    := builder '{' comp_ops '}'
-builder      := 'result' | 'region' | 'async'
-
-comp_ops     := (comp_op)* (comp_return | expr)
-comp_op      := 'let!' pattern '=' expr
-              | 'do!' expr
-              | 'let' binding
-              | 'return!' expr
-comp_return  := 'return' expr
+class_decl   := 'class' 'virtual'? constr type_param* '=' class_expr
+class_expr   := 'object' ('(' ident ')')? object_item* 'end'
+object_item  := 'val' 'mutable'? ident '=' expr
+              | 'method' 'private'? 'virtual'? ident labeled_param* '=' expr
+              | 'inherit' class_expr
+              | 'initializer' expr
+              | 'constraint' type '=' type
 ```
 
-Legacy `extern "go"` and `open` declarations are parse errors (removed in v0.3). Use `import golang` / `import goop` and `@golang { ... }` embed blocks instead. See [05-modules-and-packages.md](../design/05-modules-and-packages.md).
+## Operators
+
+```
+mod land lor lxor          (* integer; % removed *)
++. -. *. /.                (* float *)
+^                          (* string concat *)
+= <> < > <= >=             (* compare *)
+&& || not
+|>                         (* pipeline *)
+:=                         (* ref assign *)
+<-                         (* array / mutable field only *)
+```
+
+## Migration parse errors (removed in 1.0)
+
+| Old | Error | Use instead |
+|-----|-------|-------------|
+| `let mutable` | PARSE-MIG010 | `ref` / `:=` / `!` |
+| `x <- e` (non-array) | PARSE-MIG011 | `x := e` |
+| `e ?` | PARSE-MIG012 | `match` on `result` |
+| `result { }` / `async { }` / `region { }` | PARSE-MIG013 | `match` / `let*` / `try/finally` |
+| `e is p` / `e as p ->` / `guard` | PARSE-MIG014 | `match` |
+| `type t = newtype r` | PARSE-MIG015 | single-ctor ADT + `private` |
+| `… with { io }` | PARSE-MIG016 | effect handlers |
+| `panic` | PARSE-MIG017 | `failwith` / `raise` |
+| `n % m` | PARSE-MIG018 | `n mod m` |
+
+Legacy `extern "go"` and bare `open` (pre-v0.3) remain parse errors. Nested `open M` inside modules is restored as OCaml `open`.

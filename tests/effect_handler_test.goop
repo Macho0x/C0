@@ -1,0 +1,6 @@
+module EffectHandlerTest
+
+effect Flip : unit -> bool
+
+let main () =
+  assert true

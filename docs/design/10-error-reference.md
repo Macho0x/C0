@@ -206,6 +206,51 @@ grammar. The parser attempts error recovery to report multiple errors.
 - **Message**: `'extern' is removed; use import golang "path" { val ... }`
 - **Fix**: Replace `extern "go" "fmt" { val X : … }` with `import golang "fmt" { val X : … }`.
 
+### PARSE-MIG010: `let mutable` removed (1.0)
+
+- **Message**: `'let mutable' is removed; use ref / := / !`
+- **Fix**: `let r = ref 0 in r := !r + 1` instead of `let mutable x = 0` / `x <- …`.
+
+### PARSE-MIG011: Binding `<-` removed (1.0)
+
+- **Message**: Non-array `<-` assignment removed; use `:=` on refs (array `arr.(i) <- v` remains).
+- **Fix**: `r := e` for refs; keep `arr.(i) <- v` for array cells.
+
+### PARSE-MIG012: `?` error propagation removed (1.0)
+
+- **Message**: `'?' error propagation is removed; use match on result`
+- **Fix**: `match f () with | Error e -> Error e | Ok x -> …`.
+
+### PARSE-MIG013: Computation expressions removed (1.0)
+
+- **Message**: `'result { … }' / async / region / using CEs are removed`
+- **Fix**: Plain `match` on `result`; `try`/`finally` or explicit cleanup for resources.
+
+### PARSE-MIG014: Kit match macros removed (1.0)
+
+- **Message**: `'guard' / 'is' / expression 'as' macros are removed; use match`
+- **Fix**: Rewrite to `match` with patterns and `when` guards.
+
+### PARSE-MIG015: `newtype` removed (1.0)
+
+- **Message**: `'newtype' is removed; use a single-constructor ADT and private`
+- **Fix**: `type order_id = Order_id of string` (optionally `private type`).
+
+### PARSE-MIG016: Effect rows removed (1.0)
+
+- **Message**: `effect row with { … } is removed; use effect handlers`
+- **Fix**: Drop `with { io }` on arrow types; use `effect` / `perform` / handlers when needed.
+
+### PARSE-MIG017: `panic` keyword removed (1.0)
+
+- **Message**: `'panic' is removed; use failwith / raise`
+- **Fix**: `failwith "msg"` or `raise E`.
+
+### PARSE-MIG018: `%` removed (1.0)
+
+- **Message**: `'%' is removed; use mod`
+- **Fix**: `n mod m` instead of `n % m`.
+
 ### PARSE001: Expected token
 
 - **Error code**: `PARSE001`
@@ -716,8 +761,8 @@ cannot be resolved. All type errors stop compilation.
 - **Severity**: Error
 - **Message**: `cannot assign to immutable binding %q`
 - **Example**: `test.goop:4:3: cannot assign to immutable binding "x"`
-- **Trigger**: The `<-` operator is used on an identifier that was introduced with plain `let` (not `let mutable`). Only `mutable` bindings and array index targets (`arr.(i) <- v`) may be assigned.
-- **Fix**: Use `let mutable x = ... in` for rebinding, or use `arr.(i) <- v` for array element updates.
+- **Trigger**: Binding `<-` on a plain `let` (removed in 1.0 — PARSE-MIG011). Use `ref` cells or array index writes.
+- **Fix**: `let r = ref 0 in r := 1`, or `arr.(i) <- v` for array cells. Mutable record fields use `r.field <- v`.
 - **Bad**:
   ```goop
   let x = 0 in
@@ -725,8 +770,8 @@ cannot be resolved. All type errors stop compilation.
   ```
 - **Good**:
   ```goop
-  let mutable x = 0 in
-  x <- 1
+  let r = ref 0 in
+  r := 1
   ```
 
 ### TYPE012: Invalid assignment target
@@ -735,10 +780,10 @@ cannot be resolved. All type errors stop compilation.
 - **Severity**: Error
 - **Message**: `invalid assignment target`
 - **Example**: `test.goop:5:3: invalid assignment target`
-- **Trigger**: The left-hand side of `<-` is neither an array index (`arr.(i)`) nor a `mutable` variable. Record fields use `r.field <- v` syntax on mutable fields, not arbitrary expressions.
-- **Fix**: Assign only to `mutable` bindings or `arr.(index)`.
+- **Trigger**: The left-hand side of `<-` is neither an array index (`arr.(i)`) nor a mutable record field.
+- **Fix**: Use `arr.(index) <- v`, `r.field <- v` on `mutable` fields, or `ref` with `:=`.
 - **Bad**: `(f x) <- 1`
-- **Good**: `arr.(0) <- 1` or `mutable x <- 1`
+- **Good**: `arr.(0) <- 1` or `r := 1`
 
 ### TYPE013: Qualified constructor not defined
 
@@ -996,28 +1041,15 @@ These are emitted through `TYPE010` (the typechecker wraps them in a
 - **Error code**: `UNIFY018`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (effect row mismatch)`
-- **Example**: `test.goop:4:10: type mismatch: got int -> int with { io }, expected int -> int with {} (effect row mismatch)`
-- **Trigger**: Two closed effect rows have different sizes. Both rows must
-  have exactly the same set of effects.
-- **Fix**: Match the effect sets. If you want extensibility, use open rows
-  with `| ..`.
-- **Bad**: Passing an `io`-annotated function where a pure function is
-  expected.
-- **Good**: Annotate the expected type with the required effects, or use an
-  open row.
+- **Note (1.0)**: Surface `with { … }` annotations are removed (PARSE-MIG016). This code may still appear from internal/prelude effect tags during unification.
+- **Fix**: Prefer effect handlers for user-declared effects; do not reintroduce arrow-type effect rows.
 
 ### UNIFY019: Effect row missing effect
 
 - **Error code**: `UNIFY019`
 - **Severity**: Error (via TYPE010)
 - **Message**: `type mismatch: got %s, expected %s (effect row missing effect: %s)`
-- **Example**: `test.goop:4:10: type mismatch: got int -> int with { log }, expected int -> int with { io } (effect row missing effect: io)`
-- **Trigger**: A closed effect row on one side does not include an effect
-  that is present on the other side.
-- **Fix**: Add the missing effect to the type annotation, or make the row
-  open.
-- **Bad**: Calling an `io` function where only `log` effects are declared.
-- **Good**: Declare the function with `with { io; log }` or `with { io | .. }`.
+- **Note (1.0)**: Same as UNIFY018 — surface rows removed; internal tags may still unify.
 
 ---
 
@@ -1238,16 +1270,17 @@ control-flow path. All linear errors stop compilation.
 - **Config key**: `concurrent`
 - **Message**: `potential data race: mutable variable %q shared between multiple goroutines`
 - **Example**: `test.goop:12:5: potential data race: mutable variable "counter" shared between multiple goroutines`
-- **Trigger**: A `mutable` variable is captured by closures passed to
+- **Trigger**: A `ref` (or other mutable binding) is captured by closures passed to
   multiple `go` expressions. This creates a data race because multiple
-  goroutines can read/write the same mutable variable concurrently.
-- **Fix**: Avoid sharing mutable variables between goroutines. Use channels
+  goroutines can read/write the same cell concurrently.
+- **Fix**: Avoid sharing mutable state between goroutines. Use channels
   or synchronization primitives instead.
 - **Bad**:
   ```goop
-  let mutable counter = 0
-  let _ = go (fun () -> counter := counter + 1)
-  let _ = go (fun () -> counter := counter + 1)
+  let counter = ref 0 in
+  let _ = go (fun () -> counter := !counter + 1) in
+  let _ = go (fun () -> counter := !counter + 1) in
+  ()
   ```
 - **Good**: Use channels for communication between goroutines.
 
@@ -1258,23 +1291,24 @@ control-flow path. All linear errors stop compilation.
 - **Config key**: `concurrent`
 - **Message**: `potential data race: mutable variable %q captured by goroutine is still accessible in spawning scope`
 - **Example**: `test.goop:10:5: potential data race: mutable variable "counter" captured by goroutine is still accessible in spawning scope`
-- **Trigger**: A `mutable` variable is captured by a `go` closure while the
-  spawning scope can still access the variable. This creates a data race
+- **Trigger**: A `ref` is captured by a `go` closure while the
+  spawning scope can still access it. This creates a data race
   between the goroutine and the spawning code.
-- **Fix**: Ensure the mutable variable is not accessed in the spawning scope
+- **Fix**: Ensure the binding is not accessed in the spawning scope
   after the goroutine starts, or use proper synchronization. Use
-  `go (move var) (...)` to mark a mutable binding as transferred into the
+  `go (move var) (...)` to mark a binding as transferred into the
   goroutine when the parent will not use it again.
 - **Bad**:
   ```goop
-  let mutable x = 0
-  let _ = go (fun () -> x := 42)
+  let x = ref 0 in
+  let _ = go (fun () -> x := 42) in
   x := 1  (* race with goroutine *)
   ```
 - **Good**:
   ```goop
-  let mutable counter = 0
-  let _ = go (move counter) (fun () -> counter <- counter + 1)
+  let counter = ref 0 in
+  let _ = go (move counter) (fun () -> counter := !counter + 1) in
+  ()
   ```
 
 ### LINEAR008: Channel-mediated data race
@@ -1284,14 +1318,14 @@ control-flow path. All linear errors stop compilation.
 - **Config key**: `concurrent`
 - **Message**: `potential channel-mediated data race: mutable variable %q sent on channel while still accessible in spawning scope`
 - **Example**: `test.goop:12:3: potential channel-mediated data race: mutable variable "state" sent on channel while still accessible in spawning scope`
-- **Trigger**: A `mutable` variable is sent on a channel inside a `go` closure (`Chan.send ch var`) while the spawning scope can still read or write that variable after the `go` expression. The parent and goroutine may race through the shared mutable binding even though communication goes through a channel.
-- **Fix**: Stop accessing the mutable variable in the parent after handing it off, or copy the value before sending. Use `go (move var)` when transferring ownership of the binding.
+- **Trigger**: A mutable binding is sent on a channel inside a `go` closure (`Chan.send ch var`) while the spawning scope can still read or write that binding after the `go` expression.
+- **Fix**: Stop accessing the binding in the parent after handing it off, or copy the value before sending. Use `go (move var)` when transferring ownership.
 - **Bad**:
   ```goop
-  let mutable state = 0 in
+  let state = ref 0 in
   let ch = Chan.make () in
   let _ = go (fun () -> Chan.send ch state) in
-  state <- state + 1   (* race with goroutine via shared mutable *)
+  state := !state + 1   (* race with goroutine via shared ref *)
   ```
 - **Good**: Send a copy, or use `go (move state)` and do not touch `state` in the parent afterward.
 

@@ -1,9 +1,9 @@
 module main
 
 let compute () : int chan =
-  async {
-    return 42
-  }
+  let ch : int chan = Chan.make () in
+  let dummy = go (fun () -> Chan.send ch 42) in
+  ch
 
 let main () : unit =
   let ch = compute () in

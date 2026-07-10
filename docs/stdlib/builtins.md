@@ -13,6 +13,7 @@ Builtins are part of the type system — not modules and not prelude bindings.
 | `unit` | Unit type `()` |
 | `bytes` | Byte sequence |
 | `rune` | Unicode code point |
+| `'a ref` | Mutable reference cell |
 
 ## Lists
 
@@ -53,7 +54,7 @@ Optional predicates: [`std.option`](std-option.md).
 | `Ok x` | `('ok, 'err) result` |
 | `Error e` | `('ok, 'err) result` |
 
-Optional predicates: [`std.result`](std-result.md). Error propagation: `?` inside `result { ... }`.
+Optional predicates: [`std.result`](std-result.md). Propagate with `match` (no `?`).
 
 ## Channels
 
@@ -64,9 +65,9 @@ Optional predicates: [`std.result`](std-result.md). Error propagation: `?` insid
 
 ## Type-level features
 
-- **Effect rows** — `with { io; async }` on function types (erased in Go output)
-- **Refinements** — `where` clauses on parameters
-- **Newtypes** — `type t = newtype string` with constructor `T "value"`
+- **Refinements** — `where` clauses on parameters/returns; optional Z3 SMT
+- **Branding** — single-constructor ADT (+ optional `private`); no `newtype`
 - **Linear types** — `type handle : 1` for quantity-1 resources
+- **Effects** — `effect` / `perform` / handlers (CPS-lowered); no `with { io }` rows
 
 See [type system](../design/02-type-system.md) and [syntax](../design/03-syntax.md).

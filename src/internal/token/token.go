@@ -1,4 +1,4 @@
-// Package token defines the lexical token types for the Goop language.
+// Package token defines the lexical token types for the Goop language (1.0 OCaml-aligned).
 package token
 
 import "fmt"
@@ -9,24 +9,22 @@ type TokenType int
 const (
 	EOF   TokenType = iota
 	ERROR           // lexer error token
-	// NEWLINE is emitted for significant line breaks (layout).
-	// Currently the parser handles layout via column tracking, so the
-	// lexer skips whitespace entirely.  Reserved for future use.
-	_ // was NEWLINE
+	_               // reserved (was NEWLINE)
 
 	// --- identifiers & literals ---
-	IDENT       // lowercase or underscore-starting identifier
-	TYVAR       // 'a — type variable (leading apostrophe)
-	CONSTRUCTOR // Capitalised identifier (module names, ADT constructors)
-	INT         // integer literal
-	FLOAT       // floating-point literal
-	STRING      // double-quoted string literal
-	CHAR        // character literal (single-quoted)
+	IDENT
+	TYVAR
+	CONSTRUCTOR
+	POLYVAR // `Tag
+	INT
+	FLOAT
+	STRING
+	CHAR
 
 	// --- keywords ---
 	LET
 	REC
-	MUTABLE
+	MUTABLE // record fields only (not let mutable)
 	TYPE
 	MATCH
 	WITH
@@ -34,83 +32,115 @@ const (
 	THEN
 	ELSE
 	FUN
+	FUNCTION
 	MODULE
 	OPEN
 	EXTERN
 	IMPORT
-	GOLANG // import golang "path"
-	GOOP   // import goop "path"
+	GOLANG
+	GOOP
 	AS
 	WHEN
 	OF
 	IN
 	AND
-	PANIC
 	TRUE
 	FALSE
 	UNIT
 	VAL
-	GUARD
-	IS
 	REQUIRES
 	RETURNS
 	WHERE
-	NEWTYPE // newtype keyword for nominal wrappers
+	PRIVATE
+	WHILE
+	EXCEPTION
+	RAISE
+	TRY
+	FINALLY
+	EFFECT
+	PERFORM
+	CLASS
+	OBJECT
+	METHOD
+	INHERIT
+	INITIALIZER
+	VIRTUAL
+	CONSTRAINT
+	STRUCT
+	SIG
+	INCLUDE
+	LAZY
+	ASSERT
+	FAILWITH
+	MOD
+	LAND
+	LOR
+	LXOR
+	NEW
+	REF // ref keyword (also type constructor)
 
-	PRIVATE // private visibility modifier
+	// Migration-only keywords (parse as errors with PARSE-MIG*)
+	GUARD
+	IS
+	PANIC
+	NEWTYPE
+	USING // legacy; region CE removed
 
 	// --- delimiters ---
-	LPAREN   // (
-	RPAREN   // )
-	LBRACE   // {
-	RBRACE   // }
-	LBRACKET // [
-	RBRACKET // ]
+	LPAREN
+	RPAREN
+	LBRACE
+	RBRACE
+	LBRACKET
+	RBRACKET
+	LBRACKETPIPE // [|
+	PIPERBRACKET // |]
 
 	// --- operators & symbols ---
-	AT         // @  (attribute prefix, e.g. @golang { ... })
-	ARROW      // ->
-	PIPE       // |
-	EQUALS     // =
-	SEMI       // ;
-	COLON      // :
-	DOT        // .
-	COMMA      // ,
-	STAR       // *
-	STARDOT    // *.  (float multiply)
-	PLUS       // +
-	MINUS      // -
-	SLASH      // /
-	UNDERSCORE // _
-	CONS       // ::
-	QUESTION   // ?
-	PIPEOP     // |>
-	DIAMOND    // <>
-	NEQ        // !=
-	EQEQ       // ==
-	LEQ        // <=
-	GEQ        // >=
-	LT         // <
-	GT         // >
-	CARET      // ^
-	LARROW     // <-
-	AMPAMP     // &&
-	PIPEPIPE   // ||
-	NOT        // not  (logical not — not a token, 'not' is a keyword)
-	BANG       // !   (used for let! and do! in computation expressions)
-	PLUSDOT    // +.  (float addition)
-	MINUSDOT   // -.  (float subtraction)
-	SLASHDOT   // /.  (float division)
-
-	PERCENT // %  (integer modulo)
+	AT
+	ARROW  // ->
+	PIPE   // |
+	EQUALS // =
+	SEMI
+	COLON
+	COLONEQ // :=
+	DOT
+	COMMA
+	STAR
+	STARDOT
+	PLUS
+	MINUS
+	SLASH
+	UNDERSCORE
+	CONS
+	QUESTION // kept for optional-arg ?x; bare ? propagation is PARSE-MIG
+	PIPEOP
+	DIAMOND
+	NEQ
+	EQEQ
+	LEQ
+	GEQ
+	LT
+	GT
+	CARET
+	LARROW // <- array / mutable field only
+	AMPAMP
+	PIPEPIPE
+	NOT
+	BANG // ! deref (and legacy let! rejected)
+	PLUSDOT
+	MINUSDOT
+	SLASHDOT
+	PERCENT // migration: use mod
+	BACKTICK
+	TILDE // ~ labelled arguments
 
 	// --- concurrency ---
-	CHAN  // chan type
-	GO    // go keyword
-	MOVE  // move keyword (go move list)
-	USING // using keyword
+	CHAN
+	GO
+	MOVE
 
-	// --- imperative / OCaml surface ---
+	// --- imperative ---
 	FOR
 	TO
 	DO
@@ -118,117 +148,55 @@ const (
 	BEGIN
 	END
 
-	tokenCount // internal count
+	tokenCount
 )
 
 var tokenNames = [...]string{
-	EOF:         "EOF",
-	ERROR:       "ERROR",
-	IDENT:       "IDENT",
-	TYVAR:       "TYVAR",
-	CONSTRUCTOR: "CONSTRUCTOR",
-	INT:         "INT",
-	FLOAT:       "FLOAT",
-	STRING:      "STRING",
-	CHAR:        "CHAR",
-	LET:         "let",
-	REC:         "rec",
-	MUTABLE:     "mutable",
-	TYPE:        "type",
-	MATCH:       "match",
-	WITH:        "with",
-	IF:          "if",
-	THEN:        "then",
-	ELSE:        "else",
-	FUN:         "fun",
-	MODULE:      "module",
-	OPEN:        "open",
-	EXTERN:      "extern",
-	IMPORT:      "import",
-	GOLANG:      "golang",
-	GOOP:        "goop",
-	AS:          "as",
-	WHEN:        "when",
-	OF:          "of",
-	IN:          "in",
-	AND:         "and",
-	PANIC:       "panic",
-	TRUE:        "true",
-	FALSE:       "false",
-	UNIT:        "()",
-	VAL:         "val",
-	GUARD:       "guard",
-	IS:          "is",
-	REQUIRES:    "requires",
-	RETURNS:     "returns",
-	WHERE:       "where",
-	NEWTYPE:     "newtype",
-	PRIVATE:     "private",
-	LPAREN:      "(",
-	RPAREN:      ")",
-	LBRACE:      "{",
-	RBRACE:      "}",
-	LBRACKET:    "[",
-	RBRACKET:    "]",
-	AT:          "@",
-	ARROW:       "->",
-	PIPE:        "|",
-	EQUALS:      "=",
-	SEMI:        ";",
-	COLON:       ":",
-	DOT:         ".",
-	COMMA:       ",",
-	STAR:        "*",
-	STARDOT:     "*.",
-	PLUS:        "+",
-	MINUS:       "-",
-	SLASH:       "/",
-	UNDERSCORE:  "_",
-	CONS:        "::",
-	QUESTION:    "?",
-	PIPEOP:      "|>",
-	DIAMOND:     "<>",
-	NEQ:         "!=",
-	EQEQ:        "==",
-	LEQ:         "<=",
-	GEQ:         ">=",
-	LT:          "<",
-	GT:          ">",
-	CARET:       "^",
-	LARROW:      "<-",
-	AMPAMP:      "&&",
-	PIPEPIPE:    "||",
-	BANG:        "!",
-	PLUSDOT:     "+.",
-	MINUSDOT:    "-.",
-	SLASHDOT:    "/.",
-	PERCENT:     "%",
-	CHAN:        "chan",
-	GO:          "go",
-	MOVE:        "move",
-	USING:       "using",
-	FOR:         "for",
-	TO:          "to",
-	DO:          "do",
-	DONE:        "done",
-	BEGIN:       "begin",
-	END:         "end",
+	EOF: "EOF", ERROR: "ERROR",
+	IDENT: "IDENT", TYVAR: "TYVAR", CONSTRUCTOR: "CONSTRUCTOR", POLYVAR: "POLYVAR",
+	INT: "INT", FLOAT: "FLOAT", STRING: "STRING", CHAR: "CHAR",
+	LET: "let", REC: "rec", MUTABLE: "mutable", TYPE: "type", MATCH: "match", WITH: "with",
+	IF: "if", THEN: "then", ELSE: "else", FUN: "fun", FUNCTION: "function",
+	MODULE: "module", OPEN: "open", EXTERN: "extern", IMPORT: "import",
+	GOLANG: "golang", GOOP: "goop", AS: "as", WHEN: "when", OF: "of", IN: "in", AND: "and",
+	TRUE: "true", FALSE: "false", UNIT: "()", VAL: "val",
+	REQUIRES: "requires", RETURNS: "returns", WHERE: "where", PRIVATE: "private",
+	WHILE: "while", EXCEPTION: "exception", RAISE: "raise", TRY: "try", FINALLY: "finally",
+	EFFECT: "effect", PERFORM: "perform", CLASS: "class", OBJECT: "object", METHOD: "method",
+	INHERIT: "inherit", INITIALIZER: "initializer", VIRTUAL: "virtual", CONSTRAINT: "constraint",
+	STRUCT: "struct", SIG: "sig", INCLUDE: "include", LAZY: "lazy", ASSERT: "assert",
+	FAILWITH: "failwith", MOD: "mod", LAND: "land", LOR: "lor", LXOR: "lxor",
+	NEW: "new", REF: "ref",
+	GUARD: "guard", IS: "is", PANIC: "panic", NEWTYPE: "newtype", USING: "using",
+	LPAREN: "(", RPAREN: ")", LBRACE: "{", RBRACE: "}",
+	LBRACKET: "[", RBRACKET: "]", LBRACKETPIPE: "[|", PIPERBRACKET: "|]",
+	AT: "@", ARROW: "->", PIPE: "|", EQUALS: "=", SEMI: ";", COLON: ":", COLONEQ: ":=",
+	DOT: ".", COMMA: ",", STAR: "*", STARDOT: "*.", PLUS: "+", MINUS: "-", SLASH: "/",
+	UNDERSCORE: "_", CONS: "::", QUESTION: "?", PIPEOP: "|>", DIAMOND: "<>",
+	NEQ: "!=", EQEQ: "==", LEQ: "<=", GEQ: ">=", LT: "<", GT: ">", CARET: "^",
+	LARROW: "<-", AMPAMP: "&&", PIPEPIPE: "||", BANG: "!",
+	PLUSDOT: "+.", MINUSDOT: "-.", SLASHDOT: "/.", PERCENT: "%", BACKTICK: "`",
+	TILDE: "~",
+	CHAN: "chan", GO: "go", MOVE: "move",
+	FOR: "for", TO: "to", DO: "do", DONE: "done", BEGIN: "begin", END: "end",
 }
 
-// String returns the human-readable name of the token type.
 func (t TokenType) String() string {
-	if int(t) < len(tokenNames) {
+	if int(t) < len(tokenNames) && tokenNames[t] != "" {
 		return tokenNames[t]
 	}
 	return fmt.Sprintf("TokenType(%d)", int(t))
 }
 
-// IsKeyword reports whether t is a reserved word.
 func (t TokenType) IsKeyword() bool {
 	switch t {
-	case LET, REC, MUTABLE, TYPE, MATCH, WITH, IF, THEN, ELSE, FUN,
-		MODULE, OPEN, EXTERN, IMPORT, GOLANG, GOOP, AS, WHEN, OF, IN, AND, PANIC,
-		TRUE, FALSE, UNIT, VAL, GUARD, IS, REQUIRES, RETURNS, WHERE, PRIVATE, CHAN, GO, MOVE, USING,
+	case LET, REC, MUTABLE, TYPE, MATCH, WITH, IF, THEN, ELSE, FUN, FUNCTION,
+		MODULE, OPEN, EXTERN, IMPORT, GOLANG, GOOP, AS, WHEN, OF, IN, AND,
+		TRUE, FALSE, UNIT, VAL, REQUIRES, RETURNS, WHERE, PRIVATE,
+		WHILE, EXCEPTION, RAISE, TRY, FINALLY, EFFECT, PERFORM,
+		CLASS, OBJECT, METHOD, INHERIT, INITIALIZER, VIRTUAL, CONSTRAINT,
+		STRUCT, SIG, INCLUDE, LAZY, ASSERT, FAILWITH, MOD, LAND, LOR, LXOR,
+		NEW, REF, GUARD, IS, PANIC, NEWTYPE, USING, CHAN, GO, MOVE, NOT,
 		FOR, TO, DO, DONE, BEGIN, END:
 		return true
 	}
@@ -237,10 +205,10 @@ func (t TokenType) IsKeyword() bool {
 
 // SourceLoc carries file/line/column/offset information.
 type SourceLoc struct {
-	File   string // source filename
-	Line   int    // 1‑based
-	Column int    // 1‑based
-	Offset int    // byte offset (0‑based)
+	File   string
+	Line   int
+	Column int
+	Offset int
 }
 
 func (l SourceLoc) String() string {
@@ -251,13 +219,13 @@ func (l SourceLoc) String() string {
 type Token struct {
 	Type    TokenType
 	Lexeme  string
-	Literal any // parsed value for number/string literals (int64, float64, string)
+	Literal any
 	Loc     SourceLoc
 }
 
 func (t Token) String() string {
 	switch t.Type {
-	case IDENT, TYVAR, CONSTRUCTOR:
+	case IDENT, TYVAR, CONSTRUCTOR, POLYVAR:
 		return fmt.Sprintf("%s %q", t.Type, t.Lexeme)
 	case INT:
 		return fmt.Sprintf("INT %d", t.Literal)
@@ -300,6 +268,8 @@ func LookupKeyword(s string) TokenType {
 		return ELSE
 	case "fun":
 		return FUN
+	case "function":
+		return FUNCTION
 	case "module":
 		return MODULE
 	case "open":
@@ -322,8 +292,6 @@ func LookupKeyword(s string) TokenType {
 		return IN
 	case "and":
 		return AND
-	case "panic":
-		return PANIC
 	case "true":
 		return TRUE
 	case "false":
@@ -332,20 +300,74 @@ func LookupKeyword(s string) TokenType {
 		return UNIT
 	case "val":
 		return VAL
-	case "guard":
-		return GUARD
-	case "is":
-		return IS
 	case "requires":
 		return REQUIRES
 	case "returns":
 		return RETURNS
 	case "where":
 		return WHERE
-	case "newtype":
-		return NEWTYPE
 	case "private":
 		return PRIVATE
+	case "while":
+		return WHILE
+	case "exception":
+		return EXCEPTION
+	case "raise":
+		return RAISE
+	case "try":
+		return TRY
+	case "finally":
+		return FINALLY
+	case "effect":
+		return EFFECT
+	case "perform":
+		return PERFORM
+	case "class":
+		return CLASS
+	case "object":
+		return OBJECT
+	case "method":
+		return METHOD
+	case "inherit":
+		return INHERIT
+	case "initializer":
+		return INITIALIZER
+	case "virtual":
+		return VIRTUAL
+	case "constraint":
+		return CONSTRAINT
+	case "struct":
+		return STRUCT
+	case "sig":
+		return SIG
+	case "include":
+		return INCLUDE
+	case "lazy":
+		return LAZY
+	case "assert":
+		return ASSERT
+	case "failwith":
+		return FAILWITH
+	case "mod":
+		return MOD
+	case "land":
+		return LAND
+	case "lor":
+		return LOR
+	case "lxor":
+		return LXOR
+	case "new":
+		return NEW
+	case "ref":
+		return REF
+	case "guard":
+		return GUARD
+	case "is":
+		return IS
+	case "panic":
+		return PANIC
+	case "newtype":
+		return NEWTYPE
 	case "not":
 		return NOT
 	case "chan":

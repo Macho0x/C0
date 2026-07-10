@@ -6,15 +6,15 @@ Goop exposes Go’s concurrency primitives with compile-time safety checks.
 
 Prelude bindings (no import required):
 
-| Binding | Type | Effect |
-|---|---|---|
-| `Chan.make` | `unit -> 'a chan` | pure |
-| `Chan.send` | `'a chan -> 'a -> unit` | `async` |
-| `Chan.recv` | `'a chan -> 'a` | `async` |
-| `Chan.close` | `'a chan -> unit` | `async` |
+| Binding | Type |
+|---|---|
+| `Chan.make` | `unit -> 'a chan` |
+| `Chan.send` | `'a chan -> 'a -> unit` |
+| `Chan.recv` | `'a chan -> 'a` |
+| `Chan.close` | `'a chan -> unit` |
 
 ```goop
-let main () : unit with { async } =
+let main () : unit =
   let ch = Chan.make () in
   let ignored = go (fun () -> Chan.send ch 42) in
   let v = Chan.recv ch in
@@ -23,38 +23,27 @@ let main () : unit with { async } =
 
 See [`concurrency.goop`](../examples/concurrency.goop).
 
-## Effect annotations for async
-
-`go` and channel operations require `async` in the effect row:
-
-```goop
-let worker () : unit with { async } = ...
-let main () : unit with { async } = worker ()
-```
-
-Using only `with { io }` when the body spawns goroutines yields **UNIFY019**.
-
 ## Data race detection
 
-The linear checker flags `mutable` variables captured by `go` while still accessible in the spawning scope:
+The linear checker flags `ref` (or other mutable state) captured by `go` while still accessible in the spawning scope:
 
 ```goop
-let race () : unit with { async; io } =
-  let mutable counter = 0 in
-  let ignored = go (fun () -> print_line (int_to_string counter)) in
-  print_line (int_to_string counter)   (* error: counter still in scope *)
+let race () : unit =
+  let counter = ref 0 in
+  let ignored = go (fun () -> print_line (int_to_string (!counter))) in
+  print_line (int_to_string (!counter))   (* error: counter still in scope *)
 ```
 
-Good patterns (capture without post-`go` use): [`race_detection.goop`](../examples/race_detection.goop).
+Good patterns: [`race_detection.goop`](../examples/race_detection.goop).
 
 ## `go (move ...)`
 
-When a `mutable` binding is transferred into a goroutine and the parent no longer uses it, suppress race warnings explicitly:
+Transfer a binding into a goroutine when the parent no longer uses it:
 
 ```goop
-let launch () : unit with { async; io } =
-  let mutable counter = 0 in
-  let dummy = go (move counter) (fun () -> print_line (int_to_string counter)) in
+let launch () : unit =
+  let counter = ref 0 in
+  let dummy = go (move counter) (fun () -> print_line (int_to_string (!counter))) in
   ()
 ```
 
@@ -73,20 +62,18 @@ concurrent = "error"   # LINEAR006/007/008: warn | error | off
 
 ## Channel-mediated races (LINEAR008)
 
-When a `mutable` variable is sent on a channel inside a `go` closure but the parent scope still accesses it afterward, the compiler reports **LINEAR008**. This catches races where shared mutable state is passed through a channel without transferring ownership.
+When shared mutable state is sent on a channel inside a `go` closure but the parent still accesses it afterward, the compiler reports **LINEAR008**.
 
 Use `go (move var)` or stop accessing the variable in the parent after the handoff.
 
 ## Deadlock lint (DEADLOCK001)
 
-A narrow static check detects the classic two-goroutine circular send/recv pattern on unbuffered channels. Configure severity:
+A narrow static check detects the classic two-goroutine circular send/recv pattern on unbuffered channels:
 
 ```toml
 [check]
 deadlock = "warn"   # warn | error | off
 ```
-
-Complex concurrency (loops, `select`, buffered channels) is not analyzed — Go's runtime deadlock detector remains the fallback.
 
 ## Owned channels
 

@@ -2,13 +2,12 @@
 
 ## Design goals
 
-Goop's type system aims to catch common errors at compile time while remaining implementable as a source-to-source compiler to Go. The priorities are:
-
 1. Sound, global type inference (Hindley-Milner style).
 2. Null safety through explicit `option`.
 3. Exhaustive pattern matching over algebraic data types.
-4. Explicit, typed error handling through `result`.
+4. Explicit, typed error handling through `result` (plus OCaml exceptions for bugs).
 5. Parametric polymorphism without higher-kinded types.
+6. Optional SMT-backed refinements and OCaml 5-style effect handlers (minimal).
 
 ## Core types
 
@@ -17,8 +16,8 @@ Goop's type system aims to catch common errors at compile time while remaining i
 | Goop type | Lowered Go type | Notes |
 |---|---|---|
 | `int` | `int` | Platform word size |
-| `int8`, `int16`, `int32`, `int64` | `int8`, `int16`, `int32`, `int64` | Signed fixed-width |
-| `uint`, `uint8`, `uint16`, `uint32`, `uint64` | `uint`, `uint8`, `uint16`, `uint32`, `uint64` | Unsigned fixed-width |
+| `int8` … `int64` | same | Signed fixed-width |
+| `uint` … `uint64` | same | Unsigned fixed-width |
 | `float` | `float64` | Default float |
 | `float32` | `float32` | |
 | `bool` | `bool` | |
@@ -26,10 +25,9 @@ Goop's type system aims to catch common errors at compile time while remaining i
 | `rune` | `rune` | Unicode code point |
 | `bytes` | `[]byte` | Mutable byte slice |
 | `unit` | `struct{}` | The `()` value |
+| `'a ref` | `*T` | Mutable reference cell |
 
 ### Type variables
-
-Polymorphic functions use quoted type variables:
 
 ```goop
 let identity (x: 'a) : 'a = x
@@ -43,11 +41,7 @@ let p : int * string = (42, "hello")
 let (x, y) = p
 ```
 
-Lowered to Go structs with positional fields when needed.
-
 ## Algebraic data types
-
-ADTs are the primary abstraction for sums:
 
 ```goop
 type color = Red | Green | Blue
@@ -58,199 +52,110 @@ type shape =
   | Point
 ```
 
-ADT values must be constructed with their constructor and deconstructed with `match`. There are no implicit conversions and no null variants.
+### Branding (private + single-ctor ADT)
+
+There is no `newtype` keyword. Brand IDs with a single-constructor ADT (optionally `private`):
+
+```goop
+type order_id = Order_id of string
+type symbol = Symbol of string
+
+let oid = Order_id "ord-1"
+```
 
 ### Record types
 
-Records are product types with named fields. They are **closed by default**: a record value must have exactly the fields declared.
-
 ```goop
 type point = { x: float; y: float }
-
 let origin : point = { x = 0.0; y = 0.0 }
 let moved = { origin with x = 1.0 }
 ```
 
-### Row polymorphism (optional, v1.1)
-
-Functions may accept any record with at least a given set of fields:
+### Row polymorphism (optional)
 
 ```goop
 let print_name (r: { name: string | .. }) : unit =
-  Console.print_line r.name
+  print_line r.name
 ```
 
-This is opt-in via the `| ..` annotation. Closed records lower to Go structs; open records lower to Go interfaces or explicit accessor functions.
-
 ## `option` and `result`
-
-These are built-in generic ADTs:
 
 ```goop
 type 'a option = None | Some of 'a
 type ('ok, 'err) result = Ok of 'ok | Error of 'err
 ```
 
-There is no `null` in Goop. A value of type `string` is always a string. Absence is represented as `string option`.
+No `null`. Recoverable errors use `result` + `match`. Bugs use `failwith` / `raise`.
 
 ## Pattern matching
 
-`match` is exhaustive. The compiler rejects matches that omit variants:
-
-```goop
-let describe (c: color) : string =
-  match c with
-  | Red -> "red"
-  | Green -> "green"
-  | Blue -> "blue"
-```
-
-Patterns may be nested, include guards, and use active patterns.
-
-## Active patterns
-
-Active patterns let users define new patterns as functions:
+`match` is exhaustive. Patterns may nest, use `when` guards, or-patterns, and active patterns.
 
 ```goop
 let (|Positive|_|) (n: int) : int option =
   if n > 0 then Some n else None
-
-match x with
-| Positive p -> print p
-| _ -> ()
 ```
 
 ## Generics
 
-Goop supports parametric polymorphism but **not** higher-kinded types. This matches Go's generic capabilities and keeps lowering straightforward.
+Parametric polymorphism only — no higher-kinded types (matches Go generics).
+
+## Effect handlers (shipped, minimal)
+
+Goop 1.0 supports OCaml 5-style `effect` / `perform` / handlers. Effectful code may be CPS-transformed before codegen (not idiomatic Go). Pure code stays direct-style.
 
 ```goop
-let map (f: 'a -> 'b) (xs: 'a list) : 'b list =
-  match xs with
-  | [] -> []
-  | x :: rest -> f x :: map f rest
+effect Flip : unit -> bool
 ```
 
-## Effect rows
+Surface `with { io }` effect **rows** on arrow types are removed (PARSE-MIG016). Internal effect tags on prelude bindings still guide inference where applicable.
 
-Goop has row-polymorphic effect tracking in the type system. Effect rows are compile-time only (erased in Go output) and track which side effects a function may perform.
+See [06-effects-and-safety.md](06-effects-and-safety.md) and `docs/examples/effects.goop`.
 
-### Syntax
+## Refinement contracts + SMT
 
-Effect rows appear after a function return type using `with`:
+`where` clauses on parameters and returns are refinement contracts. Goop 1.0 ships:
 
-```goop
-(* Explicit IO effect *)
-let readFile (path: string) : string with { io } = ...
-
-(* Pure function: no effects *)
-let double (x: int) : int = x * 2
-
-(* Row-polymorphic: works with any effect set *)
-let catchAll (f: unit -> 'a with { e }) : 'a with { e } = ...
-
-(* Explicitly pure *)
-let add (x: int) (y: int) : int with {} = x + y
-```
-
-### Effect names
-
-Effects are simple identifiers: `io`, `log`, `state`, `async`, `panic`, etc. User code and extern functions may introduce new effect names.
-
-### Row-polymorphic unification
-
-Effect rows unify exactly like record rows (see "Row polymorphism" above):
-
-- `with { io; log }` — closed: exactly those two effects.
-- `with { io | e }` — open: at least `io` plus any others captured in `e`.
-- `with {}` — closed empty row: explicitly pure.
-- No `with` clause — unknown effects (backward compatible, equivalent to `with { .. }` for inference).
-
-The compiler unifies effect rows during type checking. An open row unifies with any row that contains at least the specified effects. Two closed rows must match exactly.
-
-### Erased at runtime
-
-Effect rows are completely erased in the Go output. They impose zero runtime cost. The type checker validates effect usage and reports errors at compile time.
-
-Extern Go functions default to unknown effects unless the user declares an explicit `with` clause.
-
-See also: `docs/examples/effects.goop`, `docs/design/08-deferred-features-analysis.md`.
-
-## Refinement contracts
-
-Goop supports lightweight runtime refinement contracts via `where` clauses on types. These are runtime assertions (no SMT solver) that `panic` on violation.
-
-### Syntax
+1. **Built-in interval / VC solver** for simple integer arithmetic.
+2. **Optional Z3 SMT** (`[check] smt = true` in `goop.toml`) for stronger proofs.
+3. **Runtime guards** as fallback when a VC is unproven.
 
 ```goop
-(* Parameter refinement: `it` refers to the parameter value *)
 let safeDiv (a: int) (b: int where b <> 0) : int = a / b
 
-(* Return refinement: `result` refers to the return value *)
-let clamp (x: int) (lo: int) (hi: int where hi >= lo) : int where result >= lo && result <= hi =
-  if x < lo then lo
-  else if x > hi then hi
-  else x
+let clamp (x: int) (lo: int) (hi: int where hi >= lo) : int
+  where result >= lo && result <= hi = ...
 ```
 
-`where` is a postfix type modifier. `it` refers to the value being constrained in parameter refinements; `result` refers to the return value in return type refinements.
+- Proven call sites may skip guards; disproven sites are compile errors (REFINE001).
+- Exported entry points retain guards for FFI safety.
 
-### Semantics
-
-- **Preconditions** (`where` on a parameter type): lowered to `if !(pred) { panic("funcName: precondition violated: pred") }` at function entry.
-- **Postconditions** (`where` on the return type): lowered to `defer func() { if !(pred) { panic("funcName: postcondition violated: pred") } }()` using Go named return values.
-
-There is **no SMT solver** and no compile-time proof obligation. Refinements are checked only at runtime. This is an intentional design choice (see `docs/design/08-deferred-features-analysis.md` for the full analysis of why SMT-based refinement types are deferred).
-
-See also: `docs/examples/contracts.goop`.
+See `docs/examples/contracts.goop` and [08-deferred-features-analysis.md](08-deferred-features-analysis.md).
 
 ## Linear resource types
 
-Goop supports opt-in modal linearity. A type declared with `: 1` is a linear resource type that must be discharged (used/handed-off) on every control-flow path.
-
-### Syntax
-
 ```goop
-(* Declare a linear resource type *)
 type handle : 1
 ```
 
-Types without the `: 1` annotation default to unrestricted (`ω`), which is the usual unrestricted structural type.
-
-### Discharge checking
-
-The compiler performs flow-sensitive discharge checking via the `internal/linear` package. It tracks which linear variables are "live" at each program point and reports errors for:
-
-- **Double use**: using a linear variable after it has already been handed off.
-- **Failure to discharge**: a linear variable is still live at the end of its scope.
-
-The conservative v1 rule is: **first use = hand-off = discharge**. When a linear value is passed as a function argument, captured in a closure, or used in any expression, it is considered handed off and no longer available.
-
-### Erased at runtime
-
-Linear types are erased in Go output. They lower to `interface{}` or the extern-declared Go type. The linearity discipline is enforced purely at compile time.
-
-See also: `docs/examples/linear.goop`, `docs/design/08-deferred-features-analysis.md`.
+Flow-sensitive discharge checking (`internal/linear`). First use = hand-off. Erased in Go output.
 
 ## What is intentionally absent
 
 - **Null.** Use `option`.
 - **Implicit conversions.** All numeric coercions are explicit.
-- **Exceptions.** Use `result`.
 - **Higher-kinded types.** Go cannot express them.
-- **Full dependent types (Idris/Agda style).** Lightweight runtime refinement contracts (`where` clauses) are implemented; full SMT-based dependent/refinement types are deferred (see `docs/design/08-deferred-features-analysis.md`).
-- **Borrow checker with lifetimes (Rust style).** Opt-in linear resource types (`: 1`) with discharge checking are implemented; full ownership and borrowing are deferred.
-- **Resumptive effect system.** Erased row-polymorphic effect tracking is implemented; resumptive handlers are rejected (see `docs/design/08-deferred-features-analysis.md`).
-- **Implicit side effects.** Functions are pure unless their type or body says otherwise.
+- **Full dependent types (Idris/Agda style).** SMT-backed refinements cover the practical fragment; full dependent programming is out of scope.
+- **Borrow checker with lifetimes (Rust style).** Opt-in linear `: 1` only.
+- **Implicit side effects.** Prefer `result` / handlers / explicit IO over hidden mutation.
 
 ## Type inference
 
-Goop uses Hindley-Milner style inference with let-polymorphism. Top-level declarations may omit types; local bindings are generalized at `let`. Function parameters generally require annotations at module boundaries and for exported functions.
+Hindley-Milner with let-polymorphism. Top-level declarations may omit types; exported functions generally need annotations at module boundaries.
 
-The bootstrap compiler uses a layered approach:
+Bootstrap layers:
 
 1. Local constraint solving for monomorphic expressions.
-2. Unification-based polymorphism for `let` bindings, including effect row unification.
-3. Optional `gopls` fallback for higher-order functions whose types cannot be inferred locally.
-
-Effect variables are fresh type variables constrained by row unification — exactly how `'a` is constrained for record rows. When a function has no `with` clause, its effects are inferred from its body. When an explicit `with` clause is provided, the inferred effects must be compatible with the declared row.
+2. Unification-based polymorphism for `let` bindings.
+3. Optional `gopls` fallback for hard higher-order cases.
+4. Refinement VC generation + optional Z3.

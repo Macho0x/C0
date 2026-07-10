@@ -2,177 +2,118 @@
 
 ## Safety defaults
 
-Goop is designed to be safe by default:
-
-- No null values. Absence is represented by `'a option`.
-- No unchecked exceptions. Errors are returned via `result`.
+- No null values — use `'a option`.
+- Recoverable errors — `('ok, 'err) result` + `match`.
+- Bugs / aborts — `failwith` / `raise` (not a `panic` keyword).
 - Exhaustive pattern matching.
-- Immutable bindings by default; mutation is explicit.
-- Bound-checked sequence access.
+- Immutable bindings by default; mutation via `ref` / `!` / `:=` or `mutable` fields.
+- Bound-checked sequence access where applicable.
 
 ## Error handling
 
-Goop uses `result` for recoverable errors and panics for programmer errors.
-
 ```goop
 type ('ok, 'err) result = Ok of 'ok | Error of 'err
+
+let readUser (id: int) : (user, string) result =
+  match fetchUser id with
+  | Error e -> Error e
+  | Ok user ->
+      match validate user with
+      | Error e -> Error e
+      | Ok validated -> Ok validated
 ```
 
-The `?` operator makes propagation ergonomic:
+There is no `?` propagation operator (PARSE-MIG012). Prefer plain `match`, or `let*` / `let+` where supported.
+
+## Failwith and exceptions
 
 ```goop
-let readUser (id: int) : result<user, error> =
-  let user = fetchUser id ?
-  let validated = validate user ?
-  Ok validated
-```
+exception Boom
+exception Fail of string
 
-## Panics
-
-Panics represent bugs, not expected failures. They lower to Go `panic`. A Goop function that may panic is marked in documentation but is not tracked in the type system (matching Go's model).
-
-```goop
 let unsafeHead (xs: 'a list) : 'a =
   match xs with
   | x :: _ -> x
-  | [] -> panic "empty list"
+  | [] -> failwith "empty list"
+
+let run () =
+  try
+    raise (Fail "oops")
+  with
+  | Fail msg -> msg
+  | Boom -> "boom"
 ```
 
-## Effects
+`failwith` / `raise` lower to Go `panic`. `try/with` lowers via `recover`. Use exceptions for bugs and unexpected failure; use `result` for expected venue/trading errors.
 
-Goop has row-polymorphic effect tracking at the type level. Effects are compile-time only and erased in Go output (zero runtime cost).
+## Effect handlers (OCaml 5-style)
 
-### Effect rows
-
-Functions declare their effects with a `with` clause after the return type:
+Goop 1.0 ships minimal OCaml 5 effect handlers:
 
 ```goop
-(* IO effect *)
-let readFile (path: string) : string with { io } = ...
-
-(* Pure function *)
-let double (x: int) : int = x * 2
-
-(* Row-polymorphic: at least log, plus any others *)
-let withLog (f: unit -> 'a with { log | e }) : 'a with { e } = ...
-
-(* Explicitly pure: no effects *)
-let add (x: int) (y: int) : int with {} = x + y
+effect Flip : unit -> bool
 ```
 
-### Effect names
+- `perform` invokes an effect operation.
+- Handlers appear as `effect (Op …) k -> …` arms in `match` / `try`.
+- Effectful code is CPS-transformed (`internal/effects`) before Go codegen — **not** idiomatic Go.
+- Pure code without `perform` stays direct-style.
 
-Built-in and user-defined effect names include: `io`, `log`, `state`, `async`, `panic`, and any user-declared effect. Extern Go functions default to unknown effects unless an explicit `with` clause is provided.
-
-### Row-polymorphic unification
-
-Effect rows unify like record rows:
-
-- `with { io; log }` — closed: exactly those two effects.
-- `with { io | e }` — open: at least `io` plus any others captured in `e`.
-- `with {}` — closed empty: explicitly pure.
-- No `with` clause — unknown effects (backward compatible).
-
-### Design choice: erased, not resumptive
-
-Goop's effect system is **tracking only** — there are no resumptive effect handlers. This is an intentional design choice. Resumptive effects require continuations or CPS, which violate Goop's constraint of emitting idiomatic Go. See `docs/design/08-deferred-features-analysis.md` for the full analysis.
-
-The legacy `[@io]`, `[@pure]`, and `[@panic]` attributes are superseded by effect rows. Existing code without `with` clauses continues to compile (backward compatible).
+Surface effect **rows** (`… with { io }`) are removed (PARSE-MIG016). See [14-ocaml-parity.md](14-ocaml-parity.md) and [08-deferred-features-analysis.md](08-deferred-features-analysis.md).
 
 ## Mutability
 
-Bindings are immutable by default. Mutable bindings are explicit:
-
 ```goop
-let x = 1            (* immutable *)
-let mutable y = 1    (* mutable *)
-y <- y + 1
-```
+let x = 1              (* immutable *)
+let r = ref 1 in       (* ref cell *)
+r := !r + 1
 
-Mutable fields in records are also explicit:
-
-```goop
 type counter = { mutable value: int }
 ```
 
-## Resource safety
+No `let mutable` locals.
 
-Goop provides two complementary mechanisms for resource safety:
+## Resource safety
 
 ### Linear resource types
 
-Types declared with `: 1` are linear resources that must be discharged on every control-flow path:
-
 ```goop
 type handle : 1
-
-(* Close discharges a handle *)
 let Close (h: handle) : unit = ...
-
-(* h is discharged via hand-off to Close *)
-let process (h: handle) : unit =
-  Close h
+let process (h: handle) : unit = Close h
 ```
 
-The compiler performs flow-sensitive discharge checking. The conservative v1 rule is "first use = hand-off = discharge": passing a linear value to any function or expression discharges it. The compiler rejects double-use and failure-to-discharge.
+First use = discharge. Erased in Go.
 
-Linear types are erased in Go output (lower to `interface{}`). The linearity discipline is compile-time only.
+### Cleanup
 
-See also: `docs/examples/linear.goop`.
-
-### Region scopes
-
-`region { ... }` is a computation expression for scoped resource management with guaranteed cleanup:
-
-```goop
-let process (h: handle) : unit =
-  region {
-    let! x = h              (* acquires handle, inserts defer Close(x) *)
-    do! useHandle x         (* uses the resource *)
-    return ()
-  }
-```
-
-Each `let!` binding acquires a linear resource and registers `defer Close(varName)` at region exit. The linear discharge checker auto-discharges region-bound variables.
-
-Region scopes replace the legacy `using` block with compile-time-guaranteed cleanup.
-
-See also: `docs/examples/region.goop`.
+Prefer `try … finally` or explicit close. `region { }` / `using` computation expressions are removed.
 
 ### Garbage collector
 
-For non-linear types, Go's garbage collector handles memory management automatically. Resource cleanup for files, sockets, and handles relies on the mechanisms above.
+Non-linear values use Go’s GC.
 
 ## Concurrency
 
-Goop exposes Go's concurrency model directly:
-
-- Goroutines via `go` expressions.
-- Channels via the `chan` type.
-- `select` for channel multiplexing.
-- `OwnedChan` — an opt-in linear (`: 1`) channel wrapper for single-producer patterns with compile-time close safety (send-after-close and double-close are caught at compile time as linear double-use errors). The default `chan` remains shared (multi-producer) with runtime safety checks.
+- `go` expressions, `chan`, `select`
+- `owned_chan` — linear single-producer close safety
+- `go (move r)` for transferring a `ref` (or other binding) into a goroutine
 
 ```goop
 let worker (ch: int chan) : unit =
   go (fun () ->
     let x = Chan.recv ch in
-    Console.print_line (Int.to_string x))
+    print_line (int_to_string x))
 
-(* Single-producer pattern with compile-time close safety *)
-let producer () : unit =
-  let ch : int owned_chan = OwnedChan.make () in
-  OwnedChan.send ch 1
-  OwnedChan.send ch 2
-  OwnedChan.close ch
-  (* OwnedChan.send ch 3  — compile error: ch already discharged *)
+let launch () : unit =
+  let r = ref 0 in
+  let _ = go (move r) (fun () -> r := !r + 1) in
+  ()
 ```
-
-Async/await syntax is not part of v1.
 
 ## What is intentionally absent
 
-- **Exceptions** — use `result`.
 - **Null** — use `option`.
-- **Unsafe casts** — use explicit conversions or `extern`.
-- **Resumptive effect handlers** — row-polymorphic effect tracking is implemented; resumptive handlers are rejected (see `docs/design/08-deferred-features-analysis.md`).
-- **Full ownership/lifetimes (Rust style)** — opt-in linear resource types (`: 1`) and region scopes are implemented; full borrowing is deferred.
+- **Unsafe casts** — use explicit conversions or `@golang`.
+- **Full ownership/lifetimes** — linear `: 1` only.
+- **F# computation expressions / Kit macros / Dingo `?`** — removed in 1.0.

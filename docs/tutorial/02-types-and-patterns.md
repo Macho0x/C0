@@ -63,9 +63,18 @@ let safeDiv (a: int) (b: int) : int result =
   else Ok (a / b)
 ```
 
-## Active patterns and guards
+## Branding (no `newtype`)
 
-See [`active_patterns.goop`](../examples/active_patterns.goop) and [`macros.goop`](../examples/macros.goop).
+```goop
+type order_id = Order_id of string
+type symbol = Symbol of string
+```
+
+See [`newtype_trading.goop`](../examples/newtype_trading.goop) (ADT branding) and [STYLE.md](../design/STYLE.md).
+
+## Active patterns
+
+See [`active_patterns.goop`](../examples/active_patterns.goop). Kit-style `is` / `as` / `guard` macros are removed — use `match`.
 
 ## Next
 

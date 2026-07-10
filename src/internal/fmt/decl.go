@@ -16,6 +16,30 @@ func formatDecl(p *Printer, d ast.TopDecl) {
 		formatExternDecl(p, d)
 	case *ast.GolangEmbedDecl:
 		formatGolangEmbedDecl(p, d)
+	case *ast.ExceptionDecl:
+		p.Write("exception " + d.Name)
+		if d.Arg != nil {
+			p.Write(" of " + formatType(d.Arg))
+		}
+		p.Newline()
+	case *ast.EffectDecl:
+		p.Write("effect " + d.Name + " : " + formatType(d.From) + " -> " + formatType(d.To))
+		p.Newline()
+	case *ast.NestedModuleDecl:
+		p.Write("module " + d.Name + " = struct ... end")
+		p.Newline()
+	case *ast.ModuleTypeDecl:
+		p.Write("module type " + d.Name + " = sig ... end")
+		p.Newline()
+	case *ast.OpenModuleDecl:
+		p.Write("open " + d.Path)
+		p.Newline()
+	case *ast.IncludeDecl:
+		p.Write("include " + d.Path)
+		p.Newline()
+	case *ast.ClassDecl:
+		p.Write("class " + d.Name + " = object ... end")
+		p.Newline()
 	}
 }
 
@@ -95,7 +119,11 @@ func formatTypeDecl(p *Printer, d *ast.TypeDecl) {
 		p.Newline()
 		for i, f := range k.Fields {
 			p.WriteIndent()
-			p.Write("  " + f.Name + " : " + formatType(f.Type))
+			mut := ""
+			if f.Mutable {
+				mut = "mutable "
+			}
+			p.Write("  " + mut + f.Name + " : " + formatType(f.Type))
 			if i < len(k.Fields)-1 {
 				p.Write(";")
 			}
@@ -113,6 +141,18 @@ func formatTypeDecl(p *Printer, d *ast.TypeDecl) {
 			if c.Arg != nil {
 				p.Write(" of " + formatType(c.Arg))
 			}
+			p.Newline()
+		}
+	case *ast.GADTTypeKind:
+		p.Write(" =")
+		p.Newline()
+		for _, c := range k.Cases {
+			p.WriteIndent()
+			p.Write("| " + c.Name + " : ")
+			if c.Arg != nil {
+				p.Write(formatType(c.Arg) + " -> ")
+			}
+			p.Write(formatType(c.Result))
 			p.Newline()
 		}
 	case *ast.AliasTypeKind:

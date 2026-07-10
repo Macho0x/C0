@@ -2,11 +2,13 @@
 
 ## Core rule
 
-Every Goop construct must lower to Go that a senior Go engineer would consider idiomatic. The output is not an internal IR; it is the artifact other programmers will read, debug, and import.
+For **non-effectful** code, every Goop construct must lower to Go that a senior Go engineer would consider idiomatic.
+
+**Exception:** OCaml 5-style resumptive effect handlers lower via CPS / free-monad. That output is not idiomatic hand-written Go; it is an explicit, documented exception (see [01-overview.md](01-overview.md)).
 
 ## Sum types
 
-Goop ADTs lower to **one Go interface plus one struct per variant**, following the pattern used by `go/ast`, `errors`, and `encoding/json`.
+ADTs → one Go interface + one struct per variant (`go/ast` pattern).
 
 ```goop
 type shape =
@@ -14,332 +16,101 @@ type shape =
   | Rect of { width: float; height: float }
 ```
 
-→
-
-```go
-type Shape interface { isShape() }
-
-type ShapeCircle struct { Radius float64 }
-func (ShapeCircle) isShape() {}
-
-type ShapeRect struct { Width, Height float64 }
-func (ShapeRect) isShape() {}
-
-func NewShapeCircle(radius float64) Shape { return ShapeCircle{Radius: radius} }
-func NewShapeRect(width, height float64) Shape { return ShapeRect{Width: width, Height: height} }
-```
-
-This is preferred over tagged structs because:
-
-1. It matches existing Go conventions.
-2. Only the active variant's data exists in memory.
-3. Type switches give safe access to variant fields.
-4. It avoids `O(n²)` `Is*()` method bloat.
+→ `Shape` interface, `ShapeCircle` / `ShapeRect` structs, `NewShape…` constructors.
 
 ## Pattern matching
 
-`match` lowers to a Go type switch:
-
-```goop
-let area (s: shape) : float =
-  match s with
-  | Circle { radius } -> pi *. radius *. radius
-  | Rect { width; height } -> width *. height
-```
-
-→
-
-```go
-func area(s Shape) float64 {
-    switch v := s.(type) {
-    case ShapeCircle:
-        return math.Pi * v.Radius * v.Radius
-    case ShapeRect:
-        return v.Width * v.Height
-    }
-    panic("unreachable: unhandled Shape variant")
-}
-```
-
-The `panic` is unreachable because the Goop compiler verifies exhaustiveness. It is emitted as a defensive default so the Go compiler is happy.
+`match` → Go type switch. Exhaustiveness is checked in Goop; a defensive `panic("unreachable…")` default satisfies the Go compiler.
 
 ## Records
 
-Records lower to Go structs with exported fields:
-
-```goop
-type point = { x: float; y: float }
-let p = { x = 1.0; y = 2.0 }
-```
-
-→
-
-```go
-type Point struct { X, Y float64 }
-
-var p = Point{X: 1.0, Y: 2.0}
-```
-
-Record update `{ p with x = 3.0 }` lowers to struct literal reconstruction.
+Records → Go structs. `{ p with x = 3.0 }` → struct literal reconstruction.
 
 ## `option` and `result`
 
-Built-in generic types lower to Go structs with constructor functions. Method names match Go conventions (`MustSome`, `SomeOr`, `MustOk`, `OkOr`).
+Built-in generics → concrete structs + constructors (`NewOption…`, `NewResult…`). Prefer `match` in Goop source (no `?` operator).
+
+## Refs
 
 ```goop
-let valueOrDefault (opt: int option) (default: int) : int =
-  match opt with
-  | Some x -> x
-  | None -> default
+let r = ref 0 in
+r := !r + 1
 ```
 
 →
 
 ```go
-func valueOrDefault(opt OptionInt, def int) int {
-    if opt.tag == OptionTagSome { return *opt.some }
-    return def
-}
+r := new(int); *r = 0
+*r = *r + 1
 ```
 
-For exported top-level functions, Goop emits per-instantiation concrete types because Go does not support type constructors at runtime.
+`ref e` allocates a pointer; `!r` is dereference; `r := e` is store. Mutable record fields lower to ordinary Go struct fields.
 
-## Error propagation
-
-The `?` operator lowers to the standard Go idiom:
+## Exceptions
 
 ```goop
-let readConfig (path: string) : result<config, error> =
-  let bytes = File.readAllBytes path ?
-  ...
+try body with | Fail msg -> handle msg
 ```
 
-→
+→ Go `defer` + `recover` around `body`, matching arms on the recovered value. `raise e` / `failwith msg` → `panic(...)`.
 
-```go
-func readConfig(path string) ResultConfigError {
-    tmp, err := File_readAllBytes(path)
-    if err != nil {
-        return ResultConfigError{tag: ResultTagError, err: &err}
-    }
-    bytes := tmp
-    ...
-}
+```goop
+try body finally cleanup
 ```
+
+→ `defer cleanup` then `body`.
+
+## Effect handlers (CPS)
+
+`perform` and effect-handler `match` arms are rewritten by `internal/effects` into a minimal CPS / free-monad form (`__goop_perform`, `__goop_handle`) before codegen. Pure functions without `perform` stay direct-style.
 
 ## Functions and currying
 
-Curried Goop functions lower to multi-parameter Go functions when fully applied, or to closures when partially applied.
-
-```goop
-let add (x: int) (y: int) : int = x + y
-let addFive = add 5
-let seven = addFive 2
-```
-
-→
-
-```go
-func add(x, y int) int { return x + y }
-
-var addFive = func(y int) int { return add(5, y) }
-
-var seven = addFive(2)
-```
-
-The compiler optimizes known fully-applied calls to direct calls.
+Fully applied multi-arg functions → multi-parameter Go funcs. Partial application → closures.
 
 ## Modules
 
-A Goop module maps to a Go package. Module names are lowercased for package names; exported declarations are title-cased.
-
-```goop
-module Math
-
-let pi = 3.14159
-let add (x: int) (y: int) : int = x + y
-```
-
-→
-
-```go
-package math
-
-const Pi = 3.14159
-
-func Add(x, y int) int { return x + y }
-```
+A Goop module maps to a Go package (name lowercased; exports title-cased). Nested `struct` modules flatten or nest as packages according to the compiler’s module pass (minimal).
 
 ## Imports
 
-`open Std.IO` resolves to a Go import path. The compiler maintains a mapping from Goop module names to Go import paths.
-
 ```goop
-open Std.IO
+import (
+  golang "fmt"
+  goop "std.io"
+)
 ```
 
-→
+→ Go `import` paths. Logical Goop paths resolve via `goop.toml` `[mappings]`.
 
-```go
-import "goop.dev/std/io"
-```
+## Tuples and lists
 
-## Tuples
-
-Tuples lower to generated structs with positional fields:
-
-```goop
-let p : int * string = (42, "hello")
-```
-
-→
-
-```go
-type Tuple2IntString struct { F0 int; F1 string }
-
-var p = Tuple2IntString{F0: 42, F1: "hello"}
-```
-
-## Lists
-
-The built-in `'a list` lowers to a Go slice `[]T`. List constructors compile to slice operations:
-
-```goop
-let xs = [1; 2; 3]
-let ys = 0 :: xs
-```
-
-→
-
-```go
-var xs = []int{1, 2, 3}
-var ys = append([]int{0}, xs...)
-```
+Tuples → generated positional structs. `'a list` → `[]T` with `append` for cons.
 
 ## Arrays
 
-The built-in `'a array` type lowers to a Go slice `[]T`. Prelude `Array.make` and `Array.length` are the canonical API; `std.array` re-exports the same bindings.
-
-```goop
-let lut = Array.make 100 default in
-for i = 0 to 99 do
-  lut.(i) <- compute i
-done
-```
-
-→
-
-```go
-lut := func() []Decision {
-    _arr0 := make([]Decision, 100)
-    for _i := 0; _i < len(_arr0); _i++ {
-        _arr0[_i] = default
-    }
-    return _arr0
-}()
-for i := 0; i <= 99; i++ {
-    lut[i] = compute(i)
-}
-```
+`'a array` → `[]T`.
 
 | Goop | Go |
 |---|---|
-| `Array.make n default` | `make([]T, n)` + init loop filling each slot with `default` |
+| `Array.make n default` | `make([]T, n)` + init loop |
 | `Array.length arr` | `len(arr)` |
 | `arr.(i)` | `arr[i]` |
 | `arr.(i) <- v` | `arr[i] = v` |
 
-Array element writes do not require the array binding to be `mutable`; only rebinding the array variable does.
+## Loops and sequencing
 
-## For loops
-
-`for i = lo to hi do body done` lowers to an inclusive Go `for` loop:
-
-```goop
-for i = 0 to n - 1 do
-  arr.(i) <- f i
-done
-```
-
-→
-
-```go
-for i := 0; i <= n-1; i++ {
-    arr[i] = f(i)
-}
-```
-
-The loop variable is scoped to the loop body only.
-
-## `begin` / `end`
-
-In statement position (top-level `let` body, function body), `begin ... end` lowers to a Go block `{ ... }`. Each intermediate expression is emitted as a statement; the last expression is emitted as a statement or return value depending on context.
-
-In expression position (e.g. the RHS of `let x = ...`), `begin ... end` lowers to an immediately invoked function expression (IIFE) so intermediate statements can run before the final value:
-
-```goop
-let x = begin a(); b(); c end
-```
-
-→
-
-```go
-x := func() T {
-    a()
-    b()
-    return c
-}()
-```
-
-`for` and `<-` assignments inside `begin` are emitted as real Go statements, not discarded `_ = expr` wrappers.
+`for i = lo to hi do body done` → inclusive Go `for`.  
+`while e do body done` → `for e { body }`.  
+`begin … end` → block or IIFE in expression position.
 
 ## Qualified constructors
 
-`Type.Ctor` in expressions and patterns lowers to the same Go constructor as unqualified `Ctor`. Qualification is a parse-time disambiguator only.
-
-## Mutability
-
-`mutable` bindings lower to Go `var`:
-
-```goop
-let mutable counter = 0
-counter <- counter + 1
-```
-
-→
-
-```go
-var counter = 0
-counter = counter + 1
-```
-
-Immutable `let` lowers to `const` when possible and `var` otherwise.
-
-## Effect rows
-
-Effect rows are **completely erased** in Go output. No Go code is emitted for `with { ... }` clauses. The compiler validates effect usage at compile time; the lowered Go is identical to what would be emitted for a function without effect annotations.
-
-```goop
-let readFile (path: string) : string with { io } = ...
-```
-
-→
-
-```go
-func ReadFile(path string) string { ... }
-```
-
-This is a zero-cost abstraction: full compile-time effect tracking with no runtime representation.
+`Type.Ctor` is a parse-time disambiguator; same Go constructor as unqualified `Ctor`.
 
 ## Refinement contracts
 
-`where` clauses lower to runtime `panic` guards. Preconditions (on parameter types) emit an `if` check at function entry. Postconditions (on the return type) emit a `defer` check using Go named return values.
-
-```goop
-let safeDiv (a: int) (b: int where b <> 0) : int = a / b
-```
-
-→
+`where` clauses → runtime `panic` guards when unproven. Proven VCs (interval solver or optional Z3) may skip call-site guards; exported entries keep entry guards.
 
 ```go
 func SafeDiv(a, b int) int {
@@ -350,77 +121,15 @@ func SafeDiv(a, b int) int {
 }
 ```
 
-Return refinement:
-
-```goop
-let clamp (x: int) (lo: int) (hi: int where hi >= lo) : int where result >= lo && result <= hi = ...
-```
-
-→
-
-```go
-func Clamp(x, lo, hi int) (ret0 int) {
-    if !(hi >= lo) {
-        panic("clamp: precondition violated: hi >= lo")
-    }
-    defer func() {
-        if !(ret0 >= lo && ret0 <= hi) {
-            panic("clamp: postcondition violated: result >= lo && result <= hi")
-        }
-    }()
-    // ... function body ...
-    return
-}
-```
-
-There is no SMT solver; all refinements are checked at runtime.
-
 ## Linear types
 
-Linear types are **erased** in Go output. They lower to `interface{}` or the extern-declared Go type:
+Erased to `interface{}` or the extern Go type. Discharge checking is compile-time only.
 
-```goop
-type handle : 1
-let f (h: handle) : unit = ...
-```
+## Resource cleanup
 
-→
-
-```go
-type Handle = interface{}
-func F(h Handle) { ... }
-```
-
-The linearity discipline (discharge checking, double-use rejection) is enforced at compile time and imposes zero runtime cost.
-
-## Region scopes
-
-`region { ... }` computation expressions lower to inline Go with `defer Close(varName)` for each `let!` binding:
-
-```goop
-let process (h: handle) : unit =
-  region {
-    let! x = h
-    do! useHandle x
-    return ()
-  }
-```
-
-→
-
-```go
-func Process(h Handle) {
-    x := h
-    defer Close(x)
-    useHandle(x)
-}
-```
-
-Each `let!` acquires a linear resource and registers a `defer Close()` at region exit. The linear discharge checker auto-discharges region-bound variables. This replaces the legacy `using` block with compile-time-guaranteed cleanup.
+Prefer `try … finally` or explicit `Close` hand-off. Legacy `region { }` / `using` CEs are removed (PARSE-MIG013).
 
 ## Inline Go (`@golang`)
-
-Goop embeds raw Go functions with `@golang { ... }` blocks. Declare Go imports with `import golang "path"` and expose bindings with `val` signatures:
 
 ```goop
 import (
@@ -429,44 +138,13 @@ import (
 )
 
 @golang {
-  func httpGetString(url string) string {
-    resp, err := http.Get(url)
-    if err != nil { return "" }
-    defer resp.Body.Close()
-    body, _ := io.ReadAll(resp.Body)
-    return string(body)
-  }
+  func httpGetString(url string) string { ... }
 }
 val httpGetString : string -> string
 ```
 
-→
-
-```go
-import (
-    "net/http"
-    "io"
-)
-
-func httpGetString(url string) string {
-    resp, err := http.Get(url)
-    if err != nil { return "" }
-    defer resp.Body.Close()
-    body, _ := io.ReadAll(resp.Body)
-    return string(body)
-}
-```
-
-Key rules:
-
-1. **Imports**: Declare required Go packages with `import golang "path"` (import-only or with `{ val ... }` signatures).
-2. **Same-package helpers**: `@golang { ... }` emits Go code directly into the generated package.
-3. **Names must match**: The Go function name in the `@golang` block must match the Goop `val` binding. Identity mapping for inline Go (no mangling).
-4. **Unit arguments are elided**: Goop `()` calls become zero-argument Go calls (`nowString()` not `nowString(struct{}{})`).
-5. **Any valid Go code works**: Functions, types, constants, variables — the entire `@golang { ... }` block is emitted verbatim.
-
-See [`extern_demo.goop`](../examples/extern_demo.goop).
+Emitted verbatim into the generated package. Names must match `val` bindings. Unit args are elided.
 
 ## Source maps
 
-Goop emits Go source maps so that stack traces, debugger breakpoints, and error messages refer to `.goop` source locations rather than generated `.go` lines.
+Stack traces and diagnostics map back to `.goop` locations.

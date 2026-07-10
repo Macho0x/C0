@@ -88,9 +88,10 @@ type Generator struct {
 
 	currentFunc string // function being generated (for ? operator)
 	varCounter  int    // for generating unique tmp variable names
-	needFmt     bool   // whether to import "fmt"
-	usedChan    bool   // whether any channel operations are used in this module
-	usedHTTP    bool   // whether HTTP/JSON helpers are needed
+	needFmt     bool // whether to import "fmt"
+	usedChan    bool // whether any channel operations are used in this module
+	usedHTTP    bool // whether HTTP/JSON helpers are needed
+	needsEffectRuntime bool
 
 	// refinement contract tracking
 	provenSites      refine.ProvenSites        // call sites proven safe by refinement solver
@@ -217,6 +218,12 @@ func (g *Generator) internalTypeToGo(t types.Type) string {
 		if t.Name == "array" && len(t.Args) > 0 {
 			return "[]" + g.internalTypeToGo(t.Args[0])
 		}
+		if t.Name == "ref" && len(t.Args) > 0 {
+			return "*" + g.internalTypeToGo(t.Args[0])
+		}
+		if t.Name == "lazy" && len(t.Args) > 0 {
+			return "func() " + g.internalTypeToGo(t.Args[0])
+		}
 		if t.Name == "option" && len(t.Args) > 0 {
 			return "Option" + exported(g.internalTypeToGo(t.Args[0]))
 		}
@@ -272,6 +279,11 @@ func (g *Generator) Generate(mod *ast.Module) (string, error) {
 	g.goPkg = goPkgName(mod.Name)
 	g.goFileName = goFileName(mod.Name)
 
+	// Flatten nested modules for emission
+	flat := *mod
+	flat.Decls = flattenDecls(mod.Decls)
+	mod = &flat
+
 	// Initialise source map (generated path is the Go file, source is the Goop file)
 	g.srcMap = NewSourceMap(g.srcFile, g.goFileName)
 
@@ -314,6 +326,13 @@ func (g *Generator) Generate(mod *ast.Module) (string, error) {
 			g.emitLetDecl(d)
 		case *ast.GolangEmbedDecl:
 			g.emitGolangEmbedDecl(d)
+		case *ast.ClassDecl:
+			g.emitClassDecl(d)
+		case *ast.ExceptionDecl:
+			g.emitf("var %s = %#v\n\n", g.goName(d.Name), d.Name)
+		case *ast.EffectDecl:
+			// Effect ops are values used with perform; emit as tagged strings.
+			g.emitf("var %s = %#v\n\n", g.goName(d.Name), d.Name)
 		}
 	}
 
@@ -322,6 +341,9 @@ func (g *Generator) Generate(mod *ast.Module) (string, error) {
 
 	// Emit HTTP/JSON helpers if needed
 	g.emitHTTPHelpers()
+
+	// Effect CPS runtime
+	g.emitEffectHelpers()
 
 	bodyStr := g.buf.String()
 	g.buf = origBuf
@@ -349,7 +371,7 @@ func (g *Generator) prescan(mod *ast.Module) {
 		switch d := d.(type) {
 		case *ast.TypeDecl:
 			switch d.Kind.(type) {
-			case *ast.ADTTypeKind:
+			case *ast.ADTTypeKind, *ast.GADTTypeKind:
 				g.adts[d.Name] = d
 				goName := g.goName(d.Name)
 				g.goopToGo[d.Name] = goName
@@ -370,6 +392,8 @@ func (g *Generator) prescan(mod *ast.Module) {
 				goName := newtypeGoName(d.Name)
 				g.goopToGo[d.Name] = goName
 			}
+		case *ast.ClassDecl:
+			g.goopToGo[d.Name] = g.goName(d.Name)
 		case *ast.LetDecl:
 			for _, b := range d.Bindings {
 				if b.RetType != nil {
@@ -427,6 +451,15 @@ func (g *Generator) prescan(mod *ast.Module) {
 			for _, c := range kind.Cases {
 				if c.Arg != nil {
 					g.scanUsedTypes(c.Arg)
+				}
+			}
+		case *ast.GADTTypeKind:
+			for _, c := range kind.Cases {
+				if c.Arg != nil {
+					g.scanUsedTypes(c.Arg)
+				}
+				if c.Result != nil {
+					g.scanUsedTypes(c.Result)
 				}
 			}
 		}
@@ -1160,8 +1193,15 @@ func (g *Generator) emitRecordTypes() {
 
 func (g *Generator) emitADTTypes() {
 	for _, td := range g.adts {
-		ak, ok := td.Kind.(*ast.ADTTypeKind)
-		if !ok {
+		var cases []ast.ADTCase
+		switch k := td.Kind.(type) {
+		case *ast.ADTTypeKind:
+			cases = k.Cases
+		case *ast.GADTTypeKind:
+			for _, c := range k.Cases {
+				cases = append(cases, ast.ADTCase{Name: c.Name, Arg: c.Arg})
+			}
+		default:
 			continue
 		}
 		goName := g.goName(td.Name)
@@ -1173,7 +1213,7 @@ func (g *Generator) emitADTTypes() {
 		g.indent--
 		g.emitf("}\n\n")
 
-		for _, c := range ak.Cases {
+		for _, c := range cases {
 			varName := goName + exported(c.Name)
 			g.emitf("type %s struct {\n", varName)
 			g.indent++
@@ -1423,18 +1463,34 @@ func (g *Generator) emitLetDecl(d *ast.LetDecl) {
 			g.emitf("func %s", funcName)
 			g.emitParams(realParams)
 			hasReturn := b.RetType != nil && g.typeToGo(b.RetType) != "struct{}"
+			retGo := ""
+			if hasReturn {
+				retGo = g.typeToGo(b.RetType)
+			} else if g.varTypeMap != nil {
+				if t, ok := g.varTypeMap[b.Name]; ok {
+					retGo = g.funcReturnGo(t)
+					if retGo != "" && retGo != "struct{}" && retGo != "interface{}" {
+						hasReturn = true
+					}
+				}
+			}
 
 			// Check for return type refinement → use named return value
 			hasPostcondition := false
 			var postRT *ast.RefinementType
 			if hasReturn {
-				if rt, ok := b.RetType.(*ast.RefinementType); ok {
-					hasPostcondition = true
-					postRT = rt
-					g.buf.WriteString(" (result " + g.typeToGo(b.RetType) + ")")
+				if b.RetType != nil {
+					if rt, ok := b.RetType.(*ast.RefinementType); ok {
+						hasPostcondition = true
+						postRT = rt
+						g.buf.WriteString(" (result " + g.typeToGo(b.RetType) + ")")
+					} else {
+						g.buf.WriteString(" " + retGo)
+					}
 				} else {
-					g.buf.WriteString(" " + g.typeToGo(b.RetType))
+					g.buf.WriteString(" " + retGo)
 				}
+				g.funcRetType[funcName] = retGo
 			}
 
 			g.buf.WriteString(" {\n")
@@ -1518,7 +1574,7 @@ func (g *Generator) isChanMakeExpr(e ast.Expr) bool {
 func (g *Generator) emitParams(params []ast.Param) {
 	g.buf.WriteString("(")
 	first := true
-	for _, p := range params {
+	for i, p := range params {
 		// Expand open record params into individual field params
 		if p.Type != nil {
 			if rt, ok := p.Type.(*ast.TRecord); ok && rt.Open {
@@ -1542,11 +1598,45 @@ func (g *Generator) emitParams(params []ast.Param) {
 		g.buf.WriteString(" ")
 		if p.Type != nil {
 			g.buf.WriteString(g.typeToGo(p.Type))
+		} else if g.currentFunc != "" && g.varTypeMap != nil {
+			if t, ok := g.varTypeMap[g.currentFunc]; ok {
+				if pt := nthFunParam(t, i); pt != nil {
+					g.buf.WriteString(g.internalTypeToGo(pt))
+				} else {
+					g.buf.WriteString("interface{}")
+				}
+			} else {
+				g.buf.WriteString("interface{}")
+			}
 		} else {
 			g.buf.WriteString("interface{}")
 		}
 	}
 	g.buf.WriteString(")")
+}
+
+func nthFunParam(t types.Type, n int) types.Type {
+	for i := 0; i <= n; i++ {
+		fn, ok := t.(*types.TFun)
+		if !ok {
+			return nil
+		}
+		if i == n {
+			return fn.From
+		}
+		t = fn.To
+	}
+	return nil
+}
+
+func (g *Generator) funcReturnGo(t types.Type) string {
+	for {
+		fn, ok := t.(*types.TFun)
+		if !ok {
+			return g.internalTypeToGo(t)
+		}
+		t = fn.To
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1599,6 +1689,39 @@ func (g *Generator) emitExpr(e ast.Expr, isStmt bool) {
 		g.emitFor(e, isStmt)
 	case *ast.BeginExpr:
 		g.emitBegin(e, isStmt)
+	case *ast.WhileExpr:
+		g.emitWhile(e, isStmt)
+	case *ast.FunctionExpr:
+		g.emitFunction(e)
+	case *ast.RefExpr:
+		g.emitRef(e)
+	case *ast.DerefExpr:
+		g.emitDeref(e)
+	case *ast.TryExpr:
+		g.emitTry(e, isStmt)
+	case *ast.RaiseExpr:
+		g.emitRaise(e)
+	case *ast.AssertExpr:
+		g.emitAssertExpr(e, isStmt)
+	case *ast.LazyExpr:
+		g.emitLazy(e)
+	case *ast.PerformExpr:
+		g.emitPerform(e)
+	case *ast.ArrayLitExpr:
+		g.emitArrayLit(e)
+	case *ast.PolyvarExpr:
+		g.emitPolyvar(e)
+	case *ast.ObjectExpr:
+		g.emitObjectExpr(e)
+	case *ast.NewExpr:
+		g.emitNewExpr(e)
+	case *ast.LabelledArgExpr:
+		g.emitLabelledArg(e)
+	case *ast.LetModuleExpr:
+		// Flatten: emit body only (decls already typechecked / opened)
+		g.emitExpr(e.Body, isStmt)
+	case *ast.ModuleAppExpr:
+		g.buf.WriteString("struct{}{}")
 	case *ast.IsExpr:
 		g.emitIsExpr(e)
 	case *ast.AsMatchExpr:
@@ -1639,6 +1762,9 @@ func (g *Generator) emitLit(e *ast.LitExpr) {
 }
 
 func (g *Generator) emitIdent(e *ast.IdentExpr) {
+	if e.Name == "__goop_perform" || e.Name == "__goop_handle" {
+		g.needsEffectRuntime = true
+	}
 	// Check for extern-qualified names
 	if qualified, ok := g.externNames[e.Name]; ok {
 		g.buf.WriteString(qualified)
@@ -2425,6 +2551,29 @@ func (g *Generator) emitPreludeCall(b *prelude.Binding, args []ast.Expr, callExp
 		g.buf.WriteString("}()")
 		return
 
+	case "ref_make":
+		elemGo := "interface{}"
+		if len(args) >= 1 && g.typeMap != nil {
+			if t, ok := g.typeMap[args[0]]; ok {
+				elemGo = g.internalTypeToGo(t)
+			}
+		}
+		if elemGo == "interface{}" && g.typeMap != nil && callExpr != nil {
+			if retType, ok := g.typeMap[callExpr]; ok {
+				if tc, ok := retType.(*types.TCon); ok && tc.Name == "ref" && len(tc.Args) > 0 {
+					elemGo = g.internalTypeToGo(tc.Args[0])
+				}
+			}
+		}
+		g.buf.WriteString("func() *" + elemGo + " { v := ")
+		if len(args) >= 1 {
+			g.emitExpr(args[0], false)
+		} else {
+			g.buf.WriteString("*(new(" + elemGo + "))")
+		}
+		g.buf.WriteString("; return &v }()")
+		return
+
 	case "owned_chan_make":
 		// OwnedChan.make () → C0ChanMake()
 		g.usedChan = true
@@ -2650,6 +2799,7 @@ func (g *Generator) emitMatch(e *ast.MatchExpr) {
 			hasDefault = true
 			g.emitf("default:\n")
 			g.indent++
+			g.emitf("_ = v\n")
 			for _, arm := range grp.arms {
 				if ip, ok := arm.Pattern.(*ast.IdentPattern); ok {
 					g.emitf("%s := %s\n", ip.Name, scrutVar)
@@ -2775,10 +2925,10 @@ func (g *Generator) emitReturnExpr(e ast.Expr) {
 
 	// Emit as a return statement if it's not already a statement
 	switch e.(type) {
-	case *ast.IfExpr, *ast.MatchExpr, *ast.LetInExpr, *ast.AsMatchExpr, *ast.GuardExpr:
+	case *ast.IfExpr, *ast.MatchExpr, *ast.LetInExpr, *ast.AsMatchExpr, *ast.GuardExpr, *ast.TryExpr:
 		// These emit their own stmt structure
 		g.emitExpr(e, true)
-	case *ast.AssignExpr, *ast.ForExpr:
+	case *ast.AssignExpr, *ast.ForExpr, *ast.WhileExpr, *ast.AssertExpr:
 		g.emitExpr(e, true)
 	case *ast.BeginExpr:
 		if hasRet {
@@ -2825,14 +2975,28 @@ func (g *Generator) emitPatternBinding(p ast.Pattern, prefix string) {
 	}
 }
 
+func adtCasesOf(td *ast.TypeDecl) []ast.ADTCase {
+	switch k := td.Kind.(type) {
+	case *ast.ADTTypeKind:
+		return k.Cases
+	case *ast.GADTTypeKind:
+		out := make([]ast.ADTCase, len(k.Cases))
+		for i, c := range k.Cases {
+			out[i] = ast.ADTCase{Name: c.Name, Arg: c.Arg}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 func (g *Generator) findVariantStruct(ctorName, typePrefix string) string {
 	// Search through ADTs to find which variant struct contains this constructor
 	for _, td := range g.adts {
 		if typePrefix != "" && td.Name != typePrefix {
 			continue
 		}
-		ak := td.Kind.(*ast.ADTTypeKind)
-		for _, c := range ak.Cases {
+		for _, c := range adtCasesOf(td) {
 			if c.Name == ctorName {
 				return g.goName(td.Name) + exported(c.Name)
 			}
@@ -2847,8 +3011,7 @@ func (g *Generator) findVariantStruct(ctorName, typePrefix string) string {
 // as individual arguments or pass the record expression as-is.
 func (g *Generator) isVariantRecordPayload(ctorName string) bool {
 	for _, td := range g.adts {
-		ak := td.Kind.(*ast.ADTTypeKind)
-		for _, c := range ak.Cases {
+		for _, c := range adtCasesOf(td) {
 			if c.Name == ctorName && c.Arg != nil {
 				_, ok := c.Arg.(*ast.TRecord)
 				return ok
@@ -2861,8 +3024,7 @@ func (g *Generator) isVariantRecordPayload(ctorName string) bool {
 // adtVariantField returns the struct field name for a constructor's payload.
 func (g *Generator) adtVariantField(ctorName string) string {
 	for _, td := range g.adts {
-		ak := td.Kind.(*ast.ADTTypeKind)
-		for _, c := range ak.Cases {
+		for _, c := range adtCasesOf(td) {
 			if c.Name == ctorName && c.Arg != nil {
 				return g.variantFieldName(c.Arg, td.Name, c.Name)
 			}
@@ -2925,12 +3087,208 @@ func (g *Generator) emitIndex(e *ast.IndexExpr) {
 }
 
 func (g *Generator) emitAssign(e *ast.AssignExpr, isStmt bool) {
+	if e.Coloneq {
+		switch target := e.Target.(type) {
+		case *ast.DerefExpr:
+			g.buf.WriteString("*")
+			g.emitExpr(target.Target, false)
+		default:
+			g.buf.WriteString("*")
+			g.emitExpr(e.Target, false)
+		}
+		g.buf.WriteString(" = ")
+		g.emitExpr(e.Value, false)
+		if isStmt {
+			g.buf.WriteString("\n")
+		}
+		return
+	}
 	g.emitExpr(e.Target, false)
 	g.buf.WriteString(" = ")
 	g.emitExpr(e.Value, false)
 	if isStmt {
 		g.buf.WriteString("\n")
 	}
+}
+
+func (g *Generator) emitWhile(e *ast.WhileExpr, isStmt bool) {
+	g.buf.WriteString("for ")
+	g.emitExpr(e.Cond, false)
+	g.buf.WriteString(" {\n")
+	g.indent++
+	g.emitExpr(e.Body, true)
+	g.indent--
+	g.emitf("}")
+	if isStmt {
+		g.buf.WriteString("\n")
+	}
+}
+
+func (g *Generator) emitFunction(e *ast.FunctionExpr) {
+	// Emit as an immediately-usable func that pattern-matches its argument.
+	retGo := "interface{}"
+	argGo := "interface{}"
+	if g.typeMap != nil {
+		if t, ok := g.typeMap[e]; ok {
+			if fn, ok := t.(*types.TFun); ok {
+				argGo = g.internalTypeToGo(fn.From)
+				retGo = g.internalTypeToGo(fn.To)
+			}
+		}
+	}
+	g.buf.WriteString("func(__fn_arg " + argGo + ") " + retGo + " {\n")
+	g.indent++
+	saved := g.currentFunc
+	g.currentFunc = "__fn_local"
+	g.funcRetType[g.currentFunc] = retGo
+	g.emitMatch(&ast.MatchExpr{
+		Scrutinee: &ast.IdentExpr{Name: "__fn_arg", Loc: e.Loc},
+		Arms:      e.Arms,
+		Loc:       e.Loc,
+	})
+	g.currentFunc = saved
+	g.indent--
+	g.emitf("}")
+}
+
+func (g *Generator) emitRef(e *ast.RefExpr) {
+	elemGo := "interface{}"
+	if g.typeMap != nil {
+		if t, ok := g.typeMap[e]; ok {
+			if tc, ok := t.(*types.TCon); ok && tc.Name == "ref" && len(tc.Args) > 0 {
+				elemGo = g.internalTypeToGo(tc.Args[0])
+			}
+		}
+		if elemGo == "interface{}" {
+			if t, ok := g.typeMap[e.Value]; ok {
+				elemGo = g.internalTypeToGo(t)
+			}
+		}
+	}
+	g.buf.WriteString("func() *" + elemGo + " { v := ")
+	g.emitExpr(e.Value, false)
+	g.buf.WriteString("; return &v }()")
+}
+
+func (g *Generator) emitDeref(e *ast.DerefExpr) {
+	g.buf.WriteString("*")
+	g.emitExpr(e.Target, false)
+}
+
+func (g *Generator) emitTry(e *ast.TryExpr, isStmt bool) {
+	retGo := "interface{}"
+	if g.typeMap != nil {
+		if t, ok := g.typeMap[e]; ok {
+			retGo = g.internalTypeToGo(t)
+		}
+	}
+	g.buf.WriteString("func() (ret " + retGo + ") {\n")
+	g.indent++
+	g.emitf("defer func() {\n")
+	g.indent++
+	g.emitf("if r := recover(); r != nil {\n")
+	g.indent++
+	if len(e.Arms) > 0 {
+		// Approximate: bind recovered value and run first arm body.
+		g.emitf("_ = r\n")
+		g.emitf("ret = ")
+		g.emitExpr(e.Arms[0].Body, false)
+		g.buf.WriteString("\n")
+	}
+	g.indent--
+	g.emitf("}\n")
+	g.indent--
+	g.emitf("}()\n")
+	if e.Finally != nil {
+		g.emitf("defer func() {\n")
+		g.indent++
+		g.emitExpr(e.Finally, true)
+		g.indent--
+		g.emitf("}()\n")
+	}
+	g.emitf("ret = ")
+	g.emitExpr(e.Body, false)
+	g.buf.WriteString("\n")
+	g.emitf("return\n")
+	g.indent--
+	g.buf.WriteString("}()")
+	if isStmt {
+		g.buf.WriteString("\n")
+	}
+}
+
+func (g *Generator) emitRaise(e *ast.RaiseExpr) {
+	g.buf.WriteString("(func() interface{} { panic(")
+	g.emitExpr(e.Exn, false)
+	g.buf.WriteString("); return nil })()")
+}
+
+func (g *Generator) emitAssertExpr(e *ast.AssertExpr, isStmt bool) {
+	g.buf.WriteString("if !(")
+	g.emitExpr(e.Cond, false)
+	g.buf.WriteString(") { panic(\"assert\") }")
+	if isStmt {
+		g.buf.WriteString("\n")
+	}
+}
+
+func (g *Generator) emitLazy(e *ast.LazyExpr) {
+	retGo := "interface{}"
+	if g.typeMap != nil {
+		if t, ok := g.typeMap[e]; ok {
+			if tc, ok := t.(*types.TCon); ok && tc.Name == "lazy" && len(tc.Args) > 0 {
+				retGo = g.internalTypeToGo(tc.Args[0])
+			}
+		}
+		if retGo == "interface{}" {
+			if t, ok := g.typeMap[e.Value]; ok {
+				retGo = g.internalTypeToGo(t)
+			}
+		}
+	}
+	g.buf.WriteString("func() " + retGo + " { return ")
+	g.emitExpr(e.Value, false)
+	g.buf.WriteString(" }")
+}
+
+func (g *Generator) emitPerform(e *ast.PerformExpr) {
+	g.needsEffectRuntime = true
+	g.buf.WriteString("__goop_perform(")
+	g.emitExpr(e.Op, false)
+	g.buf.WriteString(")")
+}
+
+func (g *Generator) emitArrayLit(e *ast.ArrayLitExpr) {
+	elemGo := "interface{}"
+	if g.typeMap != nil {
+		if t, ok := g.typeMap[e]; ok {
+			if tc, ok := t.(*types.TCon); ok && tc.Name == "array" && len(tc.Args) > 0 {
+				elemGo = g.internalTypeToGo(tc.Args[0])
+			}
+		}
+	}
+	g.buf.WriteString("[]" + elemGo + "{")
+	for i, el := range e.Elems {
+		if i > 0 {
+			g.buf.WriteString(", ")
+		}
+		g.emitExpr(el, false)
+	}
+	g.buf.WriteString("}")
+}
+
+func (g *Generator) emitPolyvar(e *ast.PolyvarExpr) {
+	if e.Arg != nil {
+		g.buf.WriteString("struct{ Tag string; Arg interface{} }{Tag: ")
+		g.buf.WriteString(fmt.Sprintf("%q", e.Tag))
+		g.buf.WriteString(", Arg: ")
+		g.emitExpr(e.Arg, false)
+		g.buf.WriteString("}")
+		return
+	}
+	g.buf.WriteString("struct{ Tag string }{Tag: ")
+	g.buf.WriteString(fmt.Sprintf("%q", e.Tag))
+	g.buf.WriteString("}")
 }
 
 func (g *Generator) emitFor(e *ast.ForExpr, isStmt bool) {
@@ -3019,12 +3377,15 @@ func (g *Generator) emitLetIn(e *ast.LetInExpr) {
 			g.emitf("%s := %s.MustOk()\n", b.Name, tmp)
 		} else {
 			// Check if the body is a prelude call with a custom lowering
-			// that emits a statement (e.g., assert, assert_equal).
+			// that emits a statement (e.g., assert, assert_equal), or an
+			// AssertExpr (parsed keyword form of assert).
 			// In that case, emit the statement first, then assign struct{}{}.
-			if isCustomPreludeStmt(b.Body) {
+			if _, isAssert := b.Body.(*ast.AssertExpr); isAssert || isCustomPreludeStmt(b.Body) {
 				g.emitExpr(b.Body, true)
-				g.emitf("%s := struct{}{}\n", b.Name)
-				g.emitf("_ = %s\n", b.Name)
+				if b.Name != "_" {
+					g.emitf("%s := struct{}{}\n", b.Name)
+					g.emitf("_ = %s\n", b.Name)
+				}
 			} else if g.isChanMakeExpr(b.Body) {
 				// let ch = Chan.make () → ch := C0ChanMake()
 				g.usedChan = true
@@ -3081,11 +3442,26 @@ func (g *Generator) emitFun(e *ast.FunExpr) {
 			g.buf.WriteString("interface{}")
 		}
 	}
-	g.buf.WriteString(") interface{} {\n")
+	retGo := "interface{}"
+	if g.typeMap != nil {
+		if t, ok := g.typeMap[e]; ok {
+			retGo = g.funcReturnGo(t)
+		}
+	}
+	g.buf.WriteString(") " + retGo + " {\n")
 	g.indent++
-	g.emitf("return ")
-	g.emitExpr(e.Body, false)
-	g.buf.WriteString("\n")
+	saved := g.currentFunc
+	g.currentFunc = "__fn_local"
+	g.funcRetType[g.currentFunc] = retGo
+	switch e.Body.(type) {
+	case *ast.MatchExpr, *ast.IfExpr, *ast.LetInExpr, *ast.TryExpr:
+		g.emitExpr(e.Body, true)
+	default:
+		g.emitf("return ")
+		g.emitExpr(e.Body, false)
+		g.buf.WriteString("\n")
+	}
+	g.currentFunc = saved
 	g.indent--
 	g.emitf("}")
 }
@@ -3143,6 +3519,26 @@ func (g *Generator) emitBinary(e *ast.BinaryExpr) {
 		// <> → !=
 		g.emitExpr(e.Left, false)
 		g.buf.WriteString(" != ")
+		g.emitExpr(e.Right, false)
+		return
+	case token.MOD, token.PERCENT:
+		g.emitExpr(e.Left, false)
+		g.buf.WriteString(" % ")
+		g.emitExpr(e.Right, false)
+		return
+	case token.LAND:
+		g.emitExpr(e.Left, false)
+		g.buf.WriteString(" & ")
+		g.emitExpr(e.Right, false)
+		return
+	case token.LOR:
+		g.emitExpr(e.Left, false)
+		g.buf.WriteString(" | ")
+		g.emitExpr(e.Right, false)
+		return
+	case token.LXOR:
+		g.emitExpr(e.Left, false)
+		g.buf.WriteString(" ^ ")
 		g.emitExpr(e.Right, false)
 		return
 	}

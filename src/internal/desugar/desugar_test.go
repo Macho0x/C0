@@ -10,7 +10,6 @@ import (
 
 func parseExpr(t *testing.T, src string) ast.Expr {
 	t.Helper()
-	// Wrap in a minimal module so the parser has context
 	fullSrc := "module Test\nlet x = " + src
 	mod, err := parser.Parse("test.goop", []byte(fullSrc))
 	if err != nil {
@@ -20,59 +19,35 @@ func parseExpr(t *testing.T, src string) ast.Expr {
 	return ld.Bindings[0].Body
 }
 
-func TestDesugarIs(t *testing.T) {
-	// s is Ok → stays as IsExpr (handled by codegen directly)
-	expr := parseExpr(t, "s is Ok")
-
-	// Verify it's an IsExpr (not desugared)
-	if _, ok := expr.(*ast.IsExpr); !ok {
-		t.Fatalf("expected IsExpr, got %T", expr)
+func TestDesugarFunction(t *testing.T) {
+	expr := parseExpr(t, "function | 0 -> 1 | _ -> 2")
+	if _, ok := expr.(*ast.FunctionExpr); !ok {
+		t.Fatalf("expected FunctionExpr from parser, got %T", expr)
 	}
-}
-
-func TestDesugarAs(t *testing.T) {
-	// s as Err msg -> msg else "fine" → stays as AsMatchExpr
-	expr := parseExpr(t, `s as Err msg -> msg else "fine"`)
-
-	if _, ok := expr.(*ast.AsMatchExpr); !ok {
-		t.Fatalf("expected AsMatchExpr, got %T", expr)
-	}
-}
-
-func TestDesugarGuardSingle(t *testing.T) {
-	// guard Err msg = s else "no error"
-	expr := parseExpr(t, `guard Err msg = s else "no error"`)
 	result := desugar.DesugarExpr(expr)
-
-	m, ok := result.(*ast.MatchExpr)
+	fn, ok := result.(*ast.FunExpr)
 	if !ok {
-		t.Fatalf("expected MatchExpr, got %T", result)
+		t.Fatalf("expected FunExpr after desugar, got %T", result)
+	}
+	if len(fn.Params) != 1 || fn.Params[0].Name != "__fn_arg" {
+		t.Fatalf("expected single __fn_arg param, got %+v", fn.Params)
+	}
+	m, ok := fn.Body.(*ast.MatchExpr)
+	if !ok {
+		t.Fatalf("expected MatchExpr body, got %T", fn.Body)
 	}
 	if len(m.Arms) != 2 {
 		t.Fatalf("expected 2 arms, got %d", len(m.Arms))
 	}
 }
 
-func TestDesugarGuardMultiple(t *testing.T) {
-	// guard Ok u = findUser id else Error "not found"
-	// and Ok v = validate u else Error "bad"
-	// The parser treats this as a guard with multiple bindings.
-	expr := parseExpr(t, `guard Ok u = findUser id else Error "not found"`)
-	result := desugar.DesugarExpr(expr)
-
-	// Should produce a match expression
-	if _, ok := result.(*ast.MatchExpr); !ok {
-		t.Fatalf("expected MatchExpr, got %T", result)
-	}
-}
-
-func TestDesugarRoundTrip(t *testing.T) {
-	// Parse a full module with guard and desugar it
+func TestDesugarFunctionModule(t *testing.T) {
 	src := `module Test
 type status = Ok | Err of string
 
-let handle (s: status) : string =
-  guard Err msg = s else "no error"
+let handle = function
+  | Err msg -> msg
+  | Ok -> "ok"
 `
 	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
@@ -80,16 +55,14 @@ let handle (s: status) : string =
 	}
 	mod = desugar.DesugarModule(mod)
 
-	// The body should be a MatchExpr after guard desugaring
 	ld := mod.Decls[1].(*ast.LetDecl)
 	body := ld.Bindings[0].Body
-	if _, ok := body.(*ast.MatchExpr); !ok {
-		t.Fatalf("expected MatchExpr after guard desugar, got %T", body)
+	if _, ok := body.(*ast.FunExpr); !ok {
+		t.Fatalf("expected FunExpr after function desugar, got %T", body)
 	}
 }
 
 func TestDesugarPreservesOtherExprs(t *testing.T) {
-	// Desugar should not affect ordinary expressions
 	src := `module Test
 let x = 1 + 2
 `
@@ -106,61 +79,27 @@ let x = 1 + 2
 	}
 }
 
-func TestMacrosExampleParses(t *testing.T) {
-	// Verify the macros.goop example parses without errors
-	src := `module MacrosDemo
-
-type status = Ok | Err of string
-
-let describe (s: status) : string =
-  if s is Ok then "ok" else "not ok"
-
-let message (s: status) : string =
-  s as Err msg -> msg else "fine"
-
-	let handle (s: status) : string =
-		guard Err msg = s else "no error"
+func TestDesugarWalksRefWhile(t *testing.T) {
+	src := `module Test
+let main () =
+  let r = ref 0 in
+  while !r < 3 do r := !r + 1 done
 `
-	mod, err := parser.Parse("macros.goop", []byte(src))
+	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {
-		t.Fatalf("parse macros.goop: %v", err)
+		t.Fatalf("parse: %v", err)
 	}
-	if mod.Name != "MacrosDemo" {
-		t.Errorf("expected MacrosDemo, got %s", mod.Name)
-	}
-	if len(mod.Decls) != 4 { // type + 3 lets
-		t.Errorf("expected 4 decls, got %d", len(mod.Decls))
-	}
-
-	// Desugar and verify
 	mod = desugar.DesugarModule(mod)
-	// describe body: now stays as IsExpr (handled by codegen directly)
-	ld1 := mod.Decls[1].(*ast.LetDecl)
-	descBody := ld1.Bindings[0].Body
-	if ife, ok := descBody.(*ast.IfExpr); ok {
-		// IsExpr inside if condition
-		if _, ok := ife.Cond.(*ast.IsExpr); !ok {
-			t.Errorf("describe if cond: expected IsExpr, got %T", ife.Cond)
-		}
-	} else {
-		t.Errorf("describe body: expected IfExpr, got %T", descBody)
+	ld := mod.Decls[0].(*ast.LetDecl)
+	body := ld.Bindings[0].Body
+	letIn, ok := body.(*ast.LetInExpr)
+	if !ok {
+		t.Fatalf("expected LetInExpr, got %T", body)
 	}
-	// message body: stays as AsMatchExpr
-	ld2 := mod.Decls[2].(*ast.LetDecl)
-	if _, ok := ld2.Bindings[0].Body.(*ast.AsMatchExpr); !ok {
-		t.Errorf("message body: expected AsMatchExpr, got %T", ld2.Bindings[0].Body)
+	if _, ok := letIn.Bindings[0].Body.(*ast.RefExpr); !ok {
+		t.Fatalf("expected RefExpr binding, got %T", letIn.Bindings[0].Body)
 	}
-	// handle body: guard desugars to MatchExpr
-	ld3 := mod.Decls[3].(*ast.LetDecl)
-	if _, ok := ld3.Bindings[0].Body.(*ast.MatchExpr); !ok {
-		t.Errorf("handle body: expected MatchExpr, got %T", ld3.Bindings[0].Body)
-	}
-}
-
-func TestParseIsExpr(t *testing.T) {
-	expr := parseExpr(t, "x is Some y")
-	// Stays as IsExpr (handled by codegen)
-	if _, ok := expr.(*ast.IsExpr); !ok {
-		t.Fatalf("expected IsExpr, got %T", expr)
+	if _, ok := letIn.Body.(*ast.WhileExpr); !ok {
+		t.Fatalf("expected WhileExpr body, got %T", letIn.Body)
 	}
 }

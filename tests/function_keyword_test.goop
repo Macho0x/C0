@@ -1,0 +1,7 @@
+module FunctionKeywordTest
+
+let main () =
+  let f = function
+    | _ -> 42
+  in
+  assert (f 0 = 42 && f 9 = 42)

@@ -4,7 +4,7 @@
   "description": "Syntax highlighting and LSP support for Goop, a statically typed language that compiles to Go",
   "version": "0.3.3",
   "publisher": "goop",
-  "icon": "icons/goop-icon.png",
+  "icon": "icons/goop-icon-square-transparentbg.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/Macho0x/Goop.git",
@@ -42,8 +42,8 @@
           ".goop"
         ],
         "icon": {
-          "light": "./icons/goop-icon.png",
-          "dark": "./icons/goop-icon.png"
+          "light": "./icons/goop-icon-squarewords-transparentbg.png",
+          "dark": "./icons/goop-icon-squarewords-transparentbg.png"
         },
         "configuration": "./language-configuration.json"
       }

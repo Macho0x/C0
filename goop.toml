@@ -10,6 +10,7 @@ effect_inference = true
 concurrent = "error"
 refinement_unproven = "warn"
 deadlock = "warn"
+smt = false
 
 [mappings]
 "std.io"     = "github.com/Macho0x/Goop/std/io"

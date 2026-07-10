@@ -12,9 +12,9 @@ import (
 func TestFormatGoMove(t *testing.T) {
 	src := `module Main
 
-let main () : unit with { async; io } =
-  let mutable x = 1 in
-  let dummy = go (move x) (fun () -> print_line (int_to_string x)) in
+let main () : unit =
+  let x = ref 1 in
+  let dummy = go (move x) (fun () -> print_line (int_to_string (!x))) in
   print_line "done"
 `
 	mod, err := parser.Parse("test.goop", []byte(src))
@@ -24,6 +24,9 @@ let main () : unit with { async; io } =
 	out := FormatModule(mod)
 	if !strings.Contains(out, "go (move x)") {
 		t.Fatalf("missing go (move x) in:\n%s", out)
+	}
+	if !strings.Contains(out, "ref ") {
+		t.Fatalf("missing ref in:\n%s", out)
 	}
 }
 
@@ -63,10 +66,25 @@ let main () = begin print_line "a"; 1 end
 	}
 }
 
+func TestFormatWhileRef(t *testing.T) {
+	src := `module Main
+let main () =
+  let r = ref 0 in
+  while !r < 3 do r := !r + 1 done
+`
+	mod, err := parser.Parse("test.goop", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := FormatModule(mod)
+	if !strings.Contains(out, "while") || !strings.Contains(out, ":=") {
+		t.Fatalf("missing while/:= in:\n%s", out)
+	}
+}
+
 func TestRoundTripSelected(t *testing.T) {
 	names := []string{
 		"go_move_test.goop",
-		"guards_test.goop",
 		"if_test.goop",
 		"active_pattern_test.goop",
 		"bool_test.goop",

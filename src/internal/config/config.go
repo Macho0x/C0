@@ -44,6 +44,7 @@ type CheckConfig struct {
 	Concurrent         Severity // LINEAR006/007/008 (default error)
 	RefinementUnproven Severity // REFINE002 (default warn)
 	Deadlock           Severity // DEADLOCK001 (default warn)
+	SMT                bool     // use Z3 for refinement VCs when available (default false)
 }
 
 // Config holds the project-wide compiler configuration.
@@ -180,6 +181,8 @@ func parseConfig(data string) (*Config, error) {
 					c.Check.RefinementUnproven = Severity(val)
 				case "deadlock":
 					c.Check.Deadlock = Severity(val)
+				case "smt":
+					c.Check.SMT = val == "true" || val == "1"
 				}
 			case "mappings":
 				c.Mappings[key] = val

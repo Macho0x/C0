@@ -3,13 +3,19 @@ module main
 type Status = Ok | Err of string
 
 let describe (s: Status) : string =
-  if s is Ok then "ok" else "not ok"
+  match s with
+  | Ok -> "ok"
+  | Err _ -> "not ok"
 
 let message (s: Status) : string =
-  s as Err msg -> msg else "fine"
+  match s with
+  | Err msg -> msg
+  | Ok -> "fine"
 
 let handle (s: Status) : string =
-  guard Err msg = s else "no error"
+  match s with
+  | Err msg -> msg
+  | Ok -> "no error"
 
 let main () =
   let s = Ok in

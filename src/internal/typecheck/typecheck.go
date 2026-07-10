@@ -112,6 +112,7 @@ type Checker struct {
 	importedModule  string            // module being checked (for error messages)
 	effectInference bool              // infer effect rows from bodies when true
 	mutableVars     map[string]bool   // bindings that may be assigned via <-
+	modules         map[string]*moduleExports
 }
 
 // pkgFromPath extracts a Go package name from an import path (last segment).
@@ -155,6 +156,7 @@ func CheckWithTypes(mod *ast.Module) (typeinfo.TypeMap, typeinfo.VarTypeMap, []e
 
 // CheckWithTypesForFile type-checks mod, resolving import goop dependencies from disk when srcFile is set.
 func CheckWithTypesForFile(mod *ast.Module, srcFile string, cfg *config.Config, lock *config.Lockfile) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
+	mergeSiblingModules(mod, srcFile)
 	var deps map[string]*ast.Module
 	var resolver *modresolve.Resolver
 	if cfg == nil {
@@ -169,15 +171,16 @@ func CheckWithTypesForFile(mod *ast.Module, srcFile string, cfg *config.Config, 
 			return nil, nil, []error{graphErr}
 		}
 	}
-	return checkWithDepsAndImports(mod, deps, resolver, cfg)
+	tm, vtm, errs := checkWithDepsAndImports(mod, deps, resolver, cfg, srcFile)
+	return tm, vtm, errs
 }
 
 // CheckWithTypesAndDeps type-checks mod after binding exported names from dependency modules.
 func CheckWithTypesAndDeps(mod *ast.Module, deps map[string]*ast.Module) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
-	return checkWithDepsAndImports(mod, deps, nil, config.DefaultConfig())
+	return checkWithDepsAndImports(mod, deps, nil, config.DefaultConfig(), "")
 }
 
-func checkWithDepsAndImports(mod *ast.Module, deps map[string]*ast.Module, resolver *modresolve.Resolver, cfg *config.Config) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
+func checkWithDepsAndImports(mod *ast.Module, deps map[string]*ast.Module, resolver *modresolve.Resolver, cfg *config.Config, srcFile string) (typeinfo.TypeMap, typeinfo.VarTypeMap, []error) {
 	if cfg == nil {
 		cfg = config.DefaultConfig()
 	}
@@ -189,6 +192,7 @@ func checkWithDepsAndImports(mod *ast.Module, deps map[string]*ast.Module, resol
 		blockedNames:    make(map[string]string),
 		effectInference: cfg.Check.EffectInference,
 		mutableVars:     make(map[string]bool),
+		modules:         make(map[string]*moduleExports),
 	}
 	c.initBuiltins()
 	c.importedModule = mod.Name
@@ -198,6 +202,7 @@ func checkWithDepsAndImports(mod *ast.Module, deps map[string]*ast.Module, resol
 		c.bindDependencyExports(deps)
 	}
 	c.checkModule(mod)
+	c.checkMLIIfPresent(mod, srcFile)
 
 	// Apply the final substitution to all recorded types so they are fully
 	// resolved (no free type variables remain that were unified).
@@ -280,21 +285,44 @@ func containsTVar(t types.Type) bool {
 // collectVarTypes populates the VarTypeMap by walking let declarations
 // and looking up variable types in the environment.
 func (c *Checker) collectVarTypes(mod *ast.Module, varTypes typeinfo.VarTypeMap) {
-	for _, d := range mod.Decls {
-		ld, ok := d.(*ast.LetDecl)
-		if !ok {
-			continue
-		}
-		for _, b := range ld.Bindings {
-			s := c.env.Lookup(b.Name)
-			if s == nil {
-				continue
+	c.collectVarTypesDecls(mod.Decls, varTypes)
+}
+
+func (c *Checker) collectVarTypesDecls(decls []ast.TopDecl, varTypes typeinfo.VarTypeMap) {
+	for _, d := range decls {
+		switch d := d.(type) {
+		case *ast.LetDecl:
+			for _, b := range d.Bindings {
+				s := c.env.Lookup(b.Name)
+				if s == nil {
+					continue
+				}
+				t := s.Instantiate()
+				t = types.Apply(c.sub, t)
+				varTypes[b.Name] = t
 			}
-			// Instantiate the scheme and apply the substitution to resolve
-			// any type variables that were unified during checking.
-			t := s.Instantiate()
-			t = types.Apply(c.sub, t)
-			varTypes[b.Name] = t
+		case *ast.NestedModuleDecl:
+			c.collectVarTypesDecls(d.Decls, varTypes)
+			// Also look up exports by name after open may have rebound them
+			for _, nd := range d.Decls {
+				if ld, ok := nd.(*ast.LetDecl); ok {
+					for _, b := range ld.Bindings {
+						if _, ok := varTypes[b.Name]; ok {
+							continue
+						}
+						if s := c.env.Lookup(b.Name); s != nil {
+							t := types.Apply(c.sub, s.Instantiate())
+							varTypes[b.Name] = t
+						} else if c.modules != nil {
+							if m := c.modules[d.Name]; m != nil {
+								if s := m.vals[b.Name]; s != nil {
+									varTypes[b.Name] = types.Apply(c.sub, s.Instantiate())
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 }
@@ -309,70 +337,8 @@ func (c *Checker) errorfAt(loc token.SourceLoc, format string, args ...any) {
 }
 
 // locOf extracts the source location from an expression node.
-// Returns zero-value if the node type doesn't carry location info.
 func locOf(e ast.Expr) token.SourceLoc {
-	switch e := e.(type) {
-	case *ast.LitExpr:
-		return e.Loc
-	case *ast.IdentExpr:
-		return e.Loc
-	case *ast.ConstructorExpr:
-		return e.Loc
-	case *ast.AppExpr:
-		return e.Loc
-	case *ast.IfExpr:
-		return e.Loc
-	case *ast.MatchExpr:
-		return e.Loc
-	case *ast.LetInExpr:
-		return e.Loc
-	case *ast.FunExpr:
-		return e.Loc
-	case *ast.GuardExpr:
-		return e.Loc
-	case *ast.IsExpr:
-		return e.Loc
-	case *ast.AsMatchExpr:
-		return e.Loc
-	case *ast.BinaryExpr:
-		return e.Loc
-	case *ast.PipeExpr:
-		return e.Loc
-	case *ast.QuestionExpr:
-		return e.Loc
-	case *ast.RecordExpr:
-		return e.Loc
-	case *ast.RecordUpdateExpr:
-		return e.Loc
-	case *ast.FieldAccessExpr:
-		return e.Loc
-	case *ast.TupleExpr:
-		return e.Loc
-	case *ast.ListExpr:
-		return e.Loc
-	case *ast.ParenExpr:
-		return e.Loc
-	case *ast.IndexExpr:
-		return e.Loc
-	case *ast.AssignExpr:
-		return e.Loc
-	case *ast.ForExpr:
-		return e.Loc
-	case *ast.BeginExpr:
-		return e.Loc
-	case *ast.GoExpr:
-		return e.Loc
-	case *ast.SelectExpr:
-		return e.Loc
-	case *ast.UsingExpr:
-		return e.Loc
-	case *ast.RegionExpr:
-		return e.Loc
-	case *ast.CompExpr:
-		return e.Loc
-	default:
-		return token.SourceLoc{}
-	}
+	return ast.ExprLoc(e)
 }
 
 // fresh creates a new type variable and applies the current substitution.
@@ -423,6 +389,9 @@ func (c *Checker) initBuiltins() {
 	// Register owned_chan as a built-in linear type for type annotations.
 	// This enables `let ch : int owned_chan = OwnedChan.make ()`.
 	c.env.Bind("owned_chan", types.Mono(&types.TAdt{Name: "owned_chan", Linear: true}))
+
+	// Built-in exception type for raise / exception decls.
+	c.env.Bind("exn", types.Mono(&types.Prim{Name: "exn"}))
 }
 
 // ---------------------------------------------------------------------------
@@ -453,7 +422,7 @@ func (c *Checker) checkModule(mod *ast.Module) {
 
 	// bindImportSpecs runs before checkModule when imports are present
 
-	// Second pass: check value declarations (let, @golang vals).
+	// Second pass: check value declarations (let, @golang vals, exceptions).
 	for _, d := range mod.Decls {
 		switch d := d.(type) {
 		case *ast.LetDecl:
@@ -462,6 +431,11 @@ func (c *Checker) checkModule(mod *ast.Module) {
 			c.bindExternVals("", d.Vals)
 		case *ast.TypeDecl:
 			// Already handled in first pass
+		case *ast.ExceptionDecl:
+			c.checkExceptionDecl(d)
+		case *ast.EffectDecl, *ast.NestedModuleDecl, *ast.ModuleTypeDecl,
+			*ast.OpenModuleDecl, *ast.IncludeDecl, *ast.ClassDecl:
+			c.checkTopDeclExtra(d)
 		}
 	}
 }
@@ -529,6 +503,9 @@ func (c *Checker) convertTypeDecl(td *ast.TypeDecl) *types.Scheme {
 		}
 		return types.Mono(adt)
 
+	case *ast.GADTTypeKind:
+		return c.convertGADT(td, k)
+
 	case *ast.AliasTypeKind:
 		t := c.convertASTType(k.Alias)
 		return types.Mono(t)
@@ -574,10 +551,16 @@ func (c *Checker) convertASTType(at ast.Type) types.Type {
 			return &types.TCon{Name: "list"}
 		case "array":
 			return &types.TCon{Name: "array"}
+		case "ref":
+			return &types.TCon{Name: "ref"}
+		case "lazy":
+			return &types.TCon{Name: "lazy"}
 		case "option":
 			return &types.TCon{Name: "option"}
 		case "result":
 			return &types.TCon{Name: "result"}
+		case "exn":
+			return &types.Prim{Name: "exn"}
 		case "owned_chan":
 			return &types.TAdt{Name: "owned_chan", Linear: true}
 		default:
@@ -663,6 +646,9 @@ func (c *Checker) convertASTType(at ast.Type) types.Type {
 // ---------------------------------------------------------------------------
 
 func (c *Checker) checkLetDecl(d *ast.LetDecl) {
+	if d.Mutable {
+		c.errorf("let mutable is removed; use 'ref' instead")
+	}
 	if d.Private {
 		for _, b := range d.Bindings {
 			c.markPrivate(b.Name)
@@ -699,13 +685,20 @@ func (c *Checker) checkLetDecl(d *ast.LetDecl) {
 	}
 	for _, b := range d.Bindings {
 		t := c.checkBinding(b)
-		if d.Mutable {
-			c.mutableVars[b.Name] = true
-		}
 		// Generalize and bind
 		inScope := c.env.InScope()
 		scheme := types.Generalize(t, inScope)
 		c.env.Bind(b.Name, scheme)
+	}
+}
+
+func (c *Checker) checkExceptionDecl(d *ast.ExceptionDecl) {
+	exn := &types.Prim{Name: "exn"}
+	if d.Arg != nil {
+		argType := c.convertASTType(d.Arg)
+		c.env.Bind(d.Name, types.Mono(&types.TFun{From: argType, To: exn}))
+	} else {
+		c.env.Bind(d.Name, types.Mono(exn))
 	}
 }
 
@@ -841,7 +834,8 @@ func (c *Checker) infer(e ast.Expr) types.Type {
 	case *ast.PipeExpr:
 		t = c.inferPipe(e)
 	case *ast.QuestionExpr:
-		t = c.inferQuestion(e)
+		c.errorfAt(e.Loc, "'?' operator was removed; use Result.bind / match instead")
+		t = c.fresh("removed")
 	case *ast.RecordExpr:
 		t = c.inferRecord(e)
 	case *ast.RecordUpdateExpr:
@@ -862,10 +856,44 @@ func (c *Checker) infer(e ast.Expr) types.Type {
 		t = c.inferFor(e)
 	case *ast.BeginExpr:
 		t = c.inferBegin(e)
+	case *ast.WhileExpr:
+		t = c.inferWhile(e)
+	case *ast.FunctionExpr:
+		t = c.inferFunction(e)
+	case *ast.RefExpr:
+		t = c.inferRef(e)
+	case *ast.DerefExpr:
+		t = c.inferDeref(e)
+	case *ast.TryExpr:
+		t = c.inferTry(e)
+	case *ast.RaiseExpr:
+		t = c.inferRaise(e)
+	case *ast.AssertExpr:
+		t = c.inferAssert(e)
+	case *ast.LazyExpr:
+		t = c.inferLazy(e)
+	case *ast.PerformExpr:
+		t = c.inferPerform(e)
+	case *ast.ArrayLitExpr:
+		t = c.inferArrayLit(e)
+	case *ast.PolyvarExpr:
+		t = c.inferPolyvar(e)
+	case *ast.ObjectExpr:
+		t = c.inferObject(e)
+	case *ast.NewExpr:
+		t = c.inferNew(e)
+	case *ast.LetModuleExpr:
+		t = c.inferLetModule(e)
+	case *ast.ModuleAppExpr:
+		t = types.Unit
+	case *ast.LabelledArgExpr:
+		t = c.inferLabelledArg(e)
 	case *ast.GuardExpr:
-		t = c.inferGuard(e)
+		c.errorfAt(e.Loc, "'guard' was removed; use match instead")
+		t = c.fresh("removed")
 	case *ast.IsExpr:
-		t = c.inferIs(e)
+		c.errorfAt(e.Loc, "'is' was removed; use match instead")
+		t = types.Bool
 	case *ast.AsMatchExpr:
 		t = c.inferAsMatch(e)
 	case *ast.GoExpr:
@@ -876,6 +904,9 @@ func (c *Checker) infer(e ast.Expr) types.Type {
 		t = c.inferUsing(e)
 	case *ast.RegionExpr:
 		t = c.inferRegion(e)
+	case *ast.CompExpr:
+		c.errorfAt(e.Loc, "computation expressions were removed")
+		t = c.fresh("removed")
 	default:
 		c.errorfAt(locOf(e), "type inference not implemented for %T", e)
 		t = types.Unit
@@ -1036,6 +1067,18 @@ func (c *Checker) inferMatch(e *ast.MatchExpr) types.Type {
 	scrutType := c.infer(e.Scrutinee)
 	resultType := c.fresh("match_result")
 
+	hasEffect := false
+	for _, arm := range e.Arms {
+		if arm.EffectHandler {
+			hasEffect = true
+			break
+		}
+	}
+	if hasEffect {
+		c.inferMatchEffectArms(e, scrutType, resultType)
+		return resultType
+	}
+
 	for _, arm := range e.Arms {
 		// Create a new scope for pattern variables
 		saved := c.env
@@ -1053,23 +1096,17 @@ func (c *Checker) inferMatch(e *ast.MatchExpr) types.Type {
 }
 
 func (c *Checker) inferLetIn(e *ast.LetInExpr) types.Type {
+	if e.Mutable {
+		c.errorfAt(e.Loc, "let mutable is removed; use 'ref' instead")
+	}
 	// Process as non-recursive let: check bindings, add to env, check body
 	for _, b := range e.Bindings {
 		t := c.checkBinding(b)
-		if e.Mutable {
-			c.mutableVars[b.Name] = true
-		}
 		inScope := c.env.InScope()
 		scheme := types.Generalize(t, inScope)
 		c.env.Bind(b.Name, scheme)
 	}
-	body := c.infer(e.Body)
-	if e.Mutable {
-		for _, b := range e.Bindings {
-			delete(c.mutableVars, b.Name)
-		}
-	}
-	return body
+	return c.infer(e.Body)
 }
 
 func (c *Checker) inferIndex(e *ast.IndexExpr) types.Type {
@@ -1081,6 +1118,9 @@ func (c *Checker) inferIndex(e *ast.IndexExpr) types.Type {
 }
 
 func (c *Checker) inferAssign(e *ast.AssignExpr) types.Type {
+	if e.Coloneq {
+		return c.inferColoneqAssign(e)
+	}
 	switch target := e.Target.(type) {
 	case *ast.IndexExpr:
 		arrType := c.infer(target.Target)
@@ -1089,9 +1129,14 @@ func (c *Checker) inferAssign(e *ast.AssignExpr) types.Type {
 		elemType := c.unpackArray(e.Loc, arrType)
 		valueType := c.infer(e.Value)
 		c.unifyAt(e.Loc, valueType, elemType)
+	case *ast.FieldAccessExpr:
+		_ = c.infer(target.Left)
+		fieldType := c.inferFieldAccess(target)
+		valueType := c.infer(e.Value)
+		c.unifyAt(e.Loc, valueType, fieldType)
 	case *ast.IdentExpr:
 		if !c.mutableVars[target.Name] {
-			c.errorfAt(e.Loc, "cannot assign to immutable binding %q", target.Name)
+			c.errorfAt(e.Loc, "cannot assign to immutable binding %q; use := for refs or <- for arrays/mutable fields", target.Name)
 		}
 		bound := c.inferIdent(target)
 		valueType := c.infer(e.Value)
@@ -1100,6 +1145,133 @@ func (c *Checker) inferAssign(e *ast.AssignExpr) types.Type {
 		c.errorfAt(e.Loc, "invalid assignment target")
 	}
 	return types.Unit
+}
+
+func (c *Checker) inferColoneqAssign(e *ast.AssignExpr) types.Type {
+	valueType := c.infer(e.Value)
+	switch target := e.Target.(type) {
+	case *ast.DerefExpr:
+		refType := c.infer(target.Target)
+		elem := c.unpackRef(e.Loc, refType)
+		c.unifyAt(e.Loc, valueType, elem)
+	default:
+		refType := c.infer(e.Target)
+		elem := c.unpackRef(e.Loc, refType)
+		c.unifyAt(e.Loc, valueType, elem)
+	}
+	return types.Unit
+}
+
+func (c *Checker) unpackRef(loc token.SourceLoc, t types.Type) types.Type {
+	t = types.Apply(c.sub, t)
+	if tc, ok := t.(*types.TCon); ok && tc.Name == "ref" && len(tc.Args) > 0 {
+		return tc.Args[0]
+	}
+	elem := c.fresh("ref_elem")
+	c.unifyAt(loc, t, types.RefType(elem))
+	return elem
+}
+
+func (c *Checker) inferWhile(e *ast.WhileExpr) types.Type {
+	cond := c.infer(e.Cond)
+	c.unifyAt(e.Loc, cond, types.Bool)
+	body := c.infer(e.Body)
+	c.unifyAt(e.Loc, body, types.Unit)
+	return types.Unit
+}
+
+func (c *Checker) inferFunction(e *ast.FunctionExpr) types.Type {
+	argType := c.fresh("fn_arg")
+	resultType := c.fresh("fn_result")
+	for _, arm := range e.Arms {
+		saved := c.env
+		c.env = NewEnv(c.env)
+		c.checkPattern(e.Loc, arm.Pattern, argType)
+		if arm.Guard != nil {
+			guardType := c.infer(arm.Guard)
+			c.unifyAt(e.Loc, guardType, types.Bool)
+		}
+		bodyType := c.infer(arm.Body)
+		c.unifyAt(e.Loc, bodyType, resultType)
+		c.env = saved
+	}
+	return &types.TFun{From: argType, To: resultType}
+}
+
+func (c *Checker) inferRef(e *ast.RefExpr) types.Type {
+	elem := c.infer(e.Value)
+	return types.RefType(elem)
+}
+
+func (c *Checker) inferDeref(e *ast.DerefExpr) types.Type {
+	refType := c.infer(e.Target)
+	return c.unpackRef(e.Loc, refType)
+}
+
+func (c *Checker) inferTry(e *ast.TryExpr) types.Type {
+	resultType := c.infer(e.Body)
+	exn := &types.Prim{Name: "exn"}
+	for _, arm := range e.Arms {
+		saved := c.env
+		c.env = NewEnv(c.env)
+		c.checkPattern(e.Loc, arm.Pattern, exn)
+		if arm.Guard != nil {
+			guardType := c.infer(arm.Guard)
+			c.unifyAt(e.Loc, guardType, types.Bool)
+		}
+		armType := c.infer(arm.Body)
+		c.unifyAt(e.Loc, armType, resultType)
+		c.env = saved
+	}
+	if e.Finally != nil {
+		fin := c.infer(e.Finally)
+		c.unifyAt(e.Loc, fin, types.Unit)
+	}
+	return resultType
+}
+
+func (c *Checker) inferRaise(e *ast.RaiseExpr) types.Type {
+	exnType := c.infer(e.Exn)
+	c.unifyAt(e.Loc, exnType, &types.Prim{Name: "exn"})
+	return c.fresh("raise")
+}
+
+func (c *Checker) inferAssert(e *ast.AssertExpr) types.Type {
+	cond := c.infer(e.Cond)
+	c.unifyAt(e.Loc, cond, types.Bool)
+	return types.Unit
+}
+
+func (c *Checker) inferLazy(e *ast.LazyExpr) types.Type {
+	elem := c.infer(e.Value)
+	return types.LazyType(elem)
+}
+
+func (c *Checker) inferPerform(e *ast.PerformExpr) types.Type {
+	_ = c.infer(e.Op)
+	return c.fresh("perform")
+}
+
+func (c *Checker) inferArrayLit(e *ast.ArrayLitExpr) types.Type {
+	if len(e.Elems) == 0 {
+		return types.ArrayType(c.fresh("'a"))
+	}
+	elemType := c.infer(e.Elems[0])
+	for _, el := range e.Elems[1:] {
+		c.unifyAt(e.Loc, elemType, c.infer(el))
+	}
+	return types.ArrayType(elemType)
+}
+
+func (c *Checker) inferPolyvar(e *ast.PolyvarExpr) types.Type {
+	var argType types.Type
+	if e.Arg != nil {
+		argType = c.infer(e.Arg)
+	}
+	return &types.TAdt{
+		Name:     "`" + e.Tag,
+		Variants: []types.Variant{{Name: e.Tag, Arg: argType}},
+	}
 }
 
 func (c *Checker) inferFor(e *ast.ForExpr) types.Type {
@@ -1181,14 +1353,20 @@ func (c *Checker) inferBinary(e *ast.BinaryExpr) types.Type {
 	right := c.infer(e.Right)
 
 	switch e.Op {
-	case token.PLUS, token.MINUS, token.STAR, token.SLASH, token.PERCENT:
+	case token.PLUS, token.MINUS, token.STAR, token.SLASH:
 		// Arithmetic: both operands must be the same numeric type (int or float)
 		c.unifyAt(e.Loc, left, right)
-		if e.Op == token.PERCENT {
-			c.unifyAt(e.Loc, left, types.Int)
-			c.unifyAt(e.Loc, right, types.Int)
-		}
 		return left
+
+	case token.MOD, token.LAND, token.LOR, token.LXOR:
+		// Integer bitwise / modulo ops
+		c.unifyAt(e.Loc, left, types.Int)
+		c.unifyAt(e.Loc, right, types.Int)
+		return types.Int
+
+	case token.PERCENT:
+		c.errorfAt(e.Loc, "'%%' was removed; use 'mod' instead")
+		return types.Int
 
 	case token.STARDOT, token.PLUSDOT, token.MINUSDOT, token.SLASHDOT:
 		// Float arithmetic: *. +. -. /. force float
@@ -1383,6 +1561,7 @@ func (c *Checker) inferAsMatch(e *ast.AsMatchExpr) types.Type {
 }
 
 func (c *Checker) inferGo(e *ast.GoExpr) types.Type {
+	c.checkPerformInGo(e)
 	seen := make(map[string]bool)
 	for _, name := range e.Moved {
 		if seen[name] {
@@ -1522,6 +1701,8 @@ func (c *Checker) checkPattern(loc token.SourceLoc, p ast.Pattern, scrutType typ
 		} else {
 			c.unifyAt(loc, ctorType, scrutType)
 		}
+	case *ast.OrPattern:
+		c.checkOrPattern(loc, p, scrutType)
 	case *ast.RecordPattern:
 		// Scrutinee must be a record; each field pattern checked
 		rt := c.unpackRecord(loc, scrutType)

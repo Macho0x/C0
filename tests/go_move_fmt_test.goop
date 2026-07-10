@@ -1,6 +1,6 @@
 module GoMoveFmt
 
-let main () : unit with { async; io } =
-  let mutable x = 1 in
-  let dummy = go (move x) (fun () -> print_line (int_to_string x)) in
+let main () : unit =
+  let x = ref 1 in
+  let dummy = go (move x) (fun () -> print_line (int_to_string (!x))) in
   print_line "ok"

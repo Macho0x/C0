@@ -3,6 +3,6 @@ module Main
 let safeDiv (a: int) (b: int where b <> 0) : int =
   a / b
 
-let main () : unit with { io } =
+let main () : unit =
   let q = safeDiv 10 2 in
   print_line (int_to_string q)

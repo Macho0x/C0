@@ -10,11 +10,11 @@ import (
 func TestChannelRaceParentAccess(t *testing.T) {
 	src := `module RaceTest
 
-let main () : unit with { async; io } =
-  let mutable counter = 0 in
+let main () : unit =
+  let counter = ref 0 in
   let ch : int chan = Chan.make () in
-  let g = go (fun () -> let s = Chan.send ch counter in ()) in
-  let dummy = print_line (int_to_string counter) in ()
+  let g = go (fun () -> let s = Chan.send ch !counter in ()) in
+  let dummy = print_line (int_to_string !counter) in ()
 `
 	mod, err := parser.Parse("test.goop", []byte(src))
 	if err != nil {

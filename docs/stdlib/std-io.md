@@ -18,7 +18,7 @@ module main
 
 import goop . "std.io"
 
-let main () : unit with { io } =
+let main () : unit =
   PrintLine "from std.io"
 ```
 

@@ -18,7 +18,6 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] Type checker with HM inference.
 - [x] ADT and pattern matching support.
 - [x] `option` and `result` built-ins.
-- [x] `?` error propagation.
 - [x] Basic Go code generation.
 - [x] End-to-end compile of `hello.goop` to runnable Go binary.
 - [x] Source map generation.
@@ -32,34 +31,31 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] Standard library prelude.
 - [x] Go interop (`import golang`, `@golang` embed blocks).
 - [x] Active patterns.
-- [x] Match macros (`is`, `as`, `guard`).
 - [x] Feature flags via `goop.toml`.
 - [x] Test runner.
-- [x] Mutable fields and bindings.
+- [x] Mutable record fields; `ref` / `!` / `:=` (1.0; `let mutable` removed).
 
 ## Phase 3: Production features
 
 - [x] Generics and type constructors (parametric polymorphism; HKT deferred).
 - [x] Concurrency primitives (goroutines, channels, select).
-- [x] `using` for resource cleanup.
 - [x] Row polymorphism.
-- [x] F#-style computation expressions (`result { ... }`, `async { ... }`).
 - [x] Layered lambda type inference (bidirectional inference + optional `go/types` fallback).
-- [x] Effect rows (erased, row-polymorphic effect tracking in types).
 - [x] Linear resource types (modal linearity, opt-in for resource-kinded types).
-- [x] Region scopes (computation expression for scoped resource cleanup).
-- [x] Runtime refinement contracts (`where` clauses lowering to runtime asserts).
+- [x] Runtime refinement contracts (`where` clauses) + call-site codegen.
+- [x] Built-in refinement solver + optional Z3 SMT.
 - [x] Source locations for type errors (file:line:col in all error messages).
-- [x] Goroutine sharing analysis (compile-time data race detection for mutable captures).
-- [x] Runtime-safe `Chan.close` (closed flag wrapper, clear panic messages).
-- [x] `OwnedChan` linear channel wrapper (compile-time close safety via linear discharge checking).
-- [x] Built-in refinement solver (compile-time VC checking for integer arithmetic).
-- [x] Refinement call-site codegen (proven VCs skip guards).
+- [x] Goroutine sharing analysis (compile-time data race detection).
+- [x] Runtime-safe `Chan.close` (closed flag wrapper).
+- [x] `OwnedChan` linear channel wrapper.
 - [x] `go (move ...)` syntax and linear `go` handoff.
-- [x] `goop.toml` check severities (`concurrent`, `refinement_unproven`).
+- [x] `goop.toml` check severities (`concurrent`, `refinement_unproven`, `smt`).
 - [x] Nil channel detection (flow-sensitive initialization checking).
 - [x] Unified import syntax (`import golang` / `import goop`).
 - [x] Package manager (`goop get`, `goop.lock`).
+- [x] **OCaml alignment (1.0):** `ref`/`while`/`function`/exceptions/`failwith`/`mod`; remove F# CE, `?`, Kit macros, `newtype`, effect rows, `panic`, `%`.
+- [x] **Effect handlers (1.0):** OCaml 5-style `effect` / `perform` / handlers, CPS-lowered.
+- [x] Nested modules / `sig` / functors / `.mli` (minimal).
 
 ## Phase 4: Maturity
 
@@ -73,7 +69,7 @@ This file presents the same task list as `TODO.md`, organized by development pha
 ## Documentation
 
 - [x] README (safety-first layout; Go interop and inline `@golang` sections)
-- [x] Design documents
+- [x] Design documents ([STYLE.md](STYLE.md), [14-ocaml-parity.md](14-ocaml-parity.md), …)
 - [x] Specification drafts
 - [x] Examples (`docs/examples/`; CI checks all files)
 - [x] `goop.toml` project configuration
@@ -84,9 +80,9 @@ This file presents the same task list as `TODO.md`, organized by development pha
 
 ## Deferred or rejected
 
-- Full dependent types (Idris/Agda style) — see `docs/design/08-deferred-features-analysis.md`.
+- Full dependent types (Idris/Agda style) — SMT refinements cover the practical fragment; see `docs/design/08-deferred-features-analysis.md`.
 - Borrow checker with lifetimes (Rust style) — modal linearity for resources is the right level for a GC'd target.
-- Resumptive effect system — Go has no continuations; see `docs/design/08-deferred-features-analysis.md`.
 - QTT 0-quantity erasure — premature without dependent types or proof terms.
 - Capabilities that cannot be enforced at the Go boundary.
 - Runtime layer or bytecode VM.
+- F# computation expressions / Kit `is`/`as`/`guard` / Dingo `?` — **removed** in favor of OCaml forms (not deferred).

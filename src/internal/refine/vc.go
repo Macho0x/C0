@@ -17,7 +17,7 @@ func CheckRefinements(mod *ast.Module, tm typeinfo.TypeMap, cfg *config.Config) 
 	if cfg == nil {
 		cfg = config.DefaultConfig()
 	}
-	provenSites, funcAllProven, warnings, errs := checkRefinements(mod, tm)
+	provenSites, funcAllProven, warnings, errs := checkRefinements(mod, tm, cfg.Check.SMT)
 	switch cfg.Check.RefinementUnproven {
 	case config.SeverityOff:
 		warnings = nil
@@ -28,7 +28,7 @@ func CheckRefinements(mod *ast.Module, tm typeinfo.TypeMap, cfg *config.Config) 
 	return provenSites, funcAllProven, warnings, errs
 }
 
-func checkRefinements(mod *ast.Module, tm typeinfo.TypeMap) (ProvenSites, map[string]bool, []error, []error) {
+func checkRefinements(mod *ast.Module, tm typeinfo.TypeMap, useSMT bool) (ProvenSites, map[string]bool, []error, []error) {
 	provenSites := make(ProvenSites)
 	funcAllProven := make(map[string]bool)
 	funcCallTotal := make(map[string]int)
@@ -84,6 +84,7 @@ func checkRefinements(mod *ast.Module, tm typeinfo.TypeMap) (ProvenSites, map[st
 				tm:             tm,
 				funcCallTotal:  funcCallTotal,
 				funcCallProven: funcCallProven,
+				useSMT:         useSMT,
 			}
 			walkExpr(b.Body, pctx, &warnings, &errs)
 		}
@@ -107,12 +108,13 @@ type funcDef struct {
 
 // pathCtx tracks the current path condition during AST traversal.
 type pathCtx struct {
-	constraints     []ast.Expr
-	funcInfo        map[string]*funcDef
-	proven          ProvenSites
-	tm              typeinfo.TypeMap
-	funcCallTotal   map[string]int
-	funcCallProven  map[string]int
+	constraints    []ast.Expr
+	funcInfo       map[string]*funcDef
+	proven         ProvenSites
+	tm             typeinfo.TypeMap
+	funcCallTotal  map[string]int
+	funcCallProven map[string]int
+	useSMT         bool
 }
 
 // walkExpr recursively walks an expression, tracking path conditions.
@@ -180,7 +182,7 @@ func walkExpr(e ast.Expr, ctx *pathCtx, warnings *[]error, errs *[]error) {
 			paramName := fd.params[paramIdx].Name
 			pred := SubstituteIdent(rt.Pred, paramName, actualArg)
 
-			result := Check(pred, ctx.constraints)
+			result := CheckWithSMT(pred, ctx.constraints, ctx.useSMT)
 			switch result {
 			case Disproven:
 				*errs = append(*errs, refineDisproven(rt, e))

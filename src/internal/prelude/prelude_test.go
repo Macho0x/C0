@@ -23,14 +23,14 @@ func TestPreludeBindings(t *testing.T) {
 
 	// Check that key bindings exist
 	names := []string{"print_line", "print", "int_to_string", "float_to_string",
-		"string_concat", "list_length", "list_append", "panic_message"}
+		"string_concat", "list_length", "list_append", "failwith", "ref"}
 	for _, name := range names {
 		b := p.Lookup(name)
 		if b == nil {
 			t.Errorf("missing prelude binding: %s", name)
 			continue
 		}
-		if b.Lowering.Func == "" && b.Lowering.Operator == "" {
+		if b.Lowering.Func == "" && b.Lowering.Operator == "" && b.Lowering.Custom == "" {
 			t.Errorf("prelude binding %s has no lowering", name)
 		}
 		if b.Scheme == nil {
