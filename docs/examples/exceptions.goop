@@ -1,0 +1,24 @@
+module ExceptionsDemo
+
+(* Canonical exceptions demo: raise / try / with. *)
+
+exception Boom
+exception Fail of string
+
+let catch_boom () : string =
+  try
+    raise Boom
+  with
+  | Boom -> "caught boom"
+  | _ -> "other"
+
+let catch_payload () : string =
+  try
+    raise (Fail "bad")
+  with
+  | Fail s -> s
+  | _ -> "other"
+
+let main () : unit =
+  let chk1 = assert (catch_boom () = "caught boom") in
+  assert (catch_payload () = "bad")

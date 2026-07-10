@@ -1,25 +1,16 @@
-# Goop 1.1.0
+# Goop 1.1.1
 
-OCaml parity mega-ship: close remaining syntax/semantics gaps after 1.0.
+Tests and examples overhaul: prune stale demos, strengthen e2e coverage, fix `select` channel lowering.
 
 ## Highlights
 
-- **Control:** `downto`, local/`let open`/`open!`, `exception` patterns, real memoizing `Lazy`
-- **Modules:** inline sealing (`module M : S = …` — **no `.mli`**), `module type of`, `module rec`, signature constraints, functors, first-class modules, `include` re-exports
-- **Types:** extensible variants, GADTs (result types), polyvar rows, labelled/optional args
-- **Objects:** inherit/virtual/initializer/constraint/class type + `#method`
-- **Effects:** shallow CPS resume with `continue`/`discontinue`
-- **Attributes:** parse+strip only; `@golang { }` stays the only active extension
-
-## Out of scope (unchanged)
-
-- Deep effect handlers / stack capture
-- PPX plugins / deriving
-- Full OCaml Stdlib / Domains
-- `.mli` interface files
+- **Examples:** Removed overlapping demos (`chan_async`, `channel_race`, `linear`, `match_patterns`, `simple_hl_bot`, `trading_position`); fixed `concurrency.goop` (go + send + recv); added `modules.goop` and `exceptions.goop`
+- **Tests:** Dropped non-CI Binance demo and duplicate refinement test; renamed misleading `async`/`guards`/`newtype` test files; real asserts for FCM, synthetic TA, list/array helpers
+- **Coverage:** `select_test`, `chan_close_test`, `effect_multi_test`, `exception_payload_test`; Go unit tests for `perform`-in-`go` and LINEAR008 race fixtures
+- **Compiler:** `select` lowers through `C0Chan.ch` with element type assertions; `checkPerformInGo` walks `ParenExpr`
 
 ## Verification
 
 - `go test ./...` (from `src/`)
-- `goop test tests/` — 66 passed
+- `goop test tests/` — 68 passed
 - `goop check` on all `docs/examples/*.goop`

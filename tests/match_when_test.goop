@@ -1,4 +1,4 @@
-module GuardsTest
+module MatchWhenTest
 
 type opt_int = | Some of int | None
 

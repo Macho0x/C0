@@ -83,4 +83,4 @@ Trading-oriented helpers lowering to inline Go:
 | `json_extract_floats` | `string -> int -> float list` |
 | `json_extract_strings` | `string -> int -> string list` |
 
-Used in [`simple_hl_bot.goop`](../examples/simple_hl_bot.goop) and related examples.
+Used by trading demos that call live or synthetic market data helpers (see [`allmids_bot.goop`](../examples/allmids_bot.goop)).

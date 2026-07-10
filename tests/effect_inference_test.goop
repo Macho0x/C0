@@ -1,7 +1,0 @@
-module Main
-
-let greet () : unit =
-  print_line "effect inference ok"
-
-let main () : unit =
-  greet ()

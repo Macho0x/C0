@@ -1,12 +1,14 @@
 module main
 
-(* Concurrency example: create a typed channel with an explicit
-   element-type annotation, receive from it, and print the result.
+(* Concurrency example: typed channel + goroutine send + recv.
+   The annotation `: int chan` constrains the channel element type. *)
 
-   The annotation `: int chan` directly constrains the channel's
-   element type, bypassing the Hindley-Milner generalization issue. *)
-
-let main () =
+let compute () : int chan =
   let ch : int chan = Chan.make () in
+  let dummy = go (fun () -> Chan.send ch 42) in
+  ch
+
+let main () : unit =
+  let ch = compute () in
   let v = Chan.recv ch in
-  print_line (int_to_string v)
+  assert (v = 42)

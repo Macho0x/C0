@@ -1,8 +1,0 @@
-module ChannelRace
-
-(* Safe: value not shared mutably through channel *)
-let main () : unit =
-  let ch : int chan = Chan.make () in
-  let dummy = go (fun () -> Chan.send ch 42) in
-  let v = Chan.recv ch in
-  print_line (int_to_string v)

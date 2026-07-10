@@ -876,3 +876,60 @@ let main () = Color.Blue
 		t.Errorf("unexpected error: %v", errs[0])
 	}
 }
+
+func TestPerformInsideGoRejected(t *testing.T) {
+	src := `module Test
+effect Flip : unit -> bool
+let main () : unit =
+  let _ = go (fun () ->
+    let _ = perform (Flip ()) in
+    ()) in
+  ()
+`
+	mod, err := parser.Parse("test.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	mod = desugar.DesugarModule(mod)
+	errs := typecheck.Check(mod)
+	if len(errs) == 0 {
+		t.Fatal("expected error for perform inside go body")
+	}
+	found := false
+	for _, e := range errs {
+		if strings.Contains(e.Error(), "perform is not allowed inside go body") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected perform-in-go error, got %v", errs)
+	}
+}
+
+func TestEffectContinueTypechecks(t *testing.T) {
+	src := `module Test
+effect Flip : unit -> bool
+let coin () : bool =
+  begin
+    perform (Flip ());
+    false
+  end
+let run () : bool =
+  match coin () with
+  | effect (Flip _) k -> continue k true
+  | v -> v
+let main () = assert (run () = true)
+`
+	mod, err := parser.Parse("test.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	mod = desugar.DesugarModule(mod)
+	errs := typecheck.Check(mod)
+	if len(errs) > 0 {
+		for _, e := range errs {
+			t.Errorf("type error: %v", e)
+		}
+	}
+}

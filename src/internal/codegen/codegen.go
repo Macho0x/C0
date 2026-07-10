@@ -3957,14 +3957,32 @@ func (g *Generator) emitGoExpr(e *ast.GoExpr) {
 }
 
 func (g *Generator) emitSelectExpr(e *ast.SelectExpr) {
+	g.usedChan = true
 	g.emitf("select {\n")
 	g.indent++
 	for _, c := range e.Cases {
-		// Assume receive expression
-		g.emitf("case %s := <-", c.Bind)
+		// C0Chan wraps the real Go channel in .ch; values are interface{}.
+		tmp := fmt.Sprintf("_sel%d", g.varCounter)
+		g.varCounter++
+		g.emitf("case %s := <-", tmp)
 		g.emitExpr(c.Recv, false)
-		g.buf.WriteString(":\n")
+		g.buf.WriteString(".ch:\n")
 		g.indent++
+		if c.Bind != "" {
+			elemGo := "interface{}"
+			if g.typeMap != nil {
+				if t, ok := g.typeMap[c.Recv]; ok {
+					if ch, ok := t.(*types.TChan); ok {
+						elemGo = g.internalTypeToGo(ch.Elem)
+					}
+				}
+			}
+			if elemGo != "" && elemGo != "interface{}" {
+				g.emitf("%s := %s.(%s)\n", c.Bind, tmp, elemGo)
+			} else {
+				g.emitf("%s := %s\n", c.Bind, tmp)
+			}
+		}
 		g.emitReturnExpr(c.Body)
 		g.indent--
 	}

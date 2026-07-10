@@ -118,6 +118,15 @@ let main () =
   let rv = variance rlist rm in
   let ret_std = Sqrt (rv /. rn) in
   let d = decision current mu momentum rising in
+  let chk_n = assert (n = 500.0) in
+  let chk_price = assert (current > 0.0) in
+  let chk_mean = assert (mu > 0.0) in
+  let is_signal =
+    d = "SELL: price above mean but momentum fading" ||
+    d = "BUY: price below mean with positive momentum" ||
+    d = "HOLD: no clear signal"
+  in
+  let chk_d = assert is_signal in
   let report =
     "=== BTC/USD Technical Analysis ===\n" ^
     "Data points: " ^ float_to_string n ^ "\n" ^

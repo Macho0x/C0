@@ -30,6 +30,14 @@ go test ./...
 for f in ../docs/examples/*.goop; do ../goop check "$f"; done
 ```
 
+### Where tests and examples live
+
+| Tree | Job | Not for |
+|---|---|---|
+| `docs/examples/*.goop` | Canonical teachable demos; CI `goop check` | Edge-case matrices, removed syntax |
+| `tests/*_test.goop` | Runnable e2e with `assert` | Live network demos, `assert true` stubs |
+| `src/internal/*_test.go` | Parser/AST, LINEAR*/PARSE-MIG negatives, CPS corners | User-facing galleries |
+
 ## Dependencies for optional checks
 
 - **Z3** (optional): when `[check] smt = true` in `goop.toml`, the refinement checker shells out to `z3 -in` to prove VCs, falling back to the built-in interval solver if Z3 is missing or inconclusive. Install via your package manager (`pacman -S z3`, `apt install z3`, `brew install z3`). CI does not require Z3 unless SMT tests are enabled. Without Z3, refinements still work via the built-in solver + runtime guards.

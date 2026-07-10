@@ -1,4 +1,4 @@
-module Main
+module TradingBrandedIdsTest
 
 type order_id = | Order_id of string
 type symbol = | Symbol of string

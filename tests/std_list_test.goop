@@ -1,4 +1,13 @@
 module main
 
+(* List construction + match behavioral coverage. *)
+let rec list_length (xs: 'a list) : int =
+  match xs with
+  | [] -> 0
+  | _ :: rest -> 1 + list_length rest
+
 let main () =
-  print_line "std.list module path configured"
+  let xs = 1 :: 2 :: 3 :: [] in
+  let one = 0 :: [] in
+  let chk1 = assert (list_length xs = 3) in
+  assert (list_length one = 1)

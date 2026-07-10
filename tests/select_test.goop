@@ -1,0 +1,31 @@
+module SelectTest
+
+(* select as a statement: default branch when no sender is ready. *)
+let default_path () : unit =
+  let result = ref (-1) in
+  let ch : int chan = Chan.make () in
+  begin
+    select {
+      case x = ch -> result := x
+      default -> result := 99
+    };
+    assert (!result = 99)
+  end
+
+(* select without default: blocks until a send arrives. *)
+let recv_path () : unit =
+  let result = ref (-1) in
+  let ch : int chan = Chan.make () in
+  let _ = go (fun () -> Chan.send ch 7) in
+  begin
+    select {
+      case x = ch -> result := x
+    };
+    assert (!result = 7)
+  end
+
+let main () : unit =
+  begin
+    default_path ();
+    recv_path ()
+  end

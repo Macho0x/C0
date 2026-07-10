@@ -29,7 +29,7 @@ let run () =
   | Boom -> "caught"
 ```
 
-Use `failwith` / `raise` for bugs. See [STYLE.md](../design/STYLE.md).
+Use `failwith` / `raise` for bugs. See [`exceptions.goop`](../examples/exceptions.goop) and [STYLE.md](../design/STYLE.md).
 
 ## Effect handlers
 
@@ -54,7 +54,7 @@ Surface `with { io }` rows are removed. See [`effects.goop`](../examples/effects
 
 ## Async / channels
 
-Prefer `go` and `chan` over removed `async { }` computation expressions. See [chapter 5](05-concurrency.md) and [`chan_async.goop`](../examples/chan_async.goop).
+Prefer `go` and `chan` over removed `async { }` computation expressions. See [chapter 5](05-concurrency.md) and [`concurrency.goop`](../examples/concurrency.goop).
 
 ## Next
 

@@ -1,0 +1,23 @@
+module ExceptionPayloadTest
+
+(* Multiple exception types caught independently. *)
+exception Outer
+exception Inner
+
+let catch_inner () : string =
+  try
+    raise Inner
+  with
+  | Inner -> "inner"
+  | _ -> "other"
+
+let catch_outer () : string =
+  try
+    raise Outer
+  with
+  | Outer -> "outer"
+  | _ -> "other"
+
+let main () =
+  let chk1 = assert (catch_inner () = "inner") in
+  assert (catch_outer () = "outer")

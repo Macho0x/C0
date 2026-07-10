@@ -533,6 +533,8 @@ func (c *Checker) checkPerformInGo(e *ast.GoExpr) {
 			}
 		case *ast.FunExpr:
 			walk(ex.Body)
+		case *ast.ParenExpr:
+			walk(ex.Inner)
 		case *ast.BinaryExpr:
 			walk(ex.Left)
 			walk(ex.Right)

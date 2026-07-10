@@ -116,13 +116,13 @@ See [`extern_demo.goop`](docs/examples/extern_demo.goop).
 
 ## Language features
 
-Everyday surface: [STYLE.md](docs/design/STYLE.md) · tutorial · [`docs/examples/`](docs/examples/) (`branded_ids`, `match_patterns`, `linear_resource`, `chan_async`, `result_match`, `effects`).
+Everyday surface: [STYLE.md](docs/design/STYLE.md) · tutorial · [`docs/examples/`](docs/examples/) (`branded_ids`, `linear_resource`, `concurrency`, `result_match`, `effects`, `modules`, `exceptions`).
 
-Highlights: ADTs + exhaustive `match`, `ref`/`!`/`:=`, `go`/`chan`/`go (move …)`, linear resources, `where` refinements (optional Z3), minimal `effect`/`perform` handlers (CPS-lowered).
+Highlights: ADTs + exhaustive `match`, `ref`/`!`/`:=`, `go`/`chan`/`select`/`go (move …)`, linear resources, `where` refinements (optional Z3), minimal `effect`/`perform` handlers (CPS-lowered).
 
 ## FAQ
 
-**Is 1.1.0 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
+**Is 1.1.1 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
 
 **How is this different from Borgo or Dingo?** Goop is a full compiler with OCaml-aligned syntax and compile-time safety for gradual migration to Go. Dingo-style `?` and F# computation expressions were removed in 1.0.
 
@@ -130,7 +130,9 @@ Highlights: ADTs + exhaustive `match`, `ref`/`!`/`:=`, `go`/`chan`/`go (move …
 
 ## Status
 
-**v1.1.0** — OCaml parity mega-ship (modules, types, objects, shallow effects). See [CHANGELOG](CHANGELOG.md) · [parity](docs/design/14-ocaml-parity.md).
+**v1.1.1** — Tests/examples overhaul, `select` channel lowering fix, stronger e2e. See [CHANGELOG](CHANGELOG.md).
+
+**v1.1.0** — OCaml parity mega-ship (modules, types, objects, shallow effects). See [parity](docs/design/14-ocaml-parity.md).
 
 **v1.0.1** — Docs/README cleanup, example renames, real effects demo.
 

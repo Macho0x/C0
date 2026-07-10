@@ -36,7 +36,7 @@ Also supported:
 | `include` | Re-export into current module |
 | `let module M = … in …` | Local module |
 
-See [14-ocaml-parity.md](14-ocaml-parity.md). Everyday projects still use one file-level `module` plus Go-style imports.
+See [14-ocaml-parity.md](14-ocaml-parity.md) and [`modules.goop`](../examples/modules.goop). Everyday projects still use one file-level `module` plus Go-style imports.
 
 ## Unified imports (Go-style)
 

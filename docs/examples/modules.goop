@@ -1,0 +1,21 @@
+module ModulesDemo
+
+(* Canonical modules demo: signature, sealing, open. *)
+
+module type Counter = sig
+  val step : int -> int
+  val zero : int
+end
+
+module C : Counter = struct
+  let zero : int = 0
+  let step (n: int) : int = n + 1
+  let hidden : string = "not exported"
+end
+
+open C
+
+let main () : unit =
+  let n = step zero in
+  let m = step n in
+  assert (m = 2)

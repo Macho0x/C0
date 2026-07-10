@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.1
+
+### Tests and examples overhaul
+
+- Pruned overlapping/stale examples; removed non-CI `trading_binance.goop` from `tests/`
+- Renamed misleading `async_test` / `guards_test` / `trading_newtype_test` to `go_chan` / `match_when` / `trading_branded_ids`
+- Fixed `concurrency.goop` pedagogy; added `modules.goop` and `exceptions.goop`
+- Stronger e2e: `select`, channel close, multi-effect, exception types, list/array asserts; FCM asserts sealed export
+- `select` codegen unwraps `C0Chan`; `perform` inside parenthesized `go` bodies is rejected
+- `std.array` param renamed `default` → `init` (Go keyword clash)
+
 ## 1.1.0
 
 ### OCaml parity mega-ship

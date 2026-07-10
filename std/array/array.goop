@@ -2,6 +2,6 @@ module array
 
 (* Thin re-exports of prelude Array.* — implementation stays in the compiler prelude. *)
 
-let make (n: int) (default: 'a) : 'a array = Array.make n default
+let make (n: int) (init: 'a) : 'a array = Array.make n init
 
 let length (arr: 'a array) : int = Array.length arr

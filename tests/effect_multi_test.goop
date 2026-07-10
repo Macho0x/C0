@@ -1,0 +1,31 @@
+module EffectMultiTest
+
+(* Two distinct effects, each handled in its own match. *)
+effect Flip : unit -> bool
+effect Nod : unit -> bool
+
+let coin () : bool =
+  begin
+    perform (Flip ());
+    false
+  end
+
+let agree () : bool =
+  begin
+    perform (Nod ());
+    false
+  end
+
+let run_flip () : bool =
+  match coin () with
+  | effect (Flip _) k -> k true
+  | v -> v
+
+let run_nod () : bool =
+  match agree () with
+  | effect (Nod _) k -> k true
+  | v -> v
+
+let main () =
+  let chk1 = assert (run_flip () = true) in
+  assert (run_nod () = true)

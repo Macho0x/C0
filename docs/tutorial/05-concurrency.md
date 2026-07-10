@@ -77,7 +77,7 @@ deadlock = "warn"   # warn | error | off
 
 ## Owned channels
 
-Linear `owned_chan` types enforce close safety. See [`owned_chan.goop`](../examples/owned_chan.goop) and [`linear.goop`](../examples/linear.goop).
+Linear `owned_chan` types enforce close safety. See [`owned_chan.goop`](../examples/owned_chan.goop) and [`linear_resource.goop`](../examples/linear_resource.goop).
 
 ## Next
 

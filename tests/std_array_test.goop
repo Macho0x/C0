@@ -1,4 +1,11 @@
 module main
 
+(* Prelude Array behavioral coverage (std.array is a thin re-export). *)
 let main () =
-  print_line "std.array module path configured"
+  begin
+    let arr = Array.make 3 0 in
+    arr.(0) <- 10;
+    arr.(1) <- 20;
+    arr.(2) <- 30;
+    assert (Array.length arr = 3 && arr.(0) = 10 && arr.(1) = 20 && arr.(2) = 30)
+  end

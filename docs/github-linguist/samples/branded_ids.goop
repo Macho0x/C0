@@ -1,4 +1,4 @@
-module Trading.Newtype
+module Trading.BrandedIds
 
 type order_id = | Order_id of string
 type symbol = | Symbol of string

@@ -11,5 +11,7 @@ end
 let packed = (module M : S)
 let unpacked = (val packed : S)
 
+open M
+
 let main () =
-  assert true
+  assert (answer = 42)

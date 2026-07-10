@@ -28,7 +28,7 @@ decision array     (* user type T array *)
 ## Example
 
 ```goop
-let lut = Array.make 100 default in
+let lut = Array.make 100 0 in
 for i = 0 to 99 do
   lut.(i) <- compute i
 done
