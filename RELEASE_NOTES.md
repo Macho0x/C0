@@ -1,15 +1,16 @@
-# Goop 1.2.1
+# Goop 1.2.2
 
-Editor highlighting for lang embeds plus minor compiler hygiene.
+Bring the VS Code / Cursor extension and LSP in line with recent language + formatter work.
 
 ## Highlights
 
-- **`@[go]` / `@[c]` tags:** unified amber embed-marker color (`keyword.embed.goop`); inline Go/C bodies use normal grammar highlighting
-- **VS Code extension 0.3.4** — reload window after update to pick up theme + grammar
-- **Compiler:** remove dead `desugarIs` / `desugarAs`, unused `parseADTTypeKind`
+- **Grammar:** keywords `continue`, `discontinue`, `downto`, `functor`, `not`; type `array`; deprecated markers for removed surface
+- **Format Document:** LSP advertises `documentFormattingProvider` (same engine as `goop fmt`)
+- **LSP framing fix:** reliable Content-Length reads + stdout flush (fixes hung/partial client sessions)
+- **Extension 0.3.6:** default formatter `goop.goop`; reinstall via `./scripts/install-editor-extension.sh`
 
 ## Verification
 
-- `go test ./...` (from `src/`)
-- `goop test tests/` — 72 passed
+- `go test ./...` (from `src/`) including `TestLSPDocumentFormatting`
+- `goop test tests/`
 - `goop check` on all `docs/examples/*.goop`

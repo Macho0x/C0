@@ -123,13 +123,15 @@ Highlights: ADTs + exhaustive `match`, `ref`/`!`/`:=`, `go`/`chan`/`select`/`go 
 
 ## FAQ
 
-**Is 1.2.1 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
+**Is 1.2.2 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
 
 **How is this different from Borgo or Dingo?** Goop is a full compiler with OCaml-aligned syntax and compile-time safety for gradual migration to Go. Dingo-style `?` and F# computation expressions were removed in 1.0.
 
 **Do I need OCaml or Z3?** No. Pattern matching from Rust/Swift/Kotlin transfers. Z3 is optional (`[check] smt = true`).
 
 ## Status
+
+**v1.2.2** — VS Code/LSP catch-up: Format Document, grammar keywords, framing fix. Extension 0.3.6.
 
 **v1.2.1** — `@[lang]` embed tag highlighting (amber marker, normal body colors); dead-code cleanup. See [CHANGELOG](CHANGELOG.md).
 

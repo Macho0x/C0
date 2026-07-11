@@ -98,10 +98,11 @@ type InitializeResult struct {
 }
 
 type ServerCapabilities struct {
-	TextDocumentSync   int  `json:"textDocumentSync"`
-	HoverProvider      bool `json:"hoverProvider"`
-	DefinitionProvider bool `json:"definitionProvider"`
-	CompletionProvider bool `json:"completionProvider"`
+	TextDocumentSync           int  `json:"textDocumentSync"`
+	HoverProvider              bool `json:"hoverProvider"`
+	DefinitionProvider         bool `json:"definitionProvider"`
+	CompletionProvider         bool `json:"completionProvider"`
+	DocumentFormattingProvider bool `json:"documentFormattingProvider"`
 }
 
 func main() {
@@ -515,6 +516,8 @@ func (s *LSPServer) handleLSPRequest(req Request) Response {
 		return s.handleDefinition(req)
 	case "textDocument/completion":
 		return s.handleCompletion(req)
+	case "textDocument/formatting":
+		return s.handleFormatting(req)
 	case "initialized", "exit":
 		return Response{Jsonrpc: "2.0"}
 	default:
@@ -532,10 +535,11 @@ func (s *LSPServer) handleLSPRequest(req Request) Response {
 func (s *LSPServer) handleInitialize(req Request) Response {
 	return lspResult(req.ID, InitializeResult{
 		Capabilities: ServerCapabilities{
-			TextDocumentSync:   1,
-			HoverProvider:      true,
-			DefinitionProvider: true,
-			CompletionProvider: true,
+			TextDocumentSync:           1,
+			HoverProvider:              true,
+			DefinitionProvider:         true,
+			CompletionProvider:         true,
+			DocumentFormattingProvider: true,
 		},
 	})
 }
@@ -922,6 +926,58 @@ func (s *LSPServer) handleCompletion(req Request) Response {
 	})
 }
 
+// TextEdit is an LSP text edit.
+type TextEdit struct {
+	Range   Range  `json:"range"`
+	NewText string `json:"newText"`
+}
+
+func (s *LSPServer) handleFormatting(req Request) Response {
+	var params struct {
+		TextDocument struct {
+			URI string `json:"uri"`
+		} `json:"textDocument"`
+	}
+	json.Unmarshal(req.Params, &params)
+
+	uri := params.TextDocument.URI
+	src, ok := s.documents[uri]
+	if !ok {
+		if state, has := s.states[uri]; has && state.Src != nil {
+			src = string(state.Src)
+			ok = true
+		}
+	}
+	if !ok {
+		return lspResult(req.ID, []TextEdit{})
+	}
+
+	fileName := uriToPath(uri)
+	mod, err := parser.Parse(fileName, []byte(src))
+	if err != nil {
+		// On parse error, leave the document unchanged.
+		return lspResult(req.ID, []TextEdit{})
+	}
+	formatted := gfmt.FormatModule(mod)
+	if formatted == src {
+		return lspResult(req.ID, []TextEdit{})
+	}
+
+	lines := strings.Split(src, "\n")
+	endLine := len(lines) - 1
+	endChar := 0
+	if endLine >= 0 {
+		endChar = len(lines[endLine])
+	}
+	return lspResult(req.ID, []TextEdit{{
+		Range: Range{
+			Start: Position{Line: 0, Character: 0},
+			End:   Position{Line: endLine, Character: endChar},
+		},
+		NewText: formatted,
+	}})
+}
+
 func (s *LSPServer) collectCompletions(state *DocumentState) []CompletionItem {
 	var items []CompletionItem
 
@@ -965,14 +1021,22 @@ func (s *LSPServer) publishDiagnostics(uri string, diagnostics []Diagnostic) {
 	}
 	enc, _ := json.Marshal(notif)
 	fmt.Printf("Content-Length: %d\r\n\r\n%s", len(enc), enc)
+	os.Stdout.Sync()
 }
 
 func readLSPMessage(r io.Reader) (Request, error) {
 	var req Request
-	scanner := bufio.NewScanner(r)
+	br, ok := r.(*bufio.Reader)
+	if !ok {
+		br = bufio.NewReader(r)
+	}
 	var contentLength int
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			return req, err
+		}
+		line = strings.TrimRight(line, "\r\n")
 		if line == "" {
 			break
 		}
@@ -980,15 +1044,15 @@ func readLSPMessage(r io.Reader) (Request, error) {
 			fmt.Sscanf(line, "Content-Length: %d", &contentLength)
 		}
 	}
-	if err := scanner.Err(); err != nil {
+	if contentLength <= 0 {
+		return req, nil
+	}
+	body := make([]byte, contentLength)
+	if _, err := io.ReadFull(br, body); err != nil {
 		return req, err
 	}
-	if contentLength > 0 {
-		body := make([]byte, contentLength)
-		if _, err := io.ReadFull(r, body); err != nil {
-			return req, err
-		}
-		json.Unmarshal(body, &req)
+	if err := json.Unmarshal(body, &req); err != nil {
+		return req, err
 	}
 	return req, nil
 }
@@ -996,6 +1060,9 @@ func readLSPMessage(r io.Reader) (Request, error) {
 func sendLSPResponse(w io.Writer, resp Response) {
 	enc, _ := json.Marshal(resp)
 	fmt.Fprintf(w, "Content-Length: %d\r\n\r\n%s", len(enc), enc)
+	if f, ok := w.(*os.File); ok {
+		_ = f.Sync()
+	}
 }
 
 // Convert file URI to path

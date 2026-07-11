@@ -38,9 +38,11 @@ Reload the window after installing.
 
 | Feature | How to verify |
 |---|---|
-| **Syntax highlighting** | Open any `.goop` file — keywords, `match`, strings colored |
+| **Syntax highlighting** | Open any `.goop` file — keywords, `match`, `@[go]`/`@[c]` amber tags, strings colored |
 | **Language mode** | Bottom-right status bar shows **Goop** |
 | **LSP diagnostics** | Open a file with a type error — squiggles appear |
+| **Hover / go-to-definition / completion** | Hover a binding; F12 on a top-level `let`; Ctrl+Space for completions |
+| **Format Document** | `Shift+Alt+F` / Format Document — uses `goop` LSP (`goop fmt` engine) |
 | **File icon** | Optional — **Preferences: File Icon Theme** → **Goop File Icons** (uses transparent-corner icon) |
 
 ## File icons (optional)
@@ -77,6 +79,7 @@ This workspace sets `"goop.path": "${workspaceFolder}/goop"` in `.vscode/setting
 | No file icon | Enable **Goop File Icons** theme (optional, see above) |
 | Stale colors after grammar change | Re-run install script, reload window |
 | `Cannot read properties of null (reading 'length')` | Rebuild `./goop`, reinstall extension 0.3.5+ (`./scripts/install-editor-extension.sh`), reload window — fixed LSP notification handling |
+| Format Document does nothing | Rebuild `./goop` (needs `documentFormattingProvider`); reinstall extension 0.3.6+; check Output → Goop Language Server |
 
 ## Grammar source
 

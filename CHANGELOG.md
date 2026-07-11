@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.2
+
+### Editor / LSP
+
+- VS Code extension **0.3.6**: grammar keywords catch up to 1.1+ (`continue`, `discontinue`, `downto`, `functor`, `not`); `array` type scope; deprecated surface marked (`extern`/`guard`/`is`/`panic`/`using`)
+- LSP: `documentFormattingProvider` via `goop fmt` engine (Format Document in the editor)
+- LSP: fix Content-Length framing (no longer loses body bytes to `bufio.Scanner`); flush stdout after messages
+- Extension sets `editor.defaultFormatter` to `goop.goop`
+
 ## 1.2.1
 
 ### Editor / hygiene
