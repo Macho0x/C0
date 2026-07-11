@@ -1,16 +1,12 @@
-# Goop 1.2.2
+# Goop 1.2.3
 
-Bring the VS Code / Cursor extension and LSP in line with recent language + formatter work.
+Fix VS Code / Cursor embed-tag highlighting so amber `@[go]` / `@[c]` works on any color theme (including Dracula).
 
 ## Highlights
 
-- **Grammar:** keywords `continue`, `discontinue`, `downto`, `functor`, `not`; type `array`; deprecated markers for removed surface
-- **Format Document:** LSP advertises `documentFormattingProvider` (same engine as `goop fmt`)
-- **LSP framing fix:** reliable Content-Length reads + stdout flush (fixes hung/partial client sessions)
-- **Extension 0.3.6:** default formatter `goop.goop`; reinstall via `./scripts/install-editor-extension.sh`
+- **Extension 0.3.7:** `keyword.embed.goop` → `#D7BA7D` and other Goop TextMate rules live in top-level `configurationDefaults.editor.tokenColorCustomizations` (not under `[goop]`, which VS Code ignores for token colors)
+- Reinstall with `./scripts/install-editor-extension.sh`, then **Developer: Reload Window**
 
 ## Verification
 
-- `go test ./...` (from `src/`) including `TestLSPDocumentFormatting`
-- `goop test tests/`
-- `goop check` on all `docs/examples/*.goop`
+- Inspect `@[c]` in `docs/examples/cgo_demo.goop`: scope `keyword.embed.goop`, foreground amber

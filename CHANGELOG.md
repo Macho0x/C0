@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.3
+
+### Editor
+
+- VS Code extension **0.3.7**: move `editor.tokenColorCustomizations` / `textMateRules` to top-level `configurationDefaults` so theme overrides (including `keyword.embed.goop` amber `#D7BA7D` for `@[go]` / `@[c]`) apply under Dracula and other themes — language-scoped nesting was ignored by VS Code/Cursor
+
 ## 1.2.2
 
 ### Editor / LSP
