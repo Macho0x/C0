@@ -123,8 +123,14 @@ func (r *Resolver) locateSourceFile(goImport string) string {
 		if r.Cfg != nil && r.Cfg.ModuleRoot != "" && strings.HasPrefix(goImport, r.Cfg.ModuleRoot) {
 			rel := strings.TrimPrefix(goImport, r.Cfg.ModuleRoot)
 			rel = strings.TrimPrefix(rel, "/")
-			pkg := filepath.Base(rel)
-			p := filepath.Join(r.ProjectRoot, filepath.FromSlash(rel), pkg+SourceExt)
+			var p string
+			if rel == "" {
+				// Root package: github.com/acme/foo → acme/foo/treelog.goop at project root
+				p = filepath.Join(r.ProjectRoot, packageNameFromPath(goImport)+SourceExt)
+			} else {
+				pkg := filepath.Base(rel)
+				p = filepath.Join(r.ProjectRoot, filepath.FromSlash(rel), pkg+SourceExt)
+			}
 			if _, err := os.Stat(p); err == nil {
 				return p
 			}

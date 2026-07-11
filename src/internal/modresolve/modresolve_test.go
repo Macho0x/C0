@@ -1,6 +1,7 @@
 package modresolve_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -58,5 +59,25 @@ func TestLockfileOverride(t *testing.T) {
 	}
 	if res.GoImportPath != "github.com/acme/lib" {
 		t.Errorf("got %s", res.GoImportPath)
+	}
+}
+
+func TestLocateRootModuleGoop(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "goop.toml"), []byte("module_root = \"github.com/acme/foo\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "foo.goop"), []byte("module foo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{ModuleRoot: "github.com/acme/foo"}
+	r := modresolve.New(cfg, nil, dir)
+	res, err := r.ResolveGoopPath("github.com/acme/foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, "foo.goop")
+	if res.SourceFile != want {
+		t.Fatalf("SourceFile=%q want %q", res.SourceFile, want)
 	}
 }
