@@ -34,6 +34,8 @@ Go interfaces can be imported with `type Name` and implemented directly in
 Goop with `implements`; method bodies that Goop can express no longer require
 an `@[go]` escape hatch. `@[go]` remains available for opaque Go helpers and
 other code Goop cannot express. See [17-go-implements.md](17-go-implements.md).
+Method calls and field reads on imported Go types likewise need no wrapper;
+declare them with `val (x : T).M : τ`. See [18-go-methods.md](18-go-methods.md).
 
 ## Hard break (1.2.0)
 

@@ -1,0 +1,23 @@
+module main
+
+import go "log/slog" {
+  type Record
+  type Attr
+  val (r : Record).Attrs : (Attr -> bool) -> unit
+}
+import go "time"
+
+@[go] {
+  func newRecord() slog.Record {
+    r := slog.NewRecord(time.Now(), slog.LevelInfo, "message", 0)
+    r.AddAttrs(slog.String("key", "value"))
+    return r
+  }
+}
+val newRecord : unit -> Record
+
+let main () =
+  begin
+    Record.Attrs (newRecord ()) (fun a -> true);
+    assert true
+  end

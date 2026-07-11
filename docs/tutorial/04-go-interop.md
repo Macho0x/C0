@@ -18,6 +18,34 @@ import (
 - **Signature block** — declare types for functions you call from Goop.
 - **Import-only** — `go "fmt"` with no block; pair with `@[go]` or generated bindings.
 
+## Call Go methods and read Go fields
+
+Import only the selectors you need. The receiver appears in the declaration,
+but not in the type after `:`:
+
+```goop
+import go "bytes" {
+  type Buffer
+  val (b : Buffer).String : unit -> string
+}
+
+let text (b : Buffer) = b.String ()
+```
+
+An arrow type declares a method; a non-arrow type declares a field:
+
+```goop
+import go "log/slog" {
+  type Attr
+  val (a : Attr).Key : string
+}
+```
+
+For Go slices, use `'a go_slice`; `xs.(i)` lowers to
+`go_slice_get xs i`, and `spread xs` passes a slice to a variadic Go method or
+function. Use `any_of value` before collecting mixed values into an
+`any go_slice`.
+
 ## Implement Go interfaces
 
 Import an interface as an opaque Go type, then use `implements` to generate

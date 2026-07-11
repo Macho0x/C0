@@ -109,4 +109,5 @@ Opaque Go types in signatures lower to their qualified Go names
 interface no longer *requires* `@[go]` when the method bodies are expressible
 in Goop.
 
-See also: [15-lang-embeds.md](15-lang-embeds.md), [04-go-lowering.md](04-go-lowering.md).
+See also: [18-go-methods.md](18-go-methods.md) for *calling* Go methods/fields
+on imported types (Goop 1.4.0).

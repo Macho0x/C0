@@ -84,6 +84,8 @@ type Generator struct {
 	externNames    map[string]string   // Goop name → Go qualified name (pkg.Name)
 	externRetTypes map[string]ast.Type // Goop extern val name → full function type
 	goTypeQual     map[string]string   // Goop type name → Go qualified name
+	externMethods  map[string]externMethod
+	externFields   map[string]map[string]string
 
 	// row-polymorphic function params: funcName → field names
 	rowParams    map[string][]string
@@ -109,6 +111,13 @@ type Generator struct {
 	refinementParams map[string][]refinedParam // func name → refinement-annotated params
 }
 
+type externMethod struct {
+	recvGoType string
+	recvGoop   string
+	methodName string
+	pkg        string
+}
+
 // refinedParam stores information about a refinement-annotated parameter.
 type refinedParam struct {
 	index int                 // parameter index
@@ -128,6 +137,8 @@ func NewGenerator(srcFile string, cfg *config.Config) *Generator {
 		externNames:      make(map[string]string),
 		externRetTypes:   make(map[string]ast.Type),
 		goTypeQual:       make(map[string]string),
+		externMethods:    make(map[string]externMethod),
+		externFields:     make(map[string]map[string]string),
 		rowParams:        make(map[string][]string),
 		rowParamName:     make(map[string]string),
 		resolvedImports:  make(map[string]string),
@@ -216,6 +227,8 @@ func (g *Generator) internalTypeToGo(t types.Type) string {
 			return "string"
 		case "unit":
 			return "struct{}"
+		case "any":
+			return "interface{}"
 		default:
 			return t.Name
 		}
@@ -253,6 +266,12 @@ func (g *Generator) internalTypeToGo(t types.Type) string {
 			return "*C0Chan"
 		}
 		return g.goName(t.Name)
+	case *types.TGoNamed:
+		return t.Pkg + "." + t.Name
+	case *types.TPtr:
+		return "*" + g.internalTypeToGo(t.Elem)
+	case *types.TGoSlice:
+		return "[]" + g.internalTypeToGo(t.Elem)
 	default:
 		return "interface{}"
 	}
@@ -438,8 +457,8 @@ func (g *Generator) prescan(mod *ast.Module) {
 			g.extensibleCases[d.TypeName] = append(g.extensibleCases[d.TypeName], d.Cases...)
 		case *ast.LetDecl:
 			for _, b := range d.Bindings {
+				emitName := b.Name
 				if !d.ActivePattern {
-					emitName := b.Name
 					if !d.Private && b.Name != "main" {
 						emitName = exported(b.Name)
 					}
@@ -461,6 +480,7 @@ func (g *Generator) prescan(mod *ast.Module) {
 					}
 				}
 				g.funcParamCount[b.Name] = realCount
+				g.funcParamCount[emitName] = realCount
 				// Detect row-polymorphic parameters
 				for _, p := range b.Params {
 					if p.Type != nil {
@@ -707,6 +727,8 @@ func (g *Generator) typeToGo(at ast.Type) string {
 			return "string"
 		case "unit":
 			return "struct{}"
+		case "any":
+			return "interface{}"
 		case "list":
 			return "list"
 		case "option":
@@ -909,6 +931,27 @@ func (g *Generator) collectGoImport(spec ast.ImportSpec) {
 	}
 	for _, ev := range spec.Vals {
 		pkgName := packageNameFromPath2(spec.Path)
+		if ev.Kind == ast.ExternMethod {
+			g.externMethods[ev.Name] = externMethod{
+				recvGoType: g.typeToGo(ev.RecvType),
+				recvGoop:   goopTypeName(ev.RecvType),
+				methodName: ev.Name,
+				pkg:        pkgName,
+			}
+			g.externRetTypes[ev.Name] = ev.Type
+			continue
+		}
+		if ev.Kind == ast.ExternField {
+			recvName := goopTypeName(ev.RecvType)
+			if recvName != "" {
+				if g.externFields[recvName] == nil {
+					g.externFields[recvName] = make(map[string]string)
+				}
+				g.externFields[recvName][ev.Name] = ev.Name
+			}
+			g.externRetTypes[ev.Name] = ev.Type
+			continue
+		}
 		var qualified string
 		if spec.Path == "" {
 			qualified = ev.Name
@@ -924,6 +967,16 @@ func (g *Generator) collectGoImport(spec ast.ImportSpec) {
 	for _, et := range spec.Types {
 		g.goTypeQual[et.Name] = packageNameFromPath2(spec.Path) + "." + et.Name
 	}
+}
+
+func goopTypeName(t ast.Type) string {
+	switch t := t.(type) {
+	case *ast.TIdent:
+		return t.Name
+	case *ast.TPtr:
+		return goopTypeName(t.Elem)
+	}
+	return ""
 }
 
 func (g *Generator) collectDotExports(dep *ast.Module, goPkg string) {
@@ -1705,8 +1758,10 @@ func (g *Generator) emitImplementsDecl(d *ast.ImplementsDecl) {
 }
 
 func (g *Generator) emitGoSliceHelpers() {
+	g.emit("func any_of[T any](x T) interface{} { return x }\n\n")
 	g.emit("func go_slice_len[T any](xs []T) int { return len(xs) }\n\n")
 	g.emit("func go_slice_append[T any](xs []T, x T) []T { return append(xs, x) }\n\n")
+	g.emit("func go_slice_get[T any](xs []T, i int) T { return xs[i] }\n\n")
 	g.emit("func go_slice_of_list[T any](xs []T) []T { return xs }\n\n")
 	g.emit("func list_of_go_slice[T any](xs []T) []T { return xs }\n\n")
 }
@@ -1861,6 +1916,10 @@ func (g *Generator) emitExpr(e ast.Expr, isStmt bool) {
 	case *ast.ListExpr:
 		g.emitList(e)
 	case *ast.ParenExpr:
+		if _, ok := e.Inner.(*ast.SpreadExpr); ok {
+			g.emitExpr(e.Inner, false)
+			return
+		}
 		g.buf.WriteString("(")
 		g.emitExpr(e.Inner, false)
 		g.buf.WriteString(")")
@@ -2413,6 +2472,60 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 		return
 	}
 	if field, ok := e.Func.(*ast.FieldAccessExpr); ok {
+		if method, ok := g.externMethods[field.Field]; ok {
+			args := g.collectArgs(e)[1:]
+			receiver := field.Left
+			if fieldAccessMatchesType(field, method.recvGoop) && len(args) > 0 {
+				receiver = args[0]
+				args = args[1:]
+			}
+			g.emitExpr(receiver, false)
+			g.buf.WriteString(".")
+			g.buf.WriteString(method.methodName)
+			g.buf.WriteString("(")
+			first := true
+			for _, arg := range args {
+				if lit, ok := arg.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+					continue
+				}
+				if !first {
+					g.buf.WriteString(", ")
+				}
+				first = false
+				g.emitExpr(arg, false)
+			}
+			g.buf.WriteString(")")
+			if isStmt {
+				g.buf.WriteString("\n")
+			}
+			return
+		}
+		// Qualified free extern: time.Now (), fmt.Sprintf, etc.
+		if _, isExtern := g.externNames[field.Field]; isExtern {
+			args := g.collectArgs(e)[1:]
+			if q, ok := g.externNames[field.Field]; ok {
+				g.buf.WriteString(q)
+			} else {
+				g.emitFieldAccess(field)
+			}
+			g.buf.WriteString("(")
+			first := true
+			for _, arg := range args {
+				if lit, ok := arg.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+					continue
+				}
+				if !first {
+					g.buf.WriteString(", ")
+				}
+				first = false
+				g.emitExpr(arg, false)
+			}
+			g.buf.WriteString(")")
+			if isStmt {
+				g.buf.WriteString("\n")
+			}
+			return
+		}
 		// Check prelude for qualified names like Console.print_line
 		qualifiedName := g.fieldAccessName(field)
 		if qualifiedName != "" {
@@ -2433,6 +2546,38 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 			g.buf.WriteString("\n")
 		}
 		return
+	}
+	if cons, ok := e.Func.(*ast.ConstructorExpr); ok && cons.TypePrefix != "" {
+		if method, ok := g.externMethods[cons.Name]; ok && cons.TypePrefix == method.recvGoop {
+			args := g.collectArgs(e)[1:]
+			if cons.Arg != nil {
+				args = append([]ast.Expr{cons.Arg}, args...)
+			}
+			if len(args) == 0 {
+				g.buf.WriteString("/* missing Go method receiver */")
+				return
+			}
+			g.emitExpr(args[0], false)
+			g.buf.WriteString(".")
+			g.buf.WriteString(method.methodName)
+			g.buf.WriteString("(")
+			first := true
+			for _, arg := range args[1:] {
+				if lit, ok := arg.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+					continue
+				}
+				if !first {
+					g.buf.WriteString(", ")
+				}
+				first = false
+				g.emitExpr(arg, false)
+			}
+			g.buf.WriteString(")")
+			if isStmt {
+				g.buf.WriteString("\n")
+			}
+			return
+		}
 	}
 
 	// Regular function application: f(x, y, ...)
@@ -2478,6 +2623,12 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 	}
 	if funcName != "" {
 		paramCount := g.funcParamCount[funcName]
+		if paramCount == 0 {
+			// Also try exported Go name key
+			if goName, ok := g.goopToGo[funcName]; ok {
+				paramCount = g.funcParamCount[goName]
+			}
+		}
 		if paramCount > 0 && len(args) < paramCount {
 			// Partial application: emit closure
 			g.emitPartialApp(funcName, args, paramCount)
@@ -2593,6 +2744,9 @@ afterArgs:
 func (g *Generator) getExprName(e ast.Expr) string {
 	if ident, ok := e.(*ast.IdentExpr); ok {
 		return ident.Name
+	}
+	if cons, ok := e.(*ast.ConstructorExpr); ok && cons.Arg == nil {
+		return cons.Name
 	}
 	return ""
 }
@@ -3958,7 +4112,7 @@ func (g *Generator) emitLetIn(e *ast.LetInExpr) {
 func (g *Generator) emitFun(e *ast.FunExpr) {
 	g.buf.WriteString("func(")
 	first := true
-	for _, p := range e.Params {
+	for i, p := range e.Params {
 		if p.Name == "" {
 			continue // unit parameter from fun () ->
 		}
@@ -3970,6 +4124,12 @@ func (g *Generator) emitFun(e *ast.FunExpr) {
 		g.buf.WriteString(" ")
 		if p.Type != nil {
 			g.buf.WriteString(g.typeToGo(p.Type))
+		} else if g.typeMap != nil {
+			if t, ok := g.typeMap[e]; ok {
+				g.buf.WriteString(g.internalTypeToGo(nthFunParam(t, i)))
+			} else {
+				g.buf.WriteString("interface{}")
+			}
 		} else {
 			g.buf.WriteString("interface{}")
 		}
@@ -4390,7 +4550,37 @@ func (g *Generator) emitFieldAccess(e *ast.FieldAccessExpr) {
 	}
 	g.emitExpr(e.Left, false)
 	g.buf.WriteString(".")
+	if _, ok := g.externMethods[e.Field]; ok {
+		g.buf.WriteString(g.externMethods[e.Field].methodName)
+		return
+	}
+	if recvName := goopTypeNameFromInternal(g.typeOf(e.Left)); recvName != "" {
+		if fieldName := g.externFields[recvName][e.Field]; fieldName != "" {
+			g.buf.WriteString(fieldName)
+			return
+		}
+	}
 	g.buf.WriteString(exported(e.Field))
+}
+
+func goopTypeNameFromInternal(t types.Type) string {
+	switch t := t.(type) {
+	case *types.TGoNamed:
+		return t.Name
+	case *types.TPtr:
+		return goopTypeNameFromInternal(t.Elem)
+	}
+	return ""
+}
+
+func fieldAccessMatchesType(e *ast.FieldAccessExpr, typeName string) bool {
+	switch left := e.Left.(type) {
+	case *ast.IdentExpr:
+		return left.Name == typeName
+	case *ast.ConstructorExpr:
+		return left.Name == typeName && left.Arg == nil
+	}
+	return false
 }
 
 func (g *Generator) emitMethodSend(e *ast.MethodSendExpr) {

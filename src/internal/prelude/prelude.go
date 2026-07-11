@@ -124,6 +124,11 @@ func Default() *Prelude {
 	// Go-slice FFI helpers. Goop lists already lower to Go slices, so the two
 	// conversion helpers are identity functions at runtime.
 	goSliceA := &types.TGoSlice{Elem: a}
+	p.addWithEffects("any_of",
+		types.Generalize(&types.TFun{From: a, To: &types.Prim{Name: "any"}}, nil),
+		Lowering{Func: "any_of"},
+		&pureEff,
+	)
 	p.addWithEffects("go_slice_len",
 		types.Mono(&types.TFun{From: goSliceA, To: types.Int}),
 		Lowering{Func: "go_slice_len"},
@@ -132,6 +137,11 @@ func Default() *Prelude {
 	p.addWithEffects("go_slice_append",
 		types.Mono(&types.TFun{From: goSliceA, To: &types.TFun{From: a, To: goSliceA}}),
 		Lowering{Func: "go_slice_append"},
+		&pureEff,
+	)
+	p.addWithEffects("go_slice_get",
+		types.Mono(&types.TFun{From: goSliceA, To: &types.TFun{From: types.Int, To: a}}),
+		Lowering{Func: "go_slice_get"},
 		&pureEff,
 	)
 	p.addWithEffects("go_slice_of_list",

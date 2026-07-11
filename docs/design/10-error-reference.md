@@ -806,6 +806,17 @@ cannot be resolved. All type errors stop compilation.
 
 ---
 
+## FFI-METHOD — Go Method and Field Import Errors
+
+Method and field imports use the normal parser and type-unification diagnostics;
+1.4.0 does not introduce separate numbered `FFI-METHOD` diagnostics. Check
+the receiver declaration first: `val (x : T).M : A -> B` is a method, while
+`val (x : T).F : U` is a field. A wrong receiver, argument list, or result
+type is reported as the corresponding `TYPE010`/`UNIFY` mismatch or by Go at
+build time.
+
+---
+
 ## UNIFY — Unification Errors
 
 All unification errors produce a message in the format:

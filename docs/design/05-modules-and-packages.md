@@ -61,7 +61,7 @@ import goop . "std.list"   (* dot import: unqualified exports *)
 
 | Form | Meaning | Block contents |
 |------|---------|----------------|
-| `import go "path"` | Go package | Optional `val` signatures and opaque `type Name` imports |
+| `import go "path"` | Go package | Optional free-function `val` signatures, selector `val (x : T).M` signatures, and opaque `type Name` imports |
 | `import goop "path"` | Goop module | Forbidden |
 | `import goop . "path"` | Dot import | Forbidden |
 | `alias go "path"` | Go import with local alias | Optional |
@@ -69,7 +69,9 @@ import goop . "std.list"   (* dot import: unqualified exports *)
 
 Logical paths like `"std.io"` resolve via `goop.toml` `[mappings]` or built-in defaults.
 Imported Go types can be used in `implements`; see
-[17-go-implements.md](17-go-implements.md).
+[17-go-implements.md](17-go-implements.md). A selector declaration has the
+form `val (x : T).M : τ`: use an arrow type for a Go method and a non-arrow
+type for a Go field. See [18-go-methods.md](18-go-methods.md).
 
 ## Inline Go / C
 

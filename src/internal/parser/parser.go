@@ -970,16 +970,44 @@ func (p *Parser) parseImportSpec() ast.ImportSpec {
 		p.advance()
 		for p.cur().Type != token.RBRACE && p.cur().Type != token.EOF {
 			if p.match(token.VAL) {
-				ev := ast.ExternVal{}
-				nameTok := p.cur()
-				if nameTok.Type == token.IDENT || nameTok.Type == token.CONSTRUCTOR {
-					p.advance()
-					ev.Name = nameTok.Lexeme
+				ev := ast.ExternVal{Kind: ast.ExternFunc}
+				if p.match(token.LPAREN) {
+					recvTok := p.cur()
+					if recvTok.Type == token.IDENT {
+						ev.RecvName = recvTok.Lexeme
+						p.advance()
+					} else {
+						p.errorf("expected method receiver name, got %s", recvTok.Type)
+					}
+					p.expect(token.COLON)
+					ev.RecvType = p.parseType()
+					p.expect(token.RPAREN)
+					p.expect(token.DOT)
+					nameTok := p.cur()
+					if nameTok.Type == token.IDENT || nameTok.Type == token.CONSTRUCTOR {
+						ev.Name = nameTok.Lexeme
+						p.advance()
+					} else {
+						p.errorf("expected method or field name, got %s", nameTok.Type)
+					}
 				} else {
-					p.errorf("expected import binding name, got %s", nameTok.Type)
+					nameTok := p.cur()
+					if nameTok.Type == token.IDENT || nameTok.Type == token.CONSTRUCTOR {
+						p.advance()
+						ev.Name = nameTok.Lexeme
+					} else {
+						p.errorf("expected import binding name, got %s", nameTok.Type)
+					}
 				}
 				p.expect(token.COLON)
 				ev.Type = p.parseType()
+				if ev.RecvType != nil {
+					if _, ok := ev.Type.(*ast.TFun); ok {
+						ev.Kind = ast.ExternMethod
+					} else {
+						ev.Kind = ast.ExternField
+					}
+				}
 				spec.Vals = append(spec.Vals, ev)
 			} else if p.match(token.TYPE) {
 				et := ast.ExternType{}

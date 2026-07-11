@@ -1,0 +1,11 @@
+module main
+
+import go "log/slog" {
+  type Attr
+  val String : string -> string -> Attr
+  val (a : Attr).Key : string
+}
+
+let main () =
+  let a = String "answer" "42" in
+  assert (a.Key = "answer")

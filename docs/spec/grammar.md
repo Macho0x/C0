@@ -38,7 +38,9 @@ module_decl  := 'module' constr ('.' constr)*
 import_decl  := 'import' import_spec | 'import' '(' import_spec* ')'
 import_spec  := ident? ('go' | 'goop') string import_vals?
 import_vals  := '{' import_item* '}'
-import_item  := 'val' ident ':' type | 'type' constr
+import_item  := 'val' ident ':' type
+              | 'val' '(' ident ':' type ')' '.' ident ':' type
+              | 'type' constr
 
 top_decl     := val_decl | type_decl | exception_decl | effect_decl
               | nested_module | module_type_decl | class_decl

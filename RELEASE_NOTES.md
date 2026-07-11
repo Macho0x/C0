@@ -1,27 +1,26 @@
-# Goop 1.3.0
+# Goop 1.4.0
 
-Goop 1.3.0 adds native Go interface implementations, allowing Goop record
-types to satisfy interfaces such as `fmt.Stringer` and `slog.Handler` without
-writing an `@[go]` wrapper for their methods.
+Goop 1.4.0 adds Go method and field imports. Goop code can now call selectors
+on opaque imported Go values without introducing a one-off `@[go]` adapter.
 
 ## Highlights
 
-- **`implements` declarations:** `implements Interface for Type with … end`
-  generates pointer-receiver Go methods and a compile-time interface
-  assertion.
-- **Go type imports:** use `type Name` inside an `import go` signature block
-  to import opaque Go named types and interfaces.
-- **FFI value types:** `error`, `'a ptr` (`ptr_of`, `null`, `is_null`), and
-  `'a go_slice` plus length, append, and list-conversion helpers.
-- **Examples:** native
-  [`fmt.Stringer`](docs/examples/go_implements_stringer.goop) and
-  [`slog.Handler`](docs/examples/go_implements_slog_handler.goop)
-  implementations.
+- **Method imports:** declare `val (x : T).M : A -> B` in an `import go`
+  block and call it with `x.M arg` (or `T.M x arg`).
+- **Field imports:** a non-arrow selector type, such as
+  `val (a : Attr).Key : string`, lowers to a Go field read.
+- **Go-shaped values:** callbacks, `go_slice` indexing (`xs.(i)`), `any_of`,
+  and `spread` work with imported methods and variadic APIs.
+- **Examples:** [`go_method_calls.goop`](docs/examples/go_method_calls.goop)
+  imports `bytes.Buffer.String`; the native
+  [`slog.Handler`](docs/examples/go_implements_slog_handler.goop) example
+  now imports and calls `slog.New` and `Logger.Info`.
 
 ## Verification
 
+- `goop check docs/examples/go_method_calls.goop`
 - `goop check docs/examples/go_implements_stringer.goop`
 - `goop check docs/examples/go_implements_slog_handler.goop`
 - `goop test tests/`
-- Verify generated Go accepts the emitted `fmt.Stringer` and `slog.Handler`
-  assertions during the example builds.
+- Verify generated Go contains direct selector calls such as `b.String()` and
+  accepts the emitted `slog.Handler` assertion.

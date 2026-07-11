@@ -93,6 +93,23 @@ Go `error`, and `'a go_slice` to `[]T`. The `go_slice_*` helpers operate on
 those Go slices; list conversion helpers are runtime identities because lists
 already lower to slices. See [17-go-implements.md](17-go-implements.md).
 
+## Go method and field FFI
+
+An `import go` signature block can also declare selectors:
+
+```goop
+import go "bytes" {
+  type Buffer
+  val (b : Buffer).String : unit -> string
+}
+```
+
+`val (x : T).M : A -> B` lowers to `x.M(a)`. A non-arrow declaration such as
+`val (a : Attr).Key : string` lowers to the Go field selector `a.Key`.
+Callbacks and `go_slice` values remain ordinary Go function and slice values,
+so `Record.Attrs r (fun a -> true)` lowers to `r.Attrs(func(a slog.Attr) bool
+{ return true })`. See [18-go-methods.md](18-go-methods.md).
+
 ## Tuples and lists
 
 Tuples → generated positional structs. `'a list` → `[]T` with `append` for cons.

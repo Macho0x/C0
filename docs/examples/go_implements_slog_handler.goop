@@ -11,6 +11,9 @@ import go "log/slog" {
   type Record
   type Attr
   type Level
+  type Logger
+  val New : Handler -> Logger
+  val (l : Logger).Info : string -> unit
 }
 
 type capture = {
@@ -29,13 +32,16 @@ implements Handler for capture with
 end
 
 @[go] {
-  func demo() string {
-    h := &capture{Last: ""}
-    log := slog.New(h)
-    log.Info("hello from Goop Handler")
-    return h.Last
-  }
+  func newCapture() slog.Handler { return &capture{Last: ""} }
+  func captureLast(h slog.Handler) string { return h.(*capture).Last }
 }
-val demo : unit -> string
+val newCapture : unit -> Handler
+val captureLast : Handler -> string
 
-let main () = print_line (demo ())
+let main () =
+  let h = newCapture () in
+  let log = New h in
+  begin
+    log.Info "hello from Goop Handler";
+    print_line (captureLast h)
+  end

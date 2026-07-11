@@ -94,9 +94,20 @@ type LangEmbedDecl struct {
 func (*LangEmbedDecl) topDeclNode() {}
 
 // ExternVal is a single `val` inside an extern block.
+type ExternValKind int
+
+const (
+	ExternFunc ExternValKind = iota
+	ExternMethod
+	ExternField
+)
+
 type ExternVal struct {
-	Name string
-	Type Type
+	Name     string
+	Type     Type
+	Kind     ExternValKind
+	RecvName string // empty for functions
+	RecvType Type   // nil for functions
 }
 
 // ExternType is an opaque Go named type imported from an FFI package.

@@ -1,0 +1,5 @@
+module main
+
+let main () =
+  let xs = go_slice_of_list [10; 20; 30] in
+  assert (xs.(1) = 20)

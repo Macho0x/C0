@@ -1,0 +1,9 @@
+module main
+
+import go "fmt" {
+  val Sprintf : string -> ...any -> string
+}
+
+let main () =
+  let xs = go_slice_of_list [any_of "x"; any_of 7] in
+  assert (Sprintf "%s-%d" (spread xs) = "x-7")

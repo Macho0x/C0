@@ -1,0 +1,19 @@
+module main
+
+import go "bytes" {
+  type Buffer
+  val (b : Buffer).String : unit -> string
+}
+
+@[go] {
+  func newBuffer() *bytes.Buffer {
+    b := new(bytes.Buffer)
+    b.WriteString("hi")
+    return b
+  }
+}
+val newBuffer : unit -> Buffer
+
+let main () =
+  let b = newBuffer () in
+  assert (b.String () = "hi")

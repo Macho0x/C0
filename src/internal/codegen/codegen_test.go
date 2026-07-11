@@ -135,6 +135,32 @@ let main () = let pair = Atoi "42" in pair
 	}
 }
 
+func TestExternMethodCallCodegen(t *testing.T) {
+	src := `module main
+import go "bytes" {
+  type Buffer
+  val (b : Buffer).String : unit -> string
+}
+@[go] {
+  func newBuffer() *bytes.Buffer { return new(bytes.Buffer) }
+}
+val newBuffer : unit -> Buffer
+let main () = let b = newBuffer () in b.String ()
+`
+	mod, err := parser.Parse("method.goop", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gen := codegen.NewGenerator("method.goop", config.DefaultConfig())
+	goSrc, err := gen.Generate(desugar.DesugarModule(mod))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(goSrc, "b.String()") {
+		t.Fatalf("expected selector method call, got:\n%s", goSrc)
+	}
+}
+
 func TestCEmbedCodegen(t *testing.T) {
 	src := `module main
 @[c] {

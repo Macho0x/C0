@@ -117,6 +117,7 @@ type Checker struct {
 	functors        map[string]*functorDef
 	extensible      map[string]bool
 	classes         map[string]*classInfo
+	goFields        map[string]map[string]types.Type
 }
 
 // pkgFromPath extracts a Go package name from an import path (last segment).
@@ -129,8 +130,22 @@ func (c *Checker) bindExternVals(importPath string, vals []ast.ExternVal) {
 	pkgName := pkgFromPath(importPath)
 	for _, ev := range vals {
 		t := c.convertASTType(ev.Type)
-		if refined := c.refineExternType(importPath, ev.Name, t); refined != nil {
-			t = refined
+		if ev.Kind == ast.ExternFunc {
+			if refined := c.refineExternType(importPath, ev.Name, t); refined != nil {
+				t = refined
+			}
+		} else {
+			recv := c.convertASTType(ev.RecvType)
+			t = &types.TFun{From: recv, To: t}
+			if ev.Kind == ast.ExternField {
+				typeName := goNamedTypeName(recv)
+				if typeName != "" {
+					if c.goFields[typeName] == nil {
+						c.goFields[typeName] = make(map[string]types.Type)
+					}
+					c.goFields[typeName][ev.Name] = c.convertASTType(ev.Type)
+				}
+			}
 		}
 		scheme := types.Mono(t)
 		if c.env.Lookup(ev.Name) != nil {
@@ -138,11 +153,26 @@ func (c *Checker) bindExternVals(importPath string, vals []ast.ExternVal) {
 		} else {
 			c.env.Bind(ev.Name, scheme)
 		}
-		if importPath != "" {
+		if importPath != "" && ev.Kind == ast.ExternFunc {
 			qualified := pkgName + "." + ev.Name
 			c.env.Bind(qualified, scheme)
 		}
+		if ev.Kind != ast.ExternFunc {
+			if typeName := goNamedTypeName(c.convertASTType(ev.RecvType)); typeName != "" {
+				c.env.Bind(typeName+"."+ev.Name, scheme)
+			}
+		}
 	}
+}
+
+func goNamedTypeName(t types.Type) string {
+	switch t := types.Apply(types.EmptySubst(), t).(type) {
+	case *types.TGoNamed:
+		return t.Name
+	case *types.TPtr:
+		return goNamedTypeName(t.Elem)
+	}
+	return ""
 }
 
 func (c *Checker) bindExternTypes(importPath string, externTypes []ast.ExternType) {
@@ -208,6 +238,7 @@ func checkWithDepsAndImports(mod *ast.Module, deps map[string]*ast.Module, resol
 		functors:        make(map[string]*functorDef),
 		extensible:      make(map[string]bool),
 		classes:         make(map[string]*classInfo),
+		goFields:        make(map[string]map[string]types.Type),
 	}
 	c.initBuiltins()
 	c.importedModule = mod.Name
@@ -633,6 +664,8 @@ func (c *Checker) convertASTType(at ast.Type) types.Type {
 			return &types.Prim{Name: "exn"}
 		case "error":
 			return &types.TError{}
+		case "any":
+			return &types.Prim{Name: "any"}
 		case "owned_chan":
 			return &types.TAdt{Name: "owned_chan", Linear: true}
 		default:
@@ -1072,13 +1105,17 @@ func (c *Checker) inferIdent(e *ast.IdentExpr) types.Type {
 }
 
 func (c *Checker) inferConstructor(e *ast.ConstructorExpr) types.Type {
+	var s *types.Scheme
 	if e.TypePrefix != "" {
-		if !c.adtHasConstructor(e.TypePrefix, e.Name) {
+		s = c.env.Lookup(e.TypePrefix + "." + e.Name)
+		if s == nil && !c.adtHasConstructor(e.TypePrefix, e.Name) {
 			c.errorfAt(e.Loc, "constructor %s.%s is not defined", e.TypePrefix, e.Name)
 			return types.Unit
 		}
 	}
-	s := c.env.Lookup(e.Name)
+	if s == nil {
+		s = c.env.Lookup(e.Name)
+	}
 	if s == nil {
 		// Capital-letter names used as modules/variables are parsed as
 		// constructors by the lexer but may be regular identifiers.
@@ -1245,6 +1282,9 @@ func (c *Checker) inferIndex(e *ast.IndexExpr) types.Type {
 	target := c.infer(e.Target)
 	index := c.infer(e.Index)
 	c.unifyAt(e.Loc, index, types.Int)
+	if slice, ok := types.Apply(c.sub, target).(*types.TGoSlice); ok {
+		return slice.Elem
+	}
 	elem := c.unpackArray(e.Loc, target)
 	return elem
 }
@@ -1600,6 +1640,12 @@ func (c *Checker) inferFieldAccess(e *ast.FieldAccessExpr) types.Type {
 	}
 
 	leftType := c.infer(e.Left)
+	if fields := c.goFields[goNamedTypeName(types.Apply(c.sub, leftType))]; fields != nil {
+		if fieldType := fields[e.Field]; fieldType != nil {
+			return fieldType
+		}
+		c.errorfAt(e.Loc, "Go type has no imported field %s", e.Field)
+	}
 	// For field access, we only need the field to exist in the record.
 	// We don't require the records to be identical.
 	resultType := c.fresh(e.Field)
@@ -2265,11 +2311,11 @@ func (c *Checker) bindImportSpecs(imports []ast.ImportSpec, deps map[string]*ast
 
 		switch spec.Kind {
 		case ast.ImportGo:
-			if len(spec.Vals) > 0 {
-				c.bindExternVals(spec.Path, spec.Vals)
-			}
 			if len(spec.Types) > 0 {
 				c.bindExternTypes(spec.Path, spec.Types)
+			}
+			if len(spec.Vals) > 0 {
+				c.bindExternVals(spec.Path, spec.Vals)
 			}
 		case ast.ImportGoop:
 			if resolver == nil {
@@ -2316,6 +2362,7 @@ func (c *Checker) bindModuleExports(dep *ast.Module, prefix string, unqualified 
 		types:        make(typeinfo.TypeMap),
 		privateNames: priv,
 		blockedNames: make(map[string]string),
+		goFields:     make(map[string]map[string]types.Type),
 	}
 	depChecker.initBuiltins()
 	if len(dep.Imports) > 0 && resolver != nil {

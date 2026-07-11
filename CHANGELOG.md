@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0
+
+### Go method and field FFI
+
+- `import go` signature blocks now accept `val (x : T).M : τ` selector
+  declarations for imported Go methods and fields.
+- Method calls lower to Go selectors, including callbacks, `go_slice` indexing,
+  variadic `any` values, and pointer receivers.
+- Added `bytes.Buffer` method-call and native `slog.Handler` examples, plus
+  method/field lowering, package, embed, tutorial, and error-reference docs.
+
 ## 1.3.0
 
 ### Go interface FFI

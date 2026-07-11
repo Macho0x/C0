@@ -35,6 +35,7 @@ This file tracks the remaining work to make Goop a usable language. It is kept i
 - [x] Go interop (`import go`, `@[go] { }` embed blocks)
 - [x] Unified imports (`import go` / `import goop`, dot and aliased forms)
 - [x] Go interface FFI (1.3.0): `type` imports, `implements`, `ptr`/`null`, `error`, and `go_slice`; Stringer and slog.Handler examples
+- [x] Go method/field FFI (1.4.0): `val (x : T).M` imports, selector lowering, callbacks, `go_slice` indexing, and variadic `any`
 - [x] `private` module visibility; branding via single-ctor ADT (no `newtype`)
 - [x] Nested modules / `sig` / functors / `.mli` (minimal)
 - [x] Golang import 2-tuple returns

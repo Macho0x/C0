@@ -351,6 +351,32 @@ let main () = ()
 	}
 }
 
+func TestImportGoMethodAndFieldVals(t *testing.T) {
+	src := `module main
+import go "log/slog" {
+  type Record
+  type Attr
+  val (r : Record).Attrs : (Attr -> bool) -> unit
+  val (a : Attr).Key : string
+}
+let main () = ()
+`
+	mod, err := parser.Parse("t.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	vals := mod.Imports[0].Vals
+	if len(vals) != 2 {
+		t.Fatalf("expected 2 vals, got %#v", vals)
+	}
+	if vals[0].Kind != ast.ExternMethod || vals[0].Name != "Attrs" || vals[0].RecvName != "r" {
+		t.Fatalf("method val: %#v", vals[0])
+	}
+	if vals[1].Kind != ast.ExternField || vals[1].Name != "Key" || vals[1].RecvName != "a" {
+		t.Fatalf("field val: %#v", vals[1])
+	}
+}
+
 func TestParseGoImportTypesAndImplements(t *testing.T) {
 	src := `module main
 import go "fmt" { type Stringer }
