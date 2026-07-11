@@ -1799,6 +1799,67 @@ func isUnitParam(p ast.Param) bool {
 	return false
 }
 
+// isUnitTyped reports whether e has type unit (including the () literal).
+// Unit-returning Go methods (Lock/Unlock/Info/Reset) erase to void and must be
+// emitted as statements, not `_ = expr` / `x := expr` bindings.
+func (g *Generator) isUnitTyped(e ast.Expr) bool {
+	if e == nil {
+		return false
+	}
+	if lit, ok := e.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+		return true
+	}
+	if t := g.typeOf(e); t != nil {
+		if p, ok := t.(*types.Prim); ok && p.Name == "unit" {
+			return true
+		}
+		if g.internalTypeToGo(t) == "struct{}" {
+			return true
+		}
+	}
+	if name := g.callRootName(e); name != "" {
+		if rt, ok := g.funcRetType[name]; ok && rt == "struct{}" {
+			return true
+		}
+		if t, ok := g.externRetTypes[name]; ok && astFinalReturnIsUnit(t) {
+			return true
+		}
+	}
+	return false
+}
+
+// callRootName returns the extern/local function or method name at the root of
+// an application chain (e.g. log.Info "x" → "Info", Fail s msg → "Fail").
+func (g *Generator) callRootName(e ast.Expr) string {
+	cur := e
+	for {
+		switch n := cur.(type) {
+		case *ast.AppExpr:
+			cur = n.Func
+		case *ast.FieldAccessExpr:
+			return n.Field
+		case *ast.IdentExpr:
+			return n.Name
+		case *ast.ConstructorExpr:
+			return n.Name
+		default:
+			return ""
+		}
+	}
+}
+
+func astFinalReturnIsUnit(t ast.Type) bool {
+	for t != nil {
+		fn, ok := t.(*ast.TFun)
+		if !ok {
+			break
+		}
+		t = fn.To
+	}
+	id, ok := t.(*ast.TIdent)
+	return ok && id.Name == "unit"
+}
+
 func (g *Generator) emitParams(params []ast.Param) {
 	g.buf.WriteString("(")
 	first := true
@@ -2360,6 +2421,172 @@ func (g *Generator) isResultMatch(e *ast.MatchExpr) bool {
 		}
 	}
 	return true
+}
+
+func (g *Generator) isOptionMatch(e *ast.MatchExpr) bool {
+	if len(e.Arms) == 0 {
+		return false
+	}
+	if t := g.typeOf(e.Scrutinee); t != nil {
+		switch tt := t.(type) {
+		case *types.TCon:
+			if tt.Name == "option" {
+				return true
+			}
+		case *types.TAdt:
+			if tt.Name == "option" {
+				return true
+			}
+		}
+	}
+	sawOptionCtor := false
+	for _, arm := range e.Arms {
+		switch p := arm.Pattern.(type) {
+		case *ast.ConstructorPattern:
+			if p.Name != "Some" && p.Name != "None" {
+				return false
+			}
+			// User ADT owns Some/None → use ADT type-switch path instead.
+			if g.findVariantStruct(p.Name, p.TypePrefix) != "" {
+				return false
+			}
+			sawOptionCtor = true
+		case *ast.WildcardPattern:
+			continue
+		default:
+			return false
+		}
+	}
+	// Wildcard-only matches (e.g. `function | _ -> …`) are not option matches.
+	return sawOptionCtor
+}
+
+func (g *Generator) emitOptionMatch(e *ast.MatchExpr) {
+	// Emit as: tmp := scrutinee; if tmp.IsSome() { <Some arms> } else { <None arms> }
+	g.varCounter++
+	tmp := fmt.Sprintf("_tmp%d", g.varCounter)
+	g.emitf("%s := ", tmp)
+	g.emitExpr(e.Scrutinee, false)
+	g.buf.WriteString("\n")
+
+	var someArms, noneArms []ast.MatchArm
+	for _, arm := range e.Arms {
+		switch p := arm.Pattern.(type) {
+		case *ast.ConstructorPattern:
+			switch p.Name {
+			case "Some":
+				someArms = append(someArms, arm)
+			case "None":
+				noneArms = append(noneArms, arm)
+			}
+		case *ast.WildcardPattern:
+			noneArms = append(noneArms, arm)
+		}
+	}
+
+	if len(someArms) > 0 {
+		g.emitf("if %s.IsSome() {\n", tmp)
+		g.indent++
+		g.emitOptionArms(someArms, tmp, true)
+		g.indent--
+		if len(noneArms) > 0 {
+			g.emitf("} else {\n")
+			g.indent++
+			g.emitOptionArms(noneArms, tmp, false)
+			g.indent--
+		}
+		g.emitf("}\n")
+	} else if len(noneArms) > 0 {
+		g.emitf("if !%s.IsSome() {\n", tmp)
+		g.indent++
+		g.emitOptionArms(noneArms, tmp, false)
+		g.indent--
+		g.emitf("}\n")
+	}
+}
+
+func (g *Generator) emitOptionArms(arms []ast.MatchArm, tmp string, isSome bool) {
+	if len(arms) == 0 {
+		return
+	}
+	if !isSome {
+		// None / wildcard arms: no payload.
+		if len(arms) == 1 {
+			g.emitReturnExpr(arms[0].Body)
+			return
+		}
+		for i, arm := range arms {
+			if i > 0 {
+				g.emitf("} else ")
+			}
+			if arm.Guard != nil {
+				if i == 0 {
+					g.emitf("if ")
+				} else {
+					g.buf.WriteString("if ")
+				}
+				g.emitExpr(arm.Guard, false)
+				g.buf.WriteString(" {\n")
+				g.indent++
+				g.emitReturnExpr(arm.Body)
+				g.indent--
+			} else if i > 0 {
+				g.buf.WriteString("{\n")
+				g.indent++
+				g.emitReturnExpr(arm.Body)
+				g.indent--
+			} else {
+				g.emitReturnExpr(arm.Body)
+			}
+		}
+		if len(arms) > 1 || arms[0].Guard != nil {
+			g.emitf("}\n")
+		}
+		return
+	}
+
+	g.varCounter++
+	ev := fmt.Sprintf("_e%d", g.varCounter)
+	g.emitf("%s := %s.MustSome()\n", ev, tmp)
+	// Bind once from the first arm so when-guards can reference the name.
+	if cp, ok := arms[0].Pattern.(*ast.ConstructorPattern); ok && cp.Arg != nil {
+		g.emitPatternBinding(cp.Arg, ev)
+	} else {
+		g.emitf("_ = %s\n", ev)
+	}
+
+	if len(arms) == 1 && arms[0].Guard == nil {
+		g.emitReturnExpr(arms[0].Body)
+		return
+	}
+
+	for i, arm := range arms {
+		if i > 0 {
+			g.emitf("} else ")
+		}
+		if arm.Guard != nil {
+			if i == 0 {
+				g.emitf("if ")
+			} else {
+				g.buf.WriteString("if ")
+			}
+			g.emitExpr(arm.Guard, false)
+			g.buf.WriteString(" {\n")
+			g.indent++
+			g.emitReturnExpr(arm.Body)
+			g.indent--
+		} else if i > 0 {
+			g.buf.WriteString("{\n")
+			g.indent++
+			g.emitReturnExpr(arm.Body)
+			g.indent--
+		} else {
+			g.emitReturnExpr(arm.Body)
+		}
+	}
+	if len(arms) > 1 || arms[0].Guard != nil {
+		g.emitf("}\n")
+	}
 }
 
 func (g *Generator) emitResultMatch(e *ast.MatchExpr) {
@@ -3334,6 +3561,11 @@ func (g *Generator) emitMatch(e *ast.MatchExpr) {
 		g.emitResultMatch(e)
 		return
 	}
+	// Builtin option match (concrete Option* struct, not ADT interface)
+	if g.isOptionMatch(e) {
+		g.emitOptionMatch(e)
+		return
+	}
 	for _, arm := range e.Arms {
 		if _, ok := arm.Pattern.(*ast.PolyvarPattern); ok {
 			g.emitPolyvarMatch(e)
@@ -4116,6 +4348,9 @@ func (g *Generator) emitBegin(e *ast.BeginExpr, isStmt bool) {
 		g.buf.WriteString("{\n")
 		g.indent++
 		for _, s := range e.Stmts {
+			if lit, ok := s.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+				continue
+			}
 			g.emitExpr(s, true)
 			g.buf.WriteString("\n")
 		}
@@ -4153,9 +4388,14 @@ func (g *Generator) emitBegin(e *ast.BeginExpr, isStmt bool) {
 				g.emitBegin(s.(*ast.BeginExpr), false)
 				g.buf.WriteString("\n")
 			default:
-				g.emitf("_ = ")
-				g.emitExpr(s, false)
-				g.buf.WriteString("\n")
+				if g.isUnitTyped(s) {
+					g.emitExpr(s, true)
+					g.buf.WriteString("\n")
+				} else {
+					g.emitf("_ = ")
+					g.emitExpr(s, false)
+					g.buf.WriteString("\n")
+				}
 			}
 		} else if retGo != "struct{}" {
 			// Statement-shaped tails must emit their own returns; prefixing
@@ -4205,6 +4445,25 @@ func (g *Generator) emitLetIn(e *ast.LetInExpr) {
 			if _, isAssert := b.Body.(*ast.AssertExpr); isAssert || isCustomPreludeStmt(b.Body) {
 				g.emitExpr(b.Body, true)
 				if b.Name != "_" {
+					g.emitf("%s := struct{}{}\n", b.Name)
+					g.emitf("_ = %s\n", b.Name)
+				}
+			} else if b.Name == "_" {
+				// `let _ = e` must never emit `_ := e` (illegal in Go).
+				if g.isUnitTyped(b.Body) {
+					g.emitExpr(b.Body, true)
+				} else {
+					g.emitf("_ = ")
+					g.emitExpr(b.Body, false)
+				}
+				g.buf.WriteString("\n")
+			} else if g.isUnitTyped(b.Body) {
+				// Unit side-effects (e.g. mu.Lock ()): emit as statement.
+				// Do not bind void Go methods for blank / `_…` names.
+				// Named bindings (legacy `let dummy = go …`) keep a unit value.
+				g.emitExpr(b.Body, true)
+				g.buf.WriteString("\n")
+				if b.Name != "_" && !strings.HasPrefix(b.Name, "_") {
 					g.emitf("%s := struct{}{}\n", b.Name)
 					g.emitf("_ = %s\n", b.Name)
 				}

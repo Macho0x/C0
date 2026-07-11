@@ -1,0 +1,25 @@
+module OptionMatchTest
+
+type cfg = { limit: int option }
+
+let get (c : cfg) : int =
+  match c.limit with
+  | Some n -> n
+  | None -> 0
+
+let describe (x : int option) : string =
+  match x with
+  | Some n when n > 100 -> "big"
+  | Some n when n > 0 -> "positive"
+  | Some _ -> "zero or negative"
+  | None -> "none"
+
+let main () =
+  let c : cfg = { limit = Some 42 } in
+  let _ = assert (get c = 42) in
+  let c2 : cfg = { limit = None } in
+  let _ = assert (get c2 = 0) in
+  let _ = assert (describe (Some 500) = "big") in
+  let _ = assert (describe (Some 42) = "positive") in
+  let _ = assert (describe (Some 0) = "zero or negative") in
+  assert (describe None = "none")

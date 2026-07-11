@@ -7,6 +7,18 @@ module (e.g. `strategy option` returning `Some Full`).
 **Guidance:** avoid constructor names `None` and `Some` in user ADTs; prefer
 `NoMask`, `Absent`, etc.
 
+## Codegen: builtin option match (1.5.1-dev)
+
+`match opts.pretty with | Some p -> … | None -> …` used the ADT
+type-switch path, which is invalid for concrete `Option*` structs.
+
+**Fixed:** `isOptionMatch` / `emitOptionMatch` lower to `IsSome` /
+`MustSome`, parallel to result matches. Unit-returning Go methods
+(`Lock`/`Unlock`/`Info`) and `let _ =` are emitted as statements /
+`_ =`, not value bindings.
+
+Regression: `tests/option_match_test.goop`.
+
 ## Codegen: call lowering for native slog libraries (1.5.0)
 
 Treelog migration away from `@[go]` needed:

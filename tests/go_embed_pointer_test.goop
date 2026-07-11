@@ -7,8 +7,8 @@ module main
   func newBox(n int) *box { return &box{n: n} }
   func boxVal(b *box) int { return b.n }
 }
-val newBox : int -> unit
-val boxVal : unit -> int
+val newBox : int -> any
+val boxVal : any -> int
 
 let main () =
   let b = newBox 7 in
