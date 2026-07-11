@@ -28,10 +28,10 @@ let main () : unit =
 |---|---|---|
 | Import | None (prelude) | `import goop . "std.io"` |
 | Naming | `snake_case` | `PascalCase` |
-| Lowering | `fmt.Println` | `fmt.Println` (via `@golang` embed) |
+| Lowering | `fmt.Println` | `fmt.Println` (via `@[go]` embed) |
 
 Use whichever fits your module style. Tests: `tests/std_io_test.goop`.
 
 ## Internal (not exported)
 
-The module uses `@golang { func printLine(...) }` internally. `@golang` embed blocks and their `val` bindings are module-private.
+The module uses `@[go] { func printLine(...) }` internally. `@[go]` embed blocks and their `val` bindings are module-private.

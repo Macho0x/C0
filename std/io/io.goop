@@ -1,8 +1,8 @@
 module io
 
-import golang "fmt"
+import go "fmt"
 
-@golang {
+@[go] {
   func printLine(msg string) {
     fmt.Println(msg)
   }

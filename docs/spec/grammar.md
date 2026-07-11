@@ -22,13 +22,13 @@ block_comment := '(*' … '*)'   (* nestable *)
 
 ```
 and as assert begin class constraint do done else end effect exception
-false for fun function go golang goop if in include inherit initializer
+false for fun function go goop if in include inherit initializer
 lazy let match method mod module move mutable new object of open
 perform private raise rec sig struct then to true try type val virtual
 when while with
 ```
 
-Removed as keywords (parse migration errors): `guard`, `panic`, `region`, `async` (as CE builder), `newtype`.
+Removed as keywords (parse migration errors): `guard`, `panic`, `region`, `async` (as CE builder), `newtype`, `golang`.
 
 ## Program structure
 
@@ -36,14 +36,14 @@ Removed as keywords (parse migration errors): `guard`, `panic`, `region`, `async
 program      := module_decl import_decl* top_decl*
 module_decl  := 'module' constr ('.' constr)*
 import_decl  := 'import' import_spec | 'import' '(' import_spec* ')'
-import_spec  := ident? ('golang' | 'goop') string import_vals?
+import_spec  := ident? ('go' | 'goop') string import_vals?
 import_vals  := '{' 'val' ident ':' type* '}'
 
 top_decl     := val_decl | type_decl | exception_decl | effect_decl
               | nested_module | module_type_decl | class_decl
-              | golang_embed_decl
+              | lang_embed_decl
 
-golang_embed_decl := '@golang' '{' raw_go_code '}'
+lang_embed_decl := '@[' ('go' | 'c') ']' '{' raw_body '}' ('val' ident ':' type)*
 exception_decl    := 'exception' constr ('of' type)?
 effect_decl       := 'effect' constr ':' type '->' type
 ```

@@ -15,7 +15,7 @@ import (
 // Module represents a complete Goop source file.
 type Module struct {
 	Name       string       // module path, e.g. "Trading.OrderBook"
-	Imports    []ImportSpec // import directives (golang and c0)
+	Imports    []ImportSpec // import directives (go and goop)
 	Decls      []TopDecl    // top-level declarations
 	Attributes []Attribute  // ignored OCaml attributes/extensions stripped at parse time
 }
@@ -24,8 +24,8 @@ type Module struct {
 type ImportKind int
 
 const (
-	ImportGolang ImportKind = iota // import golang "path"
-	ImportGoop                     // import goop "path"
+	ImportGo   ImportKind = iota // import go "path"
+	ImportGoop                   // import goop "path"
 )
 
 // ImportSpec is one arm of an import declaration.
@@ -34,7 +34,7 @@ type ImportSpec struct {
 	Kind  ImportKind
 	Path  string // import path string literal (logical or canonical)
 	Alias string
-	Vals  []ExternVal // golang imports only: optional FFI signatures
+	Vals  []ExternVal // go imports only: optional FFI signatures
 }
 
 // OpenStmt is a legacy `open Path` statement (parser no longer produces these).
@@ -83,13 +83,14 @@ type ExternDecl struct {
 
 func (*ExternDecl) topDeclNode() {}
 
-// GolangEmbedDecl is a top-level `@golang { ... }` block with optional `val` signatures.
-type GolangEmbedDecl struct {
-	GoCode string
-	Vals   []ExternVal
+// LangEmbedDecl is a top-level `@[go]` / `@[c]` block with optional `val` signatures.
+type LangEmbedDecl struct {
+	Lang string // "go" or "c"
+	Body string // raw embedded source
+	Vals []ExternVal
 }
 
-func (*GolangEmbedDecl) topDeclNode() {}
+func (*LangEmbedDecl) topDeclNode() {}
 
 // ExternVal is a single `val` inside an extern block.
 type ExternVal struct {

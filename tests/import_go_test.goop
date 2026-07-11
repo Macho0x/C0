@@ -1,9 +1,9 @@
 module main
 
-import golang "strings" {
+import go "strings" {
   val ToUpper : string -> string
 }
 
 let main () =
   let chk = assert (ToUpper "hi" = "HI") in
-  print_line "import golang OK"
+  print_line "import go OK"

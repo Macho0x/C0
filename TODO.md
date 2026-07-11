@@ -32,8 +32,8 @@ This file tracks the remaining work to make Goop a usable language. It is kept i
 - [x] Active patterns
 - [x] Row polymorphism
 - [x] Concurrency primitives (`go`, `chan`, `select`)
-- [x] Go interop (`import golang`, `@golang { }` embed blocks)
-- [x] Unified imports (`import golang` / `import goop`, dot and aliased forms)
+- [x] Go interop (`import go`, `@[go] { }` embed blocks)
+- [x] Unified imports (`import go` / `import goop`, dot and aliased forms)
 - [x] `private` module visibility; branding via single-ctor ADT (no `newtype`)
 - [x] Nested modules / `sig` / functors / `.mli` (minimal)
 - [x] Golang import 2-tuple returns
@@ -68,7 +68,7 @@ This file tracks the remaining work to make Goop a usable language. It is kept i
 
 ## Documentation
 
-- [x] README (safety-first layout; interop and `@golang` sections)
+- [x] README (safety-first layout; interop and `@[go]` sections)
 - [x] Design documents
 - [x] Specification drafts
 - [x] Examples (`docs/examples/`; CI `goop check` on all files)

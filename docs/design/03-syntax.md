@@ -15,7 +15,7 @@ Goop is case-sensitive. Blocks use explicit delimiters (`let … in`, `begin/end
 
 - Identifiers: letter or `_`, then letters, digits, `_`, or `'`.
 - Type variables: `'a`, `'key`.
-- Keywords include: `let`, `type`, `match`, `with`, `if`, `then`, `else`, `fun`, `function`, `module`, `import`, `golang`, `goop`, `mutable` (record fields only), `rec`, `and`, `in`, `as` (patterns), `when`, `true`, `false`, `unit`, `private`, `go`, `move`, `chan`, `ref`, `while`, `for`, `do`, `done`, `begin`, `end`, `try`, `raise`, `exception`, `failwith`, `effect`, `perform`, `mod`, `open`, `include`, `struct`, `sig`, `functor`, `class`, `object`, `new`, `lazy`.
+- Keywords include: `let`, `type`, `match`, `with`, `if`, `then`, `else`, `fun`, `function`, `module`, `import`, `go`, `goop`, `mutable` (record fields only), `rec`, `and`, `in`, `as` (patterns), `when`, `true`, `false`, `unit`, `private`, `go`, `move`, `chan`, `ref`, `while`, `for`, `do`, `done`, `begin`, `end`, `try`, `raise`, `exception`, `failwith`, `effect`, `perform`, `mod`, `open`, `include`, `struct`, `sig`, `functor`, `class`, `object`, `new`, `lazy`.
 
 Removed (PARSE-MIG010–018): `let mutable`, `?`, computation expressions, `is`/`guard`/expr `as`, `newtype`, `with { io }` rows, `panic`, `%`.
 
@@ -25,14 +25,14 @@ Removed (PARSE-MIG010–018): `let mutable`, `?`, computation expressions, `is`/
 module MyModule
 
 import (
-  golang "fmt"
+  go "fmt"
   goop . "std.io"
 )
 
 let x = 1
 ```
 
-Keep Go-style `import golang` / `import goop`. Nested `module M = struct … end`, `sig`, functors, and inline `module M : S = …` sealing are supported. There is no `.mli` — see [05-modules-and-packages.md](05-modules-and-packages.md) and [14-ocaml-parity.md](14-ocaml-parity.md).
+Keep Go-style `import go` / `import goop`. Nested `module M = struct … end`, `sig`, functors, and inline `module M : S = …` sealing are supported. There is no `.mli` — see [05-modules-and-packages.md](05-modules-and-packages.md) and [14-ocaml-parity.md](14-ocaml-parity.md).
 
 ## Value declarations
 
@@ -137,12 +137,12 @@ SMT (optional Z3) proves VCs when possible; otherwise runtime guards. See [02-ty
 
 ```goop
 import (
-  golang "github.com/example/lib" {
+  go "github.com/example/lib" {
     val loadConfig : string -> (config, error) result
   }
 )
 
-@golang {
+@[go] {
   func helper() int { return 42 }
 }
 val helper : unit -> int

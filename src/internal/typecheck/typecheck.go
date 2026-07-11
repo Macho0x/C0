@@ -434,12 +434,12 @@ func (c *Checker) checkModule(mod *ast.Module) {
 
 	// bindImportSpecs runs before checkModule when imports are present
 
-	// Second pass: check value declarations (let, @golang vals, exceptions).
+	// Second pass: check value declarations (let, @[go]/@[c] vals, exceptions).
 	for _, d := range mod.Decls {
 		switch d := d.(type) {
 		case *ast.LetDecl:
 			c.checkLetDecl(d)
-		case *ast.GolangEmbedDecl:
+		case *ast.LangEmbedDecl:
 			c.bindExternVals("", d.Vals)
 		case *ast.TypeDecl:
 			// Already handled in first pass
@@ -2222,7 +2222,7 @@ func (c *Checker) bindImportSpecs(imports []ast.ImportSpec, deps map[string]*ast
 		seenPaths[spec.Path] = true
 
 		switch spec.Kind {
-		case ast.ImportGolang:
+		case ast.ImportGo:
 			if len(spec.Vals) > 0 {
 				c.bindExternVals(spec.Path, spec.Vals)
 			}

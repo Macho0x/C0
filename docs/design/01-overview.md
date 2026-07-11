@@ -10,7 +10,7 @@ Goop is a compiled, statically typed programming language with OCaml-aligned syn
 2. **OCaml-aligned surface.** Prefer OCaml spelling for every construct; remove duplicate non-OCaml sugar (see [STYLE.md](STYLE.md)).
 3. **Compiles to Go.** Pure / non-effectful code emits idiomatic Go. Effect-handler code may emit CPS / free-monad Go (intentional exception).
 4. **Eat our own dog food.** The Goop compiler itself is written in Go.
-5. **Interop is the point.** Go-style `import golang` / `import goop` and `@golang` embeds are first-class.
+5. **Interop is the point.** Go-style `import go` / `import goop` and `@[go]` embeds are first-class.
 6. **Incremental adoption.** Teams can introduce Goop file-by-file.
 
 ## Relationship to other languages
@@ -43,7 +43,7 @@ This means:
 - A full Rust-style borrow checker with lifetimes (linear `: 1` remains).
 - Direct machine-code output.
 - Replacing Go entirely.
-- Bit-identical OCaml stdlib (`Printf`, `Unix`, …) — use `import golang`.
+- Bit-identical OCaml stdlib (`Printf`, `Unix`, …) — use `import go`.
 
 ## Target audience
 

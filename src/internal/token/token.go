@@ -37,7 +37,6 @@ const (
 	OPEN
 	EXTERN
 	IMPORT
-	GOLANG
 	GOOP
 	AS
 	WHEN
@@ -165,7 +164,7 @@ var tokenNames = [...]string{
 	LET: "let", REC: "rec", MUTABLE: "mutable", TYPE: "type", MATCH: "match", WITH: "with",
 	IF: "if", THEN: "then", ELSE: "else", FUN: "fun", FUNCTION: "function",
 	MODULE: "module", OPEN: "open", EXTERN: "extern", IMPORT: "import",
-	GOLANG: "golang", GOOP: "goop", AS: "as", WHEN: "when", OF: "of", IN: "in", AND: "and",
+	GOOP: "goop", AS: "as", WHEN: "when", OF: "of", IN: "in", AND: "and",
 	TRUE: "true", FALSE: "false", UNIT: "()", VAL: "val",
 	REQUIRES: "requires", RETURNS: "returns", WHERE: "where", PRIVATE: "private",
 	WHILE: "while", EXCEPTION: "exception", RAISE: "raise", TRY: "try", FINALLY: "finally",
@@ -199,7 +198,7 @@ func (t TokenType) String() string {
 func (t TokenType) IsKeyword() bool {
 	switch t {
 	case LET, REC, MUTABLE, TYPE, MATCH, WITH, IF, THEN, ELSE, FUN, FUNCTION,
-		MODULE, OPEN, EXTERN, IMPORT, GOLANG, GOOP, AS, WHEN, OF, IN, AND,
+		MODULE, OPEN, EXTERN, IMPORT, GOOP, AS, WHEN, OF, IN, AND,
 		TRUE, FALSE, UNIT, VAL, REQUIRES, RETURNS, WHERE, PRIVATE,
 		WHILE, EXCEPTION, RAISE, TRY, FINALLY, EFFECT, PERFORM,
 		CLASS, OBJECT, METHOD, INHERIT, INITIALIZER, VIRTUAL, CONSTRAINT,
@@ -286,8 +285,6 @@ func LookupKeyword(s string) TokenType {
 		return EXTERN
 	case "import":
 		return IMPORT
-	case "golang":
-		return GOLANG
 	case "goop":
 		return GOOP
 	case "as":

@@ -45,8 +45,8 @@ func desugarDecl(d ast.TopDecl) {
 		// Type declarations contain types, not expressions
 	case *ast.ExternDecl:
 		// Extern declarations contain types, not expressions
-	case *ast.GolangEmbedDecl:
-		// @golang embed blocks contain raw Go, not Goop expressions
+	case *ast.LangEmbedDecl:
+		// @[go]/@[c] embed blocks contain raw foreign code, not Goop expressions
 	case *ast.NestedModuleDecl:
 		for _, nd := range d.Decls {
 			desugarDecl(nd)

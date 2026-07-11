@@ -31,7 +31,7 @@ See also: [14-ocaml-parity.md](14-ocaml-parity.md), [03-syntax.md](03-syntax.md)
 | Construct | Preferred form | Avoid |
 |-----------|----------------|-------|
 | File header | `module PascalCase` | Wrong package casing |
-| Imports (Go) | `import golang "path"` | — |
+| Imports (Go) | `import go "path"` | — |
 | Imports (Goop) | `import goop "path"` | Dot-import except std helpers |
 | Local binding | `let x = e in body` | — |
 | Imperative sequence | `begin s1; s2; result end` | Nested `let () =` |

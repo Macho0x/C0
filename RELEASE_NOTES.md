@@ -1,16 +1,16 @@
-# Goop 1.1.1
+# Goop 1.2.0
 
-Tests and examples overhaul: prune stale demos, strengthen e2e coverage, fix `select` channel lowering.
+Lang embeds: hard-break rename to `import go` / `@[go]`, plus cgo-shaped `@[c]`.
 
 ## Highlights
 
-- **Examples:** Removed overlapping demos (`chan_async`, `channel_race`, `linear`, `match_patterns`, `simple_hl_bot`, `trading_position`); fixed `concurrency.goop` (go + send + recv); added `modules.goop` and `exceptions.goop`
-- **Tests:** Dropped non-CI Binance demo and duplicate refinement test; renamed misleading `async`/`guards`/`newtype` test files; real asserts for FCM, synthetic TA, list/array helpers
-- **Coverage:** `select_test`, `chan_close_test`, `effect_multi_test`, `exception_payload_test`; Go unit tests for `perform`-in-`go` and LINEAR008 race fixtures
-- **Compiler:** `select` lowers through `C0Chan.ch` with element type assertions; `checkPerformInGo` walks `ParenExpr`
+- **Breaking:** `import golang`, `@golang`, and the `golang` keyword are removed — use `import go` and `@[go]`
+- **`@[c]`:** inline C via cgo (preamble + `import "C"` + primitive `val` wrappers)
+- **Docs:** [15-lang-embeds.md](docs/design/15-lang-embeds.md), tutorial interop chapter, [`cgo_demo.goop`](docs/examples/cgo_demo.goop)
+- **Tests:** `c_embed_*` e2e; renamed `import_go` / `go_embed`; TextMate scopes for `@[go]` / `@[c]`
 
 ## Verification
 
 - `go test ./...` (from `src/`)
-- `goop test tests/` — 68 passed
+- `goop test tests/` — 72 passed
 - `goop check` on all `docs/examples/*.goop`

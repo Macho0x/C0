@@ -29,7 +29,7 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] Records and tuples.
 - [x] Lists.
 - [x] Standard library prelude.
-- [x] Go interop (`import golang`, `@golang` embed blocks).
+- [x] Go interop (`import go`, `@[go]` embed blocks).
 - [x] Active patterns.
 - [x] Feature flags via `goop.toml`.
 - [x] Test runner.
@@ -51,7 +51,7 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] `go (move ...)` syntax and linear `go` handoff.
 - [x] `goop.toml` check severities (`concurrent`, `refinement_unproven`, `smt`).
 - [x] Nil channel detection (flow-sensitive initialization checking).
-- [x] Unified import syntax (`import golang` / `import goop`).
+- [x] Unified import syntax (`import go` / `import goop`).
 - [x] Package manager (`goop get`, `goop.lock`).
 - [x] **OCaml alignment (1.0):** `ref`/`while`/`function`/exceptions/`failwith`/`mod`; remove F# CE, `?`, Kit macros, `newtype`, effect rows, `panic`, `%`.
 - [x] **Effect handlers (1.0):** OCaml 5-style `effect` / `perform` / handlers, CPS-lowered.
@@ -69,7 +69,7 @@ This file presents the same task list as `TODO.md`, organized by development pha
 
 ## Documentation
 
-- [x] README (safety-first layout; Go interop and inline `@golang` sections)
+- [x] README (safety-first layout; Go interop and inline `@[go]` sections)
 - [x] Design documents ([STYLE.md](STYLE.md), [14-ocaml-parity.md](14-ocaml-parity.md), …)
 - [x] Specification drafts
 - [x] Examples (`docs/examples/`; CI checks all files)

@@ -5,7 +5,7 @@
   "fileTypes": ["goop"],
   "patterns": [
     { "include": "#comments" },
-    { "include": "#embedded-golang" },
+    { "include": "#embedded-lang" },
     { "include": "#strings" },
     { "include": "#bindings" },
     { "include": "#type-declarations" },
@@ -31,14 +31,21 @@
       ]
     },
 
-    "embedded-golang": {
+    "embedded-lang": {
       "patterns": [
         {
-          "name": "meta.embedded.block.golang",
-          "begin": "@golang\\s*\\{",
+          "name": "meta.embedded.block.go",
+          "begin": "@\\[go\\]\\s*\\{",
           "end": "\\}",
           "contentName": "source.go",
           "patterns": [{ "include": "source.go" }]
+        },
+        {
+          "name": "meta.embedded.block.c",
+          "begin": "@\\[c\\]\\s*\\{",
+          "end": "\\}",
+          "contentName": "source.c",
+          "patterns": [{ "include": "source.c" }]
         }
       ]
     },
@@ -159,7 +166,7 @@
       "patterns": [
         {
           "name": "keyword.other.goop",
-          "match": "\\b(and|as|assert|begin|chan|class|constraint|do|done|else|end|effect|exception|failwith|for|fun|function|golang|go|goop|if|import|in|include|inherit|initializer|lazy|match|method|mod|land|lor|lxor|move|mutable|new|object|of|open|perform|private|raise|rec|ref|sig|struct|then|to|try|finally|type|val|virtual|when|where|while|with)\\b(?!')"
+          "match": "\\b(and|as|assert|begin|chan|class|constraint|do|done|else|end|effect|exception|failwith|for|fun|function|go|goop|if|import|in|include|inherit|initializer|lazy|match|method|mod|land|lor|lxor|move|mutable|new|object|of|open|perform|private|raise|rec|ref|sig|struct|then|to|try|finally|type|val|virtual|when|where|while|with)\\b(?!')"
         },
         {
           "name": "keyword.goop",

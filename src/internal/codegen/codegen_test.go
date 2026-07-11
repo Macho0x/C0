@@ -92,7 +92,7 @@ func TestCompileResult(t *testing.T) {
 
 func TestExternTupleCallCodegen(t *testing.T) {
 	src := `module main
-import golang "strconv" { val Atoi : string -> (int, string) }
+import go "strconv" { val Atoi : string -> (int, string) }
 let main () = let pair = Atoi "42" in pair
 `
 	mod, err := parser.Parse("t.goop", []byte(src))
@@ -107,6 +107,61 @@ let main () = let pair = Atoi "42" in pair
 	}
 	if !strings.Contains(goSrc, "__t.F0, __t.F1 = strconv.Atoi") {
 		t.Fatalf("expected multi-value extern assignment, got:\n%s", goSrc)
+	}
+}
+
+func TestCEmbedCodegen(t *testing.T) {
+	src := `module main
+@[c] {
+  int add(int a, int b) { return a + b; }
+}
+val add : int -> int -> int
+let main () = ()
+`
+	mod, err := parser.Parse("c.goop", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod = desugar.DesugarModule(mod)
+	gen := codegen.NewGenerator("c.goop", config.DefaultConfig())
+	goSrc, err := gen.Generate(mod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(goSrc, "import \"C\"") {
+		t.Fatalf("missing import \"C\":\n%s", goSrc)
+	}
+	if !strings.Contains(goSrc, "int add(int a, int b)") {
+		t.Fatalf("missing C preamble body:\n%s", goSrc)
+	}
+	if !strings.Contains(goSrc, "C.add(") {
+		t.Fatalf("missing C.add wrapper call:\n%s", goSrc)
+	}
+	if !strings.Contains(goSrc, "func add(") {
+		t.Fatalf("missing Go wrapper:\n%s", goSrc)
+	}
+}
+
+func TestCEmbedUnsupportedType(t *testing.T) {
+	src := `module main
+@[c] {
+  void *ptr(void) { return 0; }
+}
+val ptr : unit -> string list
+let main () = ()
+`
+	mod, err := parser.Parse("c.goop", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod = desugar.DesugarModule(mod)
+	gen := codegen.NewGenerator("c.goop", config.DefaultConfig())
+	_, err = gen.Generate(mod)
+	if err == nil {
+		t.Fatal("expected error for unsupported @[c] type")
+	}
+	if !strings.Contains(err.Error(), "unsupported") {
+		t.Errorf("expected unsupported type error, got: %v", err)
 	}
 }
 

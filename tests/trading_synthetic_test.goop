@@ -1,6 +1,6 @@
 module Main
 
-import golang "math" {
+import go "math" {
   val Sqrt : float -> float
   val Log : float -> float
   val Mod : float -> float -> float

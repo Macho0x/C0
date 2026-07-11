@@ -203,8 +203,8 @@ grammar. The parser attempts error recovery to report multiple errors.
 
 ### PARSE-MIG002: `extern "go"` removed (v0.3)
 
-- **Message**: `'extern' is removed; use import golang "path" { val ... }`
-- **Fix**: Replace `extern "go" "fmt" { val X : … }` with `import golang "fmt" { val X : … }`.
+- **Message**: `'extern' is removed; use import go "path" { val ... }`
+- **Fix**: Replace `extern "go" "fmt" { val X : … }` with `import go "fmt" { val X : … }`.
 
 ### PARSE-MIG010: `let mutable` removed (1.0)
 

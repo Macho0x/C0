@@ -644,7 +644,7 @@ let result = identity (fun x -> x)
 // We use "strings.Contains" which has func(string, string) bool.
 func TestGoSigFallbackExtern(t *testing.T) {
 	src := `module Test
-import golang "strings" {
+import go "strings" {
   val Contains : string -> string -> bool
 }
 

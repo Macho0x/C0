@@ -56,7 +56,7 @@ Status legend: `✅` same · `🔄` different-by-design · `➕` Goop extension 
 | Functors | Supported | ⚠️ |
 | First-class modules | Pack/unpack | ⚠️ |
 | `.mli` | **Not used** — seal inline | ❌ |
-| `import golang` / `import goop` | Goop-only | ➕ |
+| `import go` / `import goop` | Goop-only | ➕ |
 | `go` / `chan` / `move` | Goop-only | ➕ |
 
 ## Intentionally different / out of scope
@@ -64,10 +64,10 @@ Status legend: `✅` same · `🔄` different-by-design · `➕` Goop extension 
 | Topic | Notes |
 |-------|-------|
 | Effectful codegen | Shallow CPS only; no deep handlers / stack capture |
-| Attributes | Parse+strip; `@golang { }` is the only active extension (no PPX) |
+| Attributes | Parse+strip; `@[go] { }` is the only active extension (no PPX) |
 | Imports | Go-style paths kept |
 | Concurrency | `go` / channels, not OCaml Domains |
-| Stdlib | Thin prelude + `import golang`; not full OCaml stdlib |
+| Stdlib | Thin prelude + `import go`; not full OCaml stdlib |
 | `.mli` | Prefer `module M : S = …` |
 
 ## Removed (non-OCaml duplicates)

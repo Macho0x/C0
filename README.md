@@ -92,12 +92,12 @@ Call any Go package and embed Go when needed — migrate file by file in the sam
 module main
 
 import (
-  golang "strings" {
+  go "strings" {
     val ToUpper : string -> string
   }
 )
 
-@golang {
+@[go] {
   func greet(name string) string {
     return "Hello, " + name + "!"
   }
@@ -108,11 +108,12 @@ let main () : unit =
   print_line (greet (ToUpper "goop"))
 ```
 
-- **`import golang "path"`** — Go packages (optional `{ val … }` signatures)
+- **`import go "path"`** — Go packages (optional `{ val … }` signatures)
 - **`import goop "path"`** — other Goop modules
-- **`@golang { … }`** — embed multi-statement Go in the same file
+- **`@[go] { … }`** — embed multi-statement Go in the same file
+- **`@[c] { … }`** — embed C via cgo (primitive `val` auto-wrappers)
 
-See [`extern_demo.goop`](docs/examples/extern_demo.goop).
+See [`extern_demo.goop`](docs/examples/extern_demo.goop) · [`cgo_demo.goop`](docs/examples/cgo_demo.goop).
 
 ## Language features
 
@@ -122,7 +123,7 @@ Highlights: ADTs + exhaustive `match`, `ref`/`!`/`:=`, `go`/`chan`/`select`/`go 
 
 ## FAQ
 
-**Is 1.1.1 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
+**Is 1.2.0 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
 
 **How is this different from Borgo or Dingo?** Goop is a full compiler with OCaml-aligned syntax and compile-time safety for gradual migration to Go. Dingo-style `?` and F# computation expressions were removed in 1.0.
 
@@ -130,7 +131,9 @@ Highlights: ADTs + exhaustive `match`, `ref`/`!`/`:=`, `go`/`chan`/`select`/`go 
 
 ## Status
 
-**v1.1.1** — Tests/examples overhaul, `select` channel lowering fix, stronger e2e. See [CHANGELOG](CHANGELOG.md).
+**v1.2.0** — Lang embeds: `import go` / `@[go]` / `@[c]` (cgo); hard-break remove `golang`/`@golang`. See [CHANGELOG](CHANGELOG.md) · [15-lang-embeds](docs/design/15-lang-embeds.md).
+
+**v1.1.1** — Tests/examples overhaul, `select` channel lowering fix, stronger e2e.
 
 **v1.1.0** — OCaml parity mega-ship (modules, types, objects, shallow effects). See [parity](docs/design/14-ocaml-parity.md).
 

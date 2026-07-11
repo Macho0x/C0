@@ -1,0 +1,24 @@
+module main
+
+(* Full cgo-shaped @[c] embed with Goop val bindings. *)
+@[c] {
+  #include <string.h>
+
+  int c_add(int a, int b) {
+    return a + b;
+  }
+
+  int c_strlen(const char *s) {
+    return (int)strlen(s);
+  }
+}
+val c_add : int -> int -> int
+val c_strlen : string -> int
+
+let main () =
+  let sum = c_add 40 2 in
+  let n = c_strlen "Goop" in
+  begin
+    print_line ("c_add 40 2 = " ^ string_of_int sum);
+    print_line ("c_strlen Goop = " ^ string_of_int n)
+  end

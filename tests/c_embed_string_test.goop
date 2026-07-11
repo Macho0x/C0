@@ -1,0 +1,13 @@
+module main
+
+@[c] {
+  #include <string.h>
+  int goop_strlen(const char *s) {
+    return (int)strlen(s);
+  }
+}
+val goop_strlen : string -> int
+
+let main () =
+  let chk = assert (goop_strlen "hello" = 5) in
+  print_line "c_embed_string ok"

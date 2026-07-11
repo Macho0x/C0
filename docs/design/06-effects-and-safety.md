@@ -127,6 +127,6 @@ let launch () : unit =
 ## What is intentionally absent
 
 - **Null** — use `option`.
-- **Unsafe casts** — use explicit conversions or `@golang`.
+- **Unsafe casts** — use explicit conversions or `@[go]`.
 - **Full ownership/lifetimes** — linear `: 1` only.
 - **F# computation expressions / Kit macros / Dingo `?`** — removed in 1.0.

@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.0
+
+### Breaking — lang embeds and Go imports
+
+- `import golang` / `alias golang` / `@golang { }` / keyword `golang` removed
+- Use `import go "path"`, `@[go] { … }`, and (new) `@[c] { … }`
+- Migration errors point at the new spellings
+
+### Added
+
+- Generalized `LangEmbedDecl` (`@[go]` / `@[c]`); unknown langs hard-error
+- Full cgo-shaped `@[c]`: preamble + `import "C"` + primitive `val` auto-wrappers (`int`, `int32`/`int64`, `float`/`float64`, `bool`, `string`, `unit`)
+- Design note [15-lang-embeds.md](docs/design/15-lang-embeds.md); example [`cgo_demo.goop`](docs/examples/cgo_demo.goop)
+- E2E: `c_embed_*`, renamed `import_go` / `go_embed` tests
+
+### Docs / tooling
+
+- Tutorial, grammar, TextMate (`@[go]`/`@[c]` scopes), README, stdlib notes updated
+
 ## 1.1.1
 
 ### Tests and examples overhaul
@@ -19,7 +38,7 @@
 - Modules: inline `module M : S =` sealing (no `.mli`), `module type of`, `module rec`, `with type`/`with module`/`:=`, functors, first-class pack/unpack, real `include` re-exports
 - Types: extensible variants, GADT result types, open/closed polymorphic variants, labelled/optional args
 - Objects: `inherit` / `virtual` / `initializer` / `constraint` / `class type`, `#method`, object method codegen
-- Effects: shallow CPS with real resume + `continue` / `discontinue`; attributes `[@@]`/`[@]`/`[%]` parse-and-strip (`@golang` remains the only active extension)
+- Effects: shallow CPS with real resume + `continue` / `discontinue`; attributes `[@@]`/`[@]`/`[%]` parse-and-strip (`@[go]` remains the only active extension)
 
 ## 1.0.1
 
@@ -42,7 +61,7 @@ Removed non-OCaml duplicate syntax (PARSE-MIG010–018):
 - `panic` / `panic_message` → `failwith`
 - `%` → `mod` (`land` / `lor` / `lxor` added)
 
-Kept: Go-style `import golang` / `import goop`, `go` / `go (move …)`, `@golang { }`, linear/`owned_chan`, `where` refinements.
+Kept: Go-style `import go` / `import goop`, `go` / `go (move …)`, `@[go] { }`, linear/`owned_chan`, `where` refinements.
 
 ### Added
 
@@ -64,7 +83,7 @@ Kept: Go-style `import golang` / `import goop`, `go` / `go (move …)`, `@golang
 ### Documentation
 - Sync all docs with compiler: version/chapter counts, `goop.toml` `deadlock` key, array/stdlib coverage
 - Add NIL001, LINEAR008, DEADLOCK001 to error reference; fix trading-bot safety matrix (LINEAR001 typo)
-- Replace stale `extern "go"` examples with `import golang` / `@golang` across syntax, lowering, and grammar docs
+- Replace stale `extern "go"` examples with `import go` / `@[go]` across syntax, lowering, and grammar docs
 - Add arrays/for/begin/qualified constructors to `03-syntax.md`; array lowering to `spec/lowering.md`
 - Update `prelude.md` and `builtins.md` with `Array.*`; rewrite Zed editor README for Goop
 

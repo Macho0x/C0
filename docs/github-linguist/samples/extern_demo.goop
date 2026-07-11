@@ -1,15 +1,15 @@
 module main
 
 import (
-  golang "strings" {
+  go "strings" {
     val ToUpper : string -> string
     val ToLower : string -> string
   }
-  golang "fmt"
-  golang "time"
+  go "fmt"
+  go "time"
 )
 
-@golang {
+@[go] {
   func greet(name string) string {
     return "Hello, " + name + "!"
   }
@@ -20,7 +20,7 @@ import (
 val greet : string -> string
 val addPrefix : string -> string -> string
 
-@golang {
+@[go] {
   func nowString() string {
     return time.Now().Format("15:04:05")
   }

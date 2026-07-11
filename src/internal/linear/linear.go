@@ -255,7 +255,7 @@ func (c *checker) checkModule(mod *ast.Module) {
 				c.goroutineCaptured = make(map[string]bool)
 				c.checkBinding(d.Bindings[i])
 			}
-		case *ast.TypeDecl, *ast.ExternDecl, *ast.GolangEmbedDecl:
+		case *ast.TypeDecl, *ast.ExternDecl, *ast.LangEmbedDecl:
 			// no expressions
 		}
 	}

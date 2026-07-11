@@ -1,0 +1,13 @@
+module main
+
+@[c] {
+  int is_positive(int x) {
+    return x > 0 ? 1 : 0;
+  }
+}
+val is_positive : int -> bool
+
+let main () =
+  let chk1 = assert (is_positive 3 = true) in
+  let chk2 = assert (is_positive (-1) = false) in
+  print_line "c_embed_bool ok"

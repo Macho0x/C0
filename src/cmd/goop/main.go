@@ -393,12 +393,12 @@ func main() {
 		}
 		for _, spec := range mod.Imports {
 			switch spec.Kind {
-			case ast.ImportGolang:
+			case ast.ImportGo:
 				alias := spec.Alias
 				if alias == "" {
 					alias = "(default)"
 				}
-				fmt.Printf("import golang %-12s %q", alias, spec.Path)
+				fmt.Printf("import go %-12s %q", alias, spec.Path)
 				if len(spec.Vals) > 0 {
 					fmt.Printf(" (%d val bindings)", len(spec.Vals))
 				}

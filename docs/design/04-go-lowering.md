@@ -76,7 +76,7 @@ A Goop module maps to a Go package (name lowercased; exports title-cased). Neste
 
 ```goop
 import (
-  golang "fmt"
+  go "fmt"
   goop "std.io"
 )
 ```
@@ -129,21 +129,23 @@ Erased to `interface{}` or the extern Go type. Discharge checking is compile-tim
 
 Prefer `try … finally` or explicit `Close` hand-off. Legacy `region { }` / `using` CEs are removed (PARSE-MIG013).
 
-## Inline Go (`@golang`)
+## Inline Go (`@[go]`) / C (`@[c]`)
 
 ```goop
 import (
-  golang "net/http"
-  golang "io"
+  go "net/http"
+  go "io"
 )
 
-@golang {
+@[go] {
   func httpGetString(url string) string { ... }
 }
 val httpGetString : string -> string
 ```
 
-Emitted verbatim into the generated package. Names must match `val` bindings. Unit args are elided.
+`@[go]` is emitted verbatim into the generated package. Names must match `val` bindings. Unit args are elided.
+
+`@[c]` concatenates into a cgo preamble + `import "C"` with auto-wrappers for primitive `val` types. See [15-lang-embeds.md](15-lang-embeds.md).
 
 ## Source maps
 

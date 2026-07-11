@@ -1,6 +1,6 @@
-# 4. Go interop
+# 4. Go / C interop
 
-Goop’s primary standard library is **Go itself**. Use `import golang` for packages and `@golang` for inline Go code.
+Goop’s primary standard library is **Go itself**. Use `import go` for packages and `@[go]` for inline Go. For C, use `@[c]` (cgo-shaped).
 
 ## Import Go packages
 
@@ -8,20 +8,20 @@ Goop’s primary standard library is **Go itself**. Use `import golang` for pack
 module main
 
 import (
-  golang "strings" {
+  go "strings" {
     val ToUpper : string -> string
   }
-  golang "fmt"
+  go "fmt"
 )
 ```
 
 - **Signature block** — declare types for functions you call from Goop.
-- **Import-only** — `golang "fmt"` with no block; pair with `@golang` or generated bindings.
+- **Import-only** — `go "fmt"` with no block; pair with `@[go]` or generated bindings.
 
-## Inline Go with `@golang`
+## Inline Go with `@[go]`
 
 ```goop
-@golang {
+@[go] {
   func greet(name string) string {
     return "Hello, " + name + "!"
   }
@@ -32,7 +32,19 @@ let main () : unit =
   print_line (greet "Goop")
 ```
 
-The `@golang { ... }` block is embedded Go. The `val` line declares the Goop-visible signature.
+The `@[go] { ... }` block is embedded Go. The `val` line declares the Goop-visible signature.
+
+## Inline C with `@[c]`
+
+```goop
+@[c] {
+  #include <string.h>
+  int add(int a, int b) { return a + b; }
+}
+val add : int -> int -> int
+```
+
+Bodies become a cgo preamble (`import "C"`). Primitive `val` types are auto-wrapped; richer FFI uses `@[go]` calling `C.*`. See [15-lang-embeds.md](../design/15-lang-embeds.md).
 
 ## Import Goop modules
 
@@ -47,7 +59,7 @@ See [modules guide](../design/05-modules-and-packages.md).
 
 `.goop` and `.go` files coexist in one module. Migrate function by function; `go build` compiles the generated Go alongside hand-written Go.
 
-Full example: [`extern_demo.goop`](../examples/extern_demo.goop).
+Full examples: [`extern_demo.goop`](../examples/extern_demo.goop), [`cgo_demo.goop`](../examples/cgo_demo.goop).
 
 ## Next
 

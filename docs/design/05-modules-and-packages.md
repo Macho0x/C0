@@ -46,10 +46,10 @@ Goop keeps Go-style import syntax (intentional extension). Legacy top-level-only
 module Main
 
 import (
-  golang "fmt"
-  golang "strconv" { val Atoi : string -> (int, string) }
+  go "fmt"
+  go "strconv" { val Atoi : string -> (int, string) }
   goop "std.io"
-  httpx golang "net/http"
+  httpx go "net/http"
   orderbook goop "github.com/you/app/orderbook"
 )
 
@@ -58,22 +58,29 @@ import goop . "std.list"   (* dot import: unqualified exports *)
 
 | Form | Meaning | `{ val … }` |
 |------|---------|-------------|
-| `import golang "path"` | Go package | Optional FFI signatures |
+| `import go "path"` | Go package | Optional FFI signatures |
 | `import goop "path"` | Goop module | Forbidden |
 | `import goop . "path"` | Dot import | Forbidden |
-| `alias golang "path"` | Go import with local alias | Optional |
+| `alias go "path"` | Go import with local alias | Optional |
 | `alias goop "path"` | Qualified Goop import | Forbidden |
 
 Logical paths like `"std.io"` resolve via `goop.toml` `[mappings]` or built-in defaults.
 
-## Inline Go
+## Inline Go / C
 
 ```goop
-@golang {
+@[go] {
   func helper() int { return 42 }
 }
 val helper : unit -> int
+
+@[c] {
+  int add(int a, int b) { return a + b; }
+}
+val add : int -> int -> int
 ```
+
+See [15-lang-embeds.md](15-lang-embeds.md).
 
 ## Visibility
 

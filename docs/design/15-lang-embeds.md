@@ -1,0 +1,54 @@
+# 15. Language embeds (`@[go]` / `@[c]`)
+
+## Surface
+
+Goop embeds foreign code with a single form:
+
+```goop
+@[lang] {
+  /* raw body — brace-balanced, opaque to the Goop parser */
+}
+val name : type   (* zero or more; Goop-visible bindings *)
+```
+
+| Lang | Meaning | Lowering |
+|------|---------|----------|
+| `go` | Inline Go | Body emitted verbatim into the generated package |
+| `c` | Inline C (cgo mirror) | Bodies concatenated into a cgo `/* */` preamble + `import "C"` + auto wrappers |
+
+Unknown langs (`@[rust]`, …) are hard errors. Future langs reuse this grammar.
+
+## Imports
+
+```goop
+import go "fmt"
+import go "strings" { val ToUpper : string -> string }
+import goop "std.io"
+```
+
+`go` after `import` is contextual (same keyword as `go expr` concurrency). There is no `import c`.
+
+## Hard break (1.2.0)
+
+Removed: `import golang`, `alias golang`, `@golang { }`, and the `golang` keyword.
+Migration: `golang` → `go`, `@golang` → `@[go]`.
+
+## `@[c]` marshalling (v1)
+
+| Goop | C / cgo |
+|------|---------|
+| `int` | `C.int` |
+| `int32` / `int64` | `C.int32_t` / `C.int64_t` |
+| `float` / `float64` | `C.double` |
+| `bool` | `C.int` (nonzero) |
+| `unit` (return) | no value |
+| `string` | `C.CString` in (freed after call) / `C.GoString` out |
+
+Other types: compile error — write `@[go]` wrappers that call `C.*` by hand.
+`#cgo` lines inside the `@[c]` body are passed through (cgo understands them).
+Modules with `@[c]` require `CGO_ENABLED=1` and a system C toolchain.
+
+## Examples
+
+- [`extern_demo.goop`](../examples/extern_demo.goop) — `import go` + `@[go]`
+- [`cgo_demo.goop`](../examples/cgo_demo.goop) — `@[c]` + `val`

@@ -1,0 +1,12 @@
+module main
+
+@[c] {
+  int add(int a, int b) {
+    return a + b;
+  }
+}
+val add : int -> int -> int
+
+let main () =
+  let chk = assert (add 2 3 = 5) in
+  print_line "c_embed ok"

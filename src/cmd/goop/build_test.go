@@ -11,7 +11,7 @@ func TestMixedBuild(t *testing.T) {
 
 	// Write a simple .goop file
 	c0src := `module M
-import golang "fmt" { val Println : string -> unit }
+import go "fmt" { val Println : string -> unit }
 let main () = Println "ok"
 `
 	if err := os.WriteFile(filepath.Join(dir, "main.goop"), []byte(c0src), 0644); err != nil {

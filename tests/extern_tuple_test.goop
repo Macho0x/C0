@@ -1,8 +1,8 @@
 module main
 
-import golang "strconv" {}
+import go "strconv" {}
 
-@golang {
+@[go] {
   func atoiPair(s string) (int, string) {
     n, err := strconv.Atoi(s)
     if err != nil {

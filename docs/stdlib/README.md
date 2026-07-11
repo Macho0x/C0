@@ -8,7 +8,7 @@ Goop has three API layers:
 | **Prelude** | No | Always in scope; defined in `src/internal/prelude/prelude.go` |
 | **`std.*` modules** | Yes — `import goop "std.io"` | `std/` directory |
 
-For production code, **Go’s standard library** is the main dependency — use `import golang "net/http" { ... }`. The shipped `std.*` modules are a small Goop-native supplement.
+For production code, **Go’s standard library** is the main dependency — use `import go "net/http" { ... }`. The shipped `std.*` modules are a small Goop-native supplement.
 
 ## Prelude
 

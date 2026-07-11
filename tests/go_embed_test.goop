@@ -1,10 +1,10 @@
 module main
 
-import golang "strings" {
+import go "strings" {
   val ToUpper : string -> string
 }
 
-@golang {
+@[go] {
   func greet(name string) string {
     return "Hello, " + name + "!"
   }

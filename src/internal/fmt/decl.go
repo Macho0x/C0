@@ -14,8 +14,8 @@ func formatDecl(p *Printer, d ast.TopDecl) {
 		formatTypeDecl(p, d)
 	case *ast.ExternDecl:
 		formatExternDecl(p, d)
-	case *ast.GolangEmbedDecl:
-		formatGolangEmbedDecl(p, d)
+	case *ast.LangEmbedDecl:
+		formatLangEmbedDecl(p, d)
 	case *ast.ExceptionDecl:
 		p.Write("exception " + d.Name)
 		if d.Arg != nil {
@@ -190,22 +190,22 @@ func formatExternDecl(p *Printer, d *ast.ExternDecl) {
 	p.Newline()
 }
 
-func formatGolangEmbedDecl(p *Printer, d *ast.GolangEmbedDecl) {
+func formatLangEmbedDecl(p *Printer, d *ast.LangEmbedDecl) {
 	p.WriteIndent()
-	p.Write("@golang {")
+	p.Write("@[" + d.Lang + "] {")
 	p.Newline()
-	p.Write(d.GoCode)
-	if len(d.GoCode) > 0 && d.GoCode[len(d.GoCode)-1] != '\n' {
-		p.Newline()
-	}
-	for _, v := range d.Vals {
-		p.WriteIndent()
-		p.Write("val " + v.Name + " : " + formatType(v.Type))
+	p.Write(d.Body)
+	if len(d.Body) > 0 && d.Body[len(d.Body)-1] != '\n' {
 		p.Newline()
 	}
 	p.WriteIndent()
 	p.Write("}")
 	p.Newline()
+	for _, v := range d.Vals {
+		p.WriteIndent()
+		p.Write("val " + v.Name + " : " + formatType(v.Type))
+		p.Newline()
+	}
 }
 
 func formatImportSpec(p *Printer, spec ast.ImportSpec) {
@@ -214,8 +214,8 @@ func formatImportSpec(p *Printer, spec ast.ImportSpec) {
 		p.Write(spec.Alias + " ")
 	}
 	switch spec.Kind {
-	case ast.ImportGolang:
-		p.Write("golang ")
+	case ast.ImportGo:
+		p.Write("go ")
 	case ast.ImportGoop:
 		p.Write("goop ")
 		if spec.Alias == "." {

@@ -2,7 +2,7 @@
 //
 // It handles:
 //   - Module declarations with qualified names (dots)
-//   - Import declarations (golang / goop) and @golang embeds
+//   - Import declarations (go / goop) and @[go]/@[c] embeds
 //   - Let / type / exception / effect declarations
 //   - OCaml-aligned expression language (match, try, while, ref, …)
 //   - Pattern matching (wildcard, identifier, literal, constructor, record, tuple, list, cons, alias)
@@ -350,7 +350,7 @@ func (p *Parser) parseQualifiedName() string {
 func (p *Parser) parseTopDecl() ast.TopDecl {
 	switch p.cur().Type {
 	case token.AT:
-		return p.parseGolangEmbedDecl()
+		return p.parseLangEmbedDecl()
 	case token.PRIVATE:
 		p.advance()
 		switch p.cur().Type {
@@ -372,7 +372,7 @@ func (p *Parser) parseTopDecl() ast.TopDecl {
 	case token.EFFECT:
 		return p.parseEffectDecl()
 	case token.EXTERN:
-		p.errorf("'extern' is removed; use `import golang \"path\"` or `import golang \"path\" { val ... }`")
+		p.errorf("'extern' is removed; use `import go \"path\"` or `import go \"path\" { val ... }`")
 		return p.parseExternDeclSkip()
 	case token.IMPORT:
 		p.errorf("'import' must appear before any declarations")
@@ -812,23 +812,45 @@ func (p *Parser) parseADTTypeKindNoPipe() *ast.ADTTypeKind {
 }
 
 // ---------------------------------------------------------------------------
-// @golang embedded Go
+// @[go] / @[c] language embeds
 // ---------------------------------------------------------------------------
 
-func (p *Parser) parseGolangEmbedDecl() *ast.GolangEmbedDecl {
+func (p *Parser) parseLangEmbedDecl() *ast.LangEmbedDecl {
 	p.expect(token.AT)
+	// Legacy @golang → migration error
+	if p.cur().Type == token.IDENT && p.cur().Lexeme == "golang" {
+		p.errorf("'@golang' is removed; use `@[go] { ... }`")
+		p.advance()
+		if p.cur().Type == token.LBRACE {
+			_ = p.parseGoBlock()
+		}
+		return nil
+	}
+	if p.cur().Type != token.LBRACKET {
+		p.errorf("expected @[go] or @[c] after @, got @%s", p.cur().Lexeme)
+		return nil
+	}
+	p.advance() // [
 	nameTok := p.cur()
-	if nameTok.Type != token.IDENT && nameTok.Type != token.CONSTRUCTOR && nameTok.Type != token.GOLANG {
-		p.errorf("expected attribute name after @, got %s", nameTok.Type)
+	lang := ""
+	switch nameTok.Type {
+	case token.IDENT, token.CONSTRUCTOR, token.GO:
+		lang = nameTok.Lexeme
+		if nameTok.Type == token.GO {
+			lang = "go"
+		}
+		p.advance()
+	default:
+		p.errorf("expected lang name inside @[...], got %s", nameTok.Type)
 		return nil
 	}
-	if nameTok.Lexeme != "golang" && nameTok.Type != token.GOLANG {
-		p.errorf("unknown attribute @%s (expected @golang)", nameTok.Lexeme)
-		return nil
+	if lang != "go" && lang != "c" {
+		p.errorf("unknown lang embed @[%s] (expected @[go] or @[c])", lang)
+		// still try to consume ] { ... } for recovery
 	}
-	p.advance()
-	decl := &ast.GolangEmbedDecl{}
-	decl.GoCode = p.parseGoBlock()
+	p.expect(token.RBRACKET)
+	decl := &ast.LangEmbedDecl{Lang: lang}
+	decl.Body = p.parseGoBlock()
 	for p.cur().Type == token.VAL {
 		p.advance()
 		ev := ast.ExternVal{}
@@ -868,20 +890,43 @@ func (p *Parser) parseImportDecl() []ast.ImportSpec {
 func (p *Parser) parseImportSpec() ast.ImportSpec {
 	spec := ast.ImportSpec{}
 
-	// Optional local alias before kind keyword
-	if p.cur().Type == token.IDENT {
-		spec.Alias = p.cur().Lexeme
+	// Hard-break: bare `golang` is no longer a keyword
+	if p.cur().Type == token.IDENT && p.cur().Lexeme == "golang" {
+		p.errorf("'golang' is removed; use `import go \"path\"` or `import go \"path\" { val ... }`")
 		p.advance()
+		if p.cur().Type == token.STRING {
+			p.advance()
+		}
+		if p.cur().Type == token.LBRACE {
+			p.advance()
+			for p.cur().Type != token.RBRACE && p.cur().Type != token.EOF {
+				p.advance()
+			}
+			p.expect(token.RBRACE)
+		}
+		return spec
+	}
+
+	// Optional local alias before kind keyword (must be followed by go/goop)
+	if p.cur().Type == token.IDENT {
+		next := token.EOF
+		if p.pos+1 < len(p.tokens) {
+			next = p.tokens[p.pos+1].Type
+		}
+		if next == token.GO || next == token.GOOP {
+			spec.Alias = p.cur().Lexeme
+			p.advance()
+		}
 	}
 
 	switch p.cur().Type {
-	case token.GOLANG:
-		spec.Kind = ast.ImportGolang
+	case token.GO:
+		spec.Kind = ast.ImportGo
 		p.advance()
 	case token.GOOP:
 		spec.Kind = ast.ImportGoop
 		p.advance()
-		// Dot import: c0 . "path"
+		// Dot import: goop . "path"
 		if p.cur().Type == token.DOT {
 			if spec.Alias != "" {
 				p.errorf("dot import cannot have a local alias; use `import goop . \"path\"`")
@@ -889,15 +934,8 @@ func (p *Parser) parseImportSpec() ast.ImportSpec {
 			spec.Alias = "."
 			p.advance()
 		}
-	case token.GO:
-		p.errorf("use `golang` for Go package imports (`go` is reserved for concurrency)")
-		p.advance()
-		if p.cur().Type == token.STRING {
-			p.advance()
-		}
-		return spec
 	default:
-		p.errorf("expected `golang` or `goop` after import, got %s", p.cur().Type)
+		p.errorf("expected `go` or `goop` after import, got %s", p.cur().Type)
 		p.synchronizeImportSpec()
 		return spec
 	}
@@ -912,7 +950,7 @@ func (p *Parser) parseImportSpec() ast.ImportSpec {
 
 	if p.cur().Type == token.LBRACE {
 		if spec.Kind == ast.ImportGoop {
-			p.errorf("c0 imports cannot have `{ val ... }` blocks (only golang imports)")
+			p.errorf("goop imports cannot have `{ val ... }` blocks (only go imports)")
 		}
 		p.advance()
 		for p.cur().Type != token.RBRACE && p.cur().Type != token.EOF {
@@ -929,7 +967,7 @@ func (p *Parser) parseImportSpec() ast.ImportSpec {
 				ev.Type = p.parseType()
 				spec.Vals = append(spec.Vals, ev)
 			} else {
-				p.errorf("expected `val` inside golang import block, got %s", p.cur().Type)
+				p.errorf("expected `val` inside go import block, got %s", p.cur().Type)
 				p.advance()
 			}
 		}
@@ -942,7 +980,7 @@ func (p *Parser) parseImportSpec() ast.ImportSpec {
 func (p *Parser) synchronizeImportSpec() {
 	for p.cur().Type != token.EOF {
 		switch p.cur().Type {
-		case token.RPAREN, token.GOLANG, token.GOOP, token.IMPORT:
+		case token.RPAREN, token.GO, token.GOOP, token.IMPORT:
 			return
 		default:
 			p.advance()

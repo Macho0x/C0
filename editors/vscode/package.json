@@ -93,7 +93,11 @@
               "settings": { "foreground": "#D4D4D4" }
             },
             {
-              "scope": "meta.embedded.block.golang",
+              "scope": "meta.embedded.block.go",
+              "settings": { "foreground": "#9CDCFE" }
+            },
+            {
+              "scope": "meta.embedded.block.c",
               "settings": { "foreground": "#9CDCFE" }
             }
           ]
