@@ -1,0 +1,12 @@
+module IfNotReturnTest
+
+(* Regression: `else if c then false else true` (not-desugar) in return
+   position must emit `return !(c)`, not a bare `!(c)` statement. *)
+
+let show (internal: bool) (header: bool) : bool =
+  if internal then false
+  else if header then false
+  else true
+
+let main () =
+  assert (show false false = true && show true false = false && show false true = false)

@@ -145,6 +145,13 @@ func (c *Checker) bindExternVals(importPath string, vals []ast.ExternVal) {
 	}
 }
 
+func (c *Checker) bindExternTypes(importPath string, externTypes []ast.ExternType) {
+	pkgName := pkgFromPath(importPath)
+	for _, et := range externTypes {
+		c.env.Bind(et.Name, types.Mono(&types.TGoNamed{Pkg: pkgName, Name: et.Name, Interface: true}))
+	}
+}
+
 // Check runs type inference on a complete module.
 func Check(mod *ast.Module) []error {
 	_, _, errs := CheckWithTypes(mod)
@@ -439,6 +446,19 @@ func (c *Checker) checkModule(mod *ast.Module) {
 		switch d := d.(type) {
 		case *ast.LetDecl:
 			c.checkLetDecl(d)
+		case *ast.ImplementsDecl:
+			s := c.env.Lookup(d.ForType)
+			if s == nil {
+				c.errorf("FFI-IMPL001: unknown implementation type %q", d.ForType)
+				continue
+			}
+			for _, method := range d.Methods {
+				if len(method.Params) == 0 {
+					c.errorf("FFI-IMPL001: method %q requires a receiver parameter", method.Name)
+					continue
+				}
+				c.checkLetDecl(&ast.LetDecl{Bindings: []ast.LetBinding{method}})
+			}
 		case *ast.LangEmbedDecl:
 			c.bindExternVals("", d.Vals)
 		case *ast.TypeDecl:
@@ -611,6 +631,8 @@ func (c *Checker) convertASTType(at ast.Type) types.Type {
 			return &types.TCon{Name: "result"}
 		case "exn":
 			return &types.Prim{Name: "exn"}
+		case "error":
+			return &types.TError{}
 		case "owned_chan":
 			return &types.TAdt{Name: "owned_chan", Linear: true}
 		default:
@@ -665,6 +687,17 @@ func (c *Checker) convertASTType(at ast.Type) types.Type {
 			}
 		}
 		return fn
+	case *ast.TPtr:
+		return &types.TPtr{Elem: c.convertASTType(t.Elem)}
+	case *ast.TGoSlice, *ast.TVariadic:
+		var elem ast.Type
+		switch t := t.(type) {
+		case *ast.TGoSlice:
+			elem = t.Elem
+		case *ast.TVariadic:
+			elem = t.Elem
+		}
+		return &types.TGoSlice{Elem: c.convertASTType(elem)}
 	case *ast.TTuple:
 		elems := make([]types.Type, len(t.Elems))
 		for i, e := range t.Elems {
@@ -880,6 +913,15 @@ func (c *Checker) infer(e ast.Expr) types.Type {
 	switch e := e.(type) {
 	case *ast.LitExpr:
 		t = c.inferLit(e)
+	case *ast.NullExpr:
+		t = &types.TPtr{Elem: c.fresh("null")}
+	case *ast.PtrOfExpr:
+		t = &types.TPtr{Elem: c.infer(e.Inner)}
+	case *ast.IsNullExpr:
+		_ = c.infer(e.Inner)
+		t = types.Bool
+	case *ast.SpreadExpr:
+		t = c.infer(e.Inner)
 	case *ast.IdentExpr:
 		t = c.inferIdent(e)
 	case *ast.ConstructorExpr:
@@ -2053,9 +2095,9 @@ func goTypeToC0Type(goType string) types.Type {
 		return types.Bytes
 	}
 
-	// error type → string (common in Go stdlib)
+	// error type → Goop error (FFI)
 	if goType == "error" {
-		return types.String
+		return &types.TError{}
 	}
 
 	// Slice type: []T
@@ -2225,6 +2267,9 @@ func (c *Checker) bindImportSpecs(imports []ast.ImportSpec, deps map[string]*ast
 		case ast.ImportGo:
 			if len(spec.Vals) > 0 {
 				c.bindExternVals(spec.Path, spec.Vals)
+			}
+			if len(spec.Types) > 0 {
+				c.bindExternTypes(spec.Path, spec.Types)
 			}
 		case ast.ImportGoop:
 			if resolver == nil {

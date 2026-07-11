@@ -86,6 +86,31 @@ func TestCompileShapes(t *testing.T) {
 	}
 }
 
+func TestImplementsStringerCodegen(t *testing.T) {
+	src := `module main
+import go "fmt" { type Stringer }
+type point = { x : int; y : int }
+implements Stringer for point with
+  let String (p : point) : string = "point"
+end
+`
+	mod, err := parser.Parse("implements.goop", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gen := codegen.NewGenerator("implements.goop", config.DefaultConfig())
+	goSrc, err := gen.Generate(desugar.DesugarModule(mod))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(goSrc, "func (p *point) String") {
+		t.Fatalf("missing pointer receiver method:\n%s", goSrc)
+	}
+	if !strings.Contains(goSrc, "var _ fmt.Stringer") {
+		t.Fatalf("missing Stringer assertion:\n%s", goSrc)
+	}
+}
+
 func TestCompileResult(t *testing.T) {
 	t.Skip("result.goop still uses removed result { … } CE; awaiting example migration")
 }
@@ -262,11 +287,11 @@ func TestActivePatternsExampleBuild(t *testing.T) {
 	if !strings.Contains(goSrc, "Int_option interface") && !strings.Contains(goSrc, "IntOption interface") {
 		t.Error("missing Int_option interface for int_option ADT")
 	}
-	if !strings.Contains(goSrc, "isPositive") {
-		t.Error("missing isPositive function")
+	if !strings.Contains(goSrc, "IsPositive") {
+		t.Error("missing IsPositive function")
 	}
-	if !strings.Contains(goSrc, "isEven") {
-		t.Error("missing isEven function")
+	if !strings.Contains(goSrc, "IsEven") {
+		t.Error("missing IsEven function")
 	}
 
 	// Build in temp dir
@@ -579,7 +604,7 @@ let cfg = { x = 1; y = "a" }
 	if strings.Contains(goSrc, "func cfg()") {
 		t.Fatalf("record literal should not become thunk:\n%s", goSrc)
 	}
-	if !strings.Contains(goSrc, "var cfg = cfg{") {
+	if !strings.Contains(goSrc, "var Cfg = Cfg{") {
 		t.Fatalf("expected direct record var, got:\n%s", goSrc)
 	}
 }

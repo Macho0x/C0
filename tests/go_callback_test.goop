@@ -1,0 +1,20 @@
+module main
+
+(* Pass a Goop closure where Go expects func(int) bool via thin @[go] bridge. *)
+
+@[go] {
+  func filterFirst(xs []int, pred func(int) bool) int {
+    for _, x := range xs {
+      if pred(x) {
+        return x
+      }
+    }
+    return -1
+  }
+  func runFilter() int {
+    return filterFirst([]int{1, 2, 3, 4}, func(x int) bool { return x > 2 })
+  }
+}
+val runFilter : unit -> int
+
+let main () = assert (runFilter () = 3)

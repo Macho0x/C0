@@ -1,0 +1,26 @@
+module main
+
+(* ptr / null / is_null / ptr_of *)
+
+type box = { n : int }
+
+@[go] {
+  func checkPtr() bool {
+    var p *box = nil
+    if p != nil {
+      return false
+    }
+    b := box{N: 7}
+    q := &b
+    return q != nil && !false
+  }
+}
+val checkPtr : unit -> bool
+
+let main () =
+  begin
+    assert (checkPtr ());
+    let b = { n = 7 } in
+    let q = ptr_of b in
+    assert (not (is_null q))
+  end

@@ -174,6 +174,9 @@ func (l *Lexer) run() {
 				l.consumeN(1)
 				l.emit(token.ERROR, "unexpected '&' without '&'", nil)
 			}
+		case r == '.' && l.peekByte(1) == '.' && l.peekByte(2) == '.':
+			l.consumeN(3)
+			l.emit(token.ELLIPSIS, "...", nil)
 		case r == '.':
 			l.consumeN(1)
 			l.emit(token.DOT, ".", nil)

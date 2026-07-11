@@ -32,6 +32,26 @@ type Prim struct {
 
 func (p *Prim) String() string { return p.Name }
 
+// TGoNamed is an opaque named type imported from a Go package.
+type TGoNamed struct {
+	Pkg, Name string
+	Interface bool
+}
+
+func (t *TGoNamed) String() string { return t.Pkg + "." + t.Name }
+
+type TPtr struct{ Elem Type }
+
+func (t *TPtr) String() string { return t.Elem.String() + " ptr" }
+
+type TGoSlice struct{ Elem Type }
+
+func (t *TGoSlice) String() string { return t.Elem.String() + " go_slice" }
+
+type TError struct{}
+
+func (*TError) String() string { return "error" }
+
 // Well-known primitives.
 var (
 	Int    = &Prim{"int"}
@@ -398,6 +418,12 @@ func Apply(s Subst, t Type) Type {
 		return t
 	case *Prim:
 		return t
+	case *TGoNamed, *TError:
+		return t
+	case *TPtr:
+		return &TPtr{Elem: Apply(s, t.Elem)}
+	case *TGoSlice:
+		return &TGoSlice{Elem: Apply(s, t.Elem)}
 	case *TFun:
 		fn := &TFun{From: Apply(s, t.From), To: Apply(s, t.To), Label: t.Label, Optional: t.Optional}
 		if t.Effects != nil {
@@ -471,6 +497,10 @@ func freeVars(t Type, fv map[int64]bool) {
 	switch t := t.(type) {
 	case *TVar:
 		fv[t.ID] = true
+	case *TPtr:
+		freeVars(t.Elem, fv)
+	case *TGoSlice:
+		freeVars(t.Elem, fv)
 	case *TFun:
 		freeVars(t.From, fv)
 		freeVars(t.To, fv)

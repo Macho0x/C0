@@ -23,7 +23,7 @@ block_comment := '(*' … '*)'   (* nestable *)
 ```
 and as assert begin class constraint do done else end effect exception
 false for fun function go goop if in include inherit initializer
-lazy let match method mod module move mutable new object of open
+implements lazy let match method mod module move mutable new null object of open
 perform private raise rec sig struct then to true try type val virtual
 when while with
 ```
@@ -37,11 +37,15 @@ program      := module_decl import_decl* top_decl*
 module_decl  := 'module' constr ('.' constr)*
 import_decl  := 'import' import_spec | 'import' '(' import_spec* ')'
 import_spec  := ident? ('go' | 'goop') string import_vals?
-import_vals  := '{' 'val' ident ':' type* '}'
+import_vals  := '{' import_item* '}'
+import_item  := 'val' ident ':' type | 'type' constr
 
 top_decl     := val_decl | type_decl | exception_decl | effect_decl
               | nested_module | module_type_decl | class_decl
-              | lang_embed_decl
+              | lang_embed_decl | implements_decl
+
+implements_decl := 'implements' constr 'for' constr 'with' impl_method* 'end'
+impl_method     := 'let' ident param+ (':' type)? '=' expr
 
 lang_embed_decl := '@[' ('go' | 'c') ']' '{' raw_body '}' ('val' ident ':' type)*
 exception_decl    := 'exception' constr ('of' type)?
@@ -151,9 +155,11 @@ refined_type := product_type ('where' expr)?
 product_type := app_type ('*' app_type)*
 app_type     := primary_type primary_type*
 primary_type := ident | tyvar | '(' type ')' | type 'array' | type 'ref'
+              | type 'ptr' | type 'go_slice' | 'error'
               | '{' field_type (';' field_type)* ('|' '..')? '}'
               | '<' method_type (';' method_type)* ('|' '..')? '>'
               | poly_variant_type | '(' type (',' type)+ ')'
+              | '...' type   (* variadic FFI param type *)
 
 field_type   := 'mutable'? ident ':' type
 method_type  := ident ':' type

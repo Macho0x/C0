@@ -1,0 +1,22 @@
+module BeginMatchReturnTest
+
+(* Regression: match as the last stmt of begin in an if-else return
+   position must not lower to `return _s := ...` inside an IIFE. *)
+
+type kind =
+  | A
+  | B
+
+let classify (n: int) : kind =
+  if n = 0 then A else B
+
+let label (n: int) : string =
+  if n < 0 then "neg"
+  else begin
+    match classify n with
+    | A -> "zero"
+    | B -> "pos"
+  end
+
+let main () =
+  assert (label (-1) = "neg" && label 0 = "zero" && label 2 = "pos")

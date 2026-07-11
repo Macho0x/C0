@@ -1,0 +1,19 @@
+module main
+
+import go "errors" {
+  val New : string -> error
+}
+
+let boom (_u: unit) : error = New "boom"
+
+@[go] {
+  func errMsg(e error) string {
+    if e == nil {
+      return ""
+    }
+    return e.Error()
+  }
+}
+val errMsg : error -> string
+
+let main () = assert (errMsg (boom ()) = "boom")

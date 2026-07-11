@@ -40,7 +40,11 @@ type Parser struct {
 
 // Parse reads a complete Goop source file and returns the AST module.
 func Parse(file string, src []byte) (*ast.Module, error) {
-	toks, err := lc0.Lex(file, src)
+	// Lex a masked copy so @[go]/@[c] bodies are opaque to the Goop lexer
+	// (e.g. Go's func(*T) must not start a (* *) comment). Parser.src stays
+	// the original bytes so readRawGoBlock recovers the real embed text.
+	lexSrc := maskLangEmbedBodies(src)
+	toks, err := lc0.Lex(file, lexSrc)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +125,7 @@ func (p *Parser) errorf(format string, args ...any) error {
 
 func (p *Parser) parseIdentName() string {
 	tok := p.cur()
-	if tok.Type != token.IDENT {
+	if tok.Type != token.IDENT && tok.Type != token.CONSTRUCTOR {
 		p.errorf("expected identifier, got %s", tok.Type)
 		return "_"
 	}
@@ -367,6 +371,8 @@ func (p *Parser) parseTopDecl() ast.TopDecl {
 		return p.parseLetDecl(false)
 	case token.TYPE:
 		return p.parseTypeDecl(false)
+	case token.IMPLEMENTS:
+		return p.parseImplementsDecl()
 	case token.EXCEPTION:
 		return p.parseExceptionDecl()
 	case token.EFFECT:
@@ -391,6 +397,20 @@ func (p *Parser) parseTopDecl() ast.TopDecl {
 		p.advance()
 		return nil
 	}
+}
+
+func (p *Parser) parseImplementsDecl() *ast.ImplementsDecl {
+	p.expect(token.IMPLEMENTS)
+	decl := &ast.ImplementsDecl{Interface: p.parseIdentName()}
+	p.expect(token.FOR)
+	decl.ForType = p.parseIdentName()
+	p.expect(token.WITH)
+	for p.cur().Type == token.LET {
+		p.advance()
+		decl.Methods = append(decl.Methods, p.parseBinding())
+	}
+	p.expect(token.END)
+	return decl
 }
 
 // parseLetDecl parses a top-level `let` (no `in`), or
@@ -532,6 +552,9 @@ func (p *Parser) parseParams() []ast.Param {
 			// `(name : type)`
 			p.advance()
 			param := ast.Param{}
+			if p.match(token.ELLIPSIS) {
+				param.Variadic = true
+			}
 			nameTok := p.cur()
 			if nameTok.Type == token.IDENT || nameTok.Type == token.CONSTRUCTOR {
 				p.advance()
@@ -958,8 +981,18 @@ func (p *Parser) parseImportSpec() ast.ImportSpec {
 				p.expect(token.COLON)
 				ev.Type = p.parseType()
 				spec.Vals = append(spec.Vals, ev)
+			} else if p.match(token.TYPE) {
+				et := ast.ExternType{}
+				nameTok := p.cur()
+				if nameTok.Type == token.IDENT || nameTok.Type == token.CONSTRUCTOR {
+					p.advance()
+					et.Name = nameTok.Lexeme
+				} else {
+					p.errorf("expected imported type name, got %s", nameTok.Type)
+				}
+				spec.Types = append(spec.Types, et)
 			} else {
-				p.errorf("expected `val` inside go import block, got %s", p.cur().Type)
+				p.errorf("expected `val` or `type` inside go import block, got %s", p.cur().Type)
 				p.advance()
 			}
 		}
@@ -1184,6 +1217,9 @@ func (p *Parser) parsePrefix() ast.Expr {
 	case token.FALSE:
 		tok := p.advance()
 		return &ast.LitExpr{Value: false, Kind: token.FALSE, Loc: tok.Loc}
+	case token.NULL:
+		p.advance()
+		return &ast.NullExpr{}
 
 	// --- polymorphic variants ---
 	case token.POLYVAR:
@@ -1201,6 +1237,17 @@ func (p *Parser) parsePrefix() ast.Expr {
 	// --- identifiers ---
 	case token.IDENT:
 		tok := p.advance()
+		if (tok.Lexeme == "ptr_of" || tok.Lexeme == "is_null" || tok.Lexeme == "spread") && p.canStartExpr(p.cur()) {
+			inner := p.parsePrefix()
+			switch tok.Lexeme {
+			case "ptr_of":
+				return &ast.PtrOfExpr{Inner: inner}
+			case "is_null":
+				return &ast.IsNullExpr{Inner: inner}
+			default:
+				return &ast.SpreadExpr{Inner: inner}
+			}
+		}
 		// Check for computation expression: builder { ... } (removed)
 		if isBuilder(tok.Lexeme) && p.cur().Type == token.LBRACE {
 			return p.parseCompExpr(tok.Loc, tok.Lexeme)
@@ -2025,6 +2072,9 @@ func (p *Parser) parseAppType() ast.Type {
 	var primaries []ast.Type
 	primaries = append(primaries, p.parsePrimaryType())
 	for p.canStartType(p.cur()) {
+		if p.cur().Type == token.IDENT && (p.cur().Lexeme == "ptr" || p.cur().Lexeme == "go_slice") {
+			break
+		}
 		// Peek ahead to avoid consuming `=` or `*` or `->` as type atoms.
 		// A type variable 'a followed by `=` starts a type binding, not
 		// type application.
@@ -2058,6 +2108,14 @@ func (p *Parser) parseAppType() ast.Type {
 		p.advance()
 		return &ast.TApp{Func: &ast.TIdent{Name: "ref"}, Arg: result}
 	}
+	if p.cur().Type == token.IDENT && p.cur().Lexeme == "ptr" {
+		p.advance()
+		return &ast.TPtr{Elem: result}
+	}
+	if p.cur().Type == token.IDENT && p.cur().Lexeme == "go_slice" {
+		p.advance()
+		return &ast.TGoSlice{Elem: result}
+	}
 	// Postfix `where`: `int where x > 0` → RefinementType{Inner: int, Pred: x > 0}
 	if p.match(token.WHERE) {
 		p.wherePred = true
@@ -2072,6 +2130,9 @@ func (p *Parser) parseAppType() ast.Type {
 func (p *Parser) parsePrimaryType() ast.Type {
 	cur := p.cur()
 	switch cur.Type {
+	case token.ELLIPSIS:
+		p.advance()
+		return &ast.TVariadic{Elem: p.parsePrimaryType()}
 	case token.IDENT, token.CONSTRUCTOR:
 		tok := p.advance()
 		return &ast.TIdent{Name: tok.Lexeme}

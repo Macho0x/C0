@@ -1,0 +1,39 @@
+module main
+
+import go "context" {
+  type Context
+}
+
+import go "log/slog" {
+  type Handler
+  type Record
+  type Attr
+  type Level
+}
+
+type capture = {
+  mutable last : string;
+}
+
+implements Handler for capture with
+  let Enabled (h : capture) (_ctx : Context) (_level : Level) : bool = true
+  let Handle (h : capture) (_ctx : Context) (_r : Record) : error =
+    begin
+      h.last <- "ok";
+      null
+    end
+  let WithAttrs (h : capture) (_attrs : Attr go_slice) : Handler = h
+  let WithGroup (h : capture) (_name : string) : Handler = h
+end
+
+@[go] {
+  func runCapture() string {
+    h := &capture{Last: ""}
+    log := slog.New(h)
+    log.Info("hi")
+    return h.Last
+  }
+}
+val runCapture : unit -> string
+
+let main () = assert (runCapture () = "ok")

@@ -1,0 +1,41 @@
+module GoImplementsSlogHandler
+
+(* Example: minimal slog.Handler implemented in native Goop. *)
+
+import go "context" {
+  type Context
+}
+
+import go "log/slog" {
+  type Handler
+  type Record
+  type Attr
+  type Level
+}
+
+type capture = {
+  mutable last : string;
+}
+
+implements Handler for capture with
+  let Enabled (h : capture) (_ctx : Context) (_level : Level) : bool = true
+  let Handle (h : capture) (_ctx : Context) (_r : Record) : error =
+    begin
+      h.last <- "handled";
+      null
+    end
+  let WithAttrs (h : capture) (_attrs : Attr go_slice) : Handler = h
+  let WithGroup (h : capture) (_name : string) : Handler = h
+end
+
+@[go] {
+  func demo() string {
+    h := &capture{Last: ""}
+    log := slog.New(h)
+    log.Info("hello from Goop Handler")
+    return h.Last
+  }
+}
+val demo : unit -> string
+
+let main () = print_line (demo ())

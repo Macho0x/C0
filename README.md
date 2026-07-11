@@ -86,7 +86,8 @@ Venue integrations and order routers fail on unhandled ADT variants, swapped str
 
 ## Go interop
 
-Call any Go package and embed Go when needed — migrate file by file in the same module.
+Call any Go package, implement Go interfaces in native Goop, and embed Go when
+needed — migrate file by file in the same module.
 
 ```goop
 module main
@@ -109,11 +110,13 @@ let main () : unit =
 ```
 
 - **`import go "path"`** — Go packages (optional `{ val … }` signatures)
+- **`type Name` in an `import go` block** — opaque Go named types for `implements`
+- **`implements Interface for T with … end`** — pointer-receiver Go interface methods, including `fmt.Stringer` and `slog.Handler`
 - **`import goop "path"`** — other Goop modules
 - **`@[go] { … }`** — embed multi-statement Go in the same file
 - **`@[c] { … }`** — embed C via cgo (primitive `val` auto-wrappers)
 
-See [`extern_demo.goop`](docs/examples/extern_demo.goop) · [`cgo_demo.goop`](docs/examples/cgo_demo.goop).
+See [`extern_demo.goop`](docs/examples/extern_demo.goop) · [`cgo_demo.goop`](docs/examples/cgo_demo.goop) · [`go_implements_stringer.goop`](docs/examples/go_implements_stringer.goop) · [`go_implements_slog_handler.goop`](docs/examples/go_implements_slog_handler.goop).
 
 ## Language features
 
@@ -123,13 +126,15 @@ Highlights: ADTs + exhaustive `match`, `ref`/`!`/`:=`, `go`/`chan`/`select`/`go 
 
 ## FAQ
 
-**Is 1.2.3 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
+**Is 1.3.0 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
 
 **How is this different from Borgo or Dingo?** Goop is a full compiler with OCaml-aligned syntax and compile-time safety for gradual migration to Go. Dingo-style `?` and F# computation expressions were removed in 1.0.
 
 **Do I need OCaml or Z3?** No. Pattern matching from Rust/Swift/Kotlin transfers. Z3 is optional (`[check] smt = true`).
 
 ## Status
+
+**v1.3.0** — Go interface FFI: `type` imports and native `implements`; `ptr`/`null`, `error`, and `go_slice` support; `fmt.Stringer` and `slog.Handler` examples.
 
 **v1.2.3** — VS Code 0.3.7: embed-tag amber works on all themes (tokenColorCustomizations top-level).
 

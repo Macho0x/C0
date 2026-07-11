@@ -153,6 +153,9 @@ const (
 	CONTINUE
 	DISCONTINUE
 	FUNCTOR
+	IMPLEMENTS
+	NULL
+	ELLIPSIS
 
 	tokenCount
 )
@@ -186,6 +189,7 @@ var tokenNames = [...]string{
 	CHAN:  "chan", GO: "go", MOVE: "move",
 	FOR: "for", TO: "to", DOWNTO: "downto", DO: "do", DONE: "done", BEGIN: "begin", END: "end",
 	CONTINUE: "continue", DISCONTINUE: "discontinue", FUNCTOR: "functor",
+	IMPLEMENTS: "implements", NULL: "null", ELLIPSIS: "...",
 }
 
 func (t TokenType) String() string {
@@ -204,7 +208,8 @@ func (t TokenType) IsKeyword() bool {
 		CLASS, OBJECT, METHOD, INHERIT, INITIALIZER, VIRTUAL, CONSTRAINT,
 		STRUCT, SIG, INCLUDE, LAZY, ASSERT, FAILWITH, MOD, LAND, LOR, LXOR,
 		NEW, REF, GUARD, IS, PANIC, NEWTYPE, USING, CHAN, GO, MOVE, NOT,
-		FOR, TO, DOWNTO, DO, DONE, BEGIN, END, CONTINUE, DISCONTINUE, FUNCTOR:
+		FOR, TO, DOWNTO, DO, DONE, BEGIN, END, CONTINUE, DISCONTINUE, FUNCTOR,
+		IMPLEMENTS, NULL:
 		return true
 	}
 	return false
@@ -403,6 +408,10 @@ func LookupKeyword(s string) TokenType {
 		return DISCONTINUE
 	case "functor":
 		return FUNCTOR
+	case "implements":
+		return IMPLEMENTS
+	case "null":
+		return NULL
 	}
 	return IDENT
 }

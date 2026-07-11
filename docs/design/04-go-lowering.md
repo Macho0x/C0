@@ -83,6 +83,16 @@ import (
 
 → Go `import` paths. Logical Goop paths resolve via `goop.toml` `[mappings]`.
 
+## Go interface FFI
+
+`import go "pkg" { type Interface }` imports an opaque Go named type.
+`implements Interface for T with … end` emits pointer-receiver methods for
+`*T` plus a Go compile-time interface assertion. FFI types lower directly:
+`'a ptr` to `*T` (`ptr_of` takes an address and `null` is `nil`), `error` to
+Go `error`, and `'a go_slice` to `[]T`. The `go_slice_*` helpers operate on
+those Go slices; list conversion helpers are runtime identities because lists
+already lower to slices. See [17-go-implements.md](17-go-implements.md).
+
 ## Tuples and lists
 
 Tuples → generated positional structs. `'a list` → `[]T` with `append` for cons.

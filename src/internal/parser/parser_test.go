@@ -162,6 +162,39 @@ func TestLexOrderbook(t *testing.T) {
 	t.Skip("example uses removed newtype syntax; see PARSE-MIG015")
 }
 
+func TestParseGoEmbedPointerReceiver(t *testing.T) {
+	// Go's func(*T) contains "(*" which must not be treated as a Goop comment.
+	src := `module main
+
+@[go] {
+  type Box struct{ N int }
+  func (b *Box) Val() int { return b.N }
+  func newBox(n int) *Box { return &Box{N: n} }
+  func boxVal(b *Box) int { return b.Val() }
+}
+val newBox : int -> unit
+val boxVal : unit -> int
+
+let main () = print_line "ok"
+`
+	mod, err := parser.Parse("ptr_embed.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var body string
+	for _, d := range mod.Decls {
+		if ge, ok := d.(*ast.LangEmbedDecl); ok {
+			body = ge.Body
+		}
+	}
+	if !strings.Contains(body, "func (b *Box)") {
+		t.Fatalf("expected pointer receiver in body, got %q", body)
+	}
+	if !strings.Contains(body, "func newBox") {
+		t.Fatalf("expected newBox in body, got %q", body)
+	}
+}
+
 func TestParseGoEmbed(t *testing.T) {
 	src := `module main
 
@@ -315,6 +348,33 @@ let main () = ()
 	}
 	if len(mod.Imports) != 1 || len(mod.Imports[0].Vals) != 1 {
 		t.Fatalf("expected 1 val, got %+v", mod.Imports)
+	}
+}
+
+func TestParseGoImportTypesAndImplements(t *testing.T) {
+	src := `module main
+import go "fmt" { type Stringer }
+type point = { x : int; y : int }
+implements Stringer for point with
+  let String (p : point) : string = "point"
+end
+`
+	mod, err := parser.Parse("implements.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(mod.Imports) != 1 || len(mod.Imports[0].Types) != 1 || mod.Imports[0].Types[0].Name != "Stringer" {
+		t.Fatalf("expected imported Stringer type, got %#v", mod.Imports)
+	}
+	if len(mod.Decls) != 2 {
+		t.Fatalf("expected type and implements declarations, got %#v", mod.Decls)
+	}
+	impl, ok := mod.Decls[1].(*ast.ImplementsDecl)
+	if !ok {
+		t.Fatalf("expected ImplementsDecl, got %T", mod.Decls[1])
+	}
+	if impl.Interface != "Stringer" || impl.ForType != "point" || len(impl.Methods) != 1 {
+		t.Fatalf("unexpected implements declaration: %#v", impl)
 	}
 }
 
@@ -693,7 +753,6 @@ let main () = ()
 	t.Log("duplicate import may be caught at typecheck")
 	_ = mod
 }
-
 
 func TestParseOCamlSurface(t *testing.T) {
 	src := "module main\n" +

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.0
+
+### Go interface FFI
+
+- `import go` signature blocks now accept `type Name` for opaque Go named
+  types, including interfaces.
+- Added `implements Interface for Type with … end`, lowering methods to Go
+  pointer receivers and emitting compile-time interface assertions.
+- Added FFI support for `error`, `'a ptr` with `ptr_of` / `null` /
+  `is_null`, and `'a go_slice` with conversion and collection helpers.
+- Added native Goop examples for `fmt.Stringer` and `log/slog.Handler`.
+- Added design, tutorial, error-reference, roadmap, and release documentation
+  for the interface FFI.
+
 ## 1.2.3
 
 ### Editor

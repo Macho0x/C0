@@ -47,7 +47,10 @@ module Main
 
 import (
   go "fmt"
-  go "strconv" { val Atoi : string -> (int, string) }
+  go "strconv" {
+    type NumError
+    val Atoi : string -> (int, string)
+  }
   goop "std.io"
   httpx go "net/http"
   orderbook goop "github.com/you/app/orderbook"
@@ -56,15 +59,17 @@ import (
 import goop . "std.list"   (* dot import: unqualified exports *)
 ```
 
-| Form | Meaning | `{ val … }` |
-|------|---------|-------------|
-| `import go "path"` | Go package | Optional FFI signatures |
+| Form | Meaning | Block contents |
+|------|---------|----------------|
+| `import go "path"` | Go package | Optional `val` signatures and opaque `type Name` imports |
 | `import goop "path"` | Goop module | Forbidden |
 | `import goop . "path"` | Dot import | Forbidden |
 | `alias go "path"` | Go import with local alias | Optional |
 | `alias goop "path"` | Qualified Goop import | Forbidden |
 
 Logical paths like `"std.io"` resolve via `goop.toml` `[mappings]` or built-in defaults.
+Imported Go types can be used in `implements`; see
+[17-go-implements.md](17-go-implements.md).
 
 ## Inline Go / C
 

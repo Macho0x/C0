@@ -83,6 +83,7 @@ type Generator struct {
 	externImports  map[string]string   // Go import path → package name
 	externNames    map[string]string   // Goop name → Go qualified name (pkg.Name)
 	externRetTypes map[string]ast.Type // Goop extern val name → full function type
+	goTypeQual     map[string]string   // Goop type name → Go qualified name
 
 	// row-polymorphic function params: funcName → field names
 	rowParams    map[string][]string
@@ -95,8 +96,8 @@ type Generator struct {
 	cgoPreamble         string // concatenated @[c] bodies for cgo comment
 	needUnsafe          bool   // C.CString free via unsafe.Pointer
 	errs                []string
-	usedChan            bool   // whether any channel operations are used in this module
-	usedHTTP            bool   // whether HTTP/JSON helpers are needed
+	usedChan            bool // whether any channel operations are used in this module
+	usedHTTP            bool // whether HTTP/JSON helpers are needed
 	needsEffectRuntime  bool
 	needsLazyRuntime    bool
 	needsPolyvarRuntime bool
@@ -126,6 +127,7 @@ func NewGenerator(srcFile string, cfg *config.Config) *Generator {
 		externImports:    make(map[string]string),
 		externNames:      make(map[string]string),
 		externRetTypes:   make(map[string]ast.Type),
+		goTypeQual:       make(map[string]string),
 		rowParams:        make(map[string][]string),
 		rowParamName:     make(map[string]string),
 		resolvedImports:  make(map[string]string),
@@ -334,6 +336,8 @@ func (g *Generator) Generate(mod *ast.Module) (string, error) {
 		switch d := d.(type) {
 		case *ast.LetDecl:
 			g.emitLetDecl(d)
+		case *ast.ImplementsDecl:
+			g.emitImplementsDecl(d)
 		case *ast.LangEmbedDecl:
 			g.emitLangEmbedDecl(d)
 		case *ast.ClassDecl:
@@ -356,6 +360,7 @@ func (g *Generator) Generate(mod *ast.Module) (string, error) {
 	g.emitEffectHelpers()
 	g.emitLazyHelpers()
 	g.emitPolyvarHelpers()
+	g.emitGoSliceHelpers()
 
 	bodyStr := g.buf.String()
 	g.buf = origBuf
@@ -433,6 +438,13 @@ func (g *Generator) prescan(mod *ast.Module) {
 			g.extensibleCases[d.TypeName] = append(g.extensibleCases[d.TypeName], d.Cases...)
 		case *ast.LetDecl:
 			for _, b := range d.Bindings {
+				if !d.ActivePattern {
+					emitName := b.Name
+					if !d.Private && b.Name != "main" {
+						emitName = exported(b.Name)
+					}
+					g.goopToGo[b.Name] = emitName
+				}
 				if b.RetType != nil {
 					g.funcRetType[b.Name] = g.typeToGo(b.RetType)
 				}
@@ -703,7 +715,12 @@ func (g *Generator) typeToGo(at ast.Type) string {
 			return "result"
 		case "owned_chan":
 			return "owned_chan"
+		case "error":
+			return "error"
 		default:
+			if qualified, ok := g.goTypeQual[t.Name]; ok {
+				return qualified
+			}
 			return g.goName(t.Name)
 		}
 	case *ast.TApp:
@@ -738,6 +755,12 @@ func (g *Generator) typeToGo(at ast.Type) string {
 		return g.goName(g.recordNameFromType(t))
 	case *ast.TChan:
 		return "*C0Chan"
+	case *ast.TPtr:
+		return "*" + g.typeToGo(t.Elem)
+	case *ast.TGoSlice:
+		return "[]" + g.typeToGo(t.Elem)
+	case *ast.TVariadic:
+		return "..." + g.typeToGo(t.Elem)
 	case *ast.RefinementType:
 		// Refinement types are transparent — only the inner type matters
 		return g.typeToGo(t.Inner)
@@ -897,6 +920,9 @@ func (g *Generator) collectGoImport(spec ast.ImportSpec) {
 		if ret := finalReturnASTType(ev.Type); ret != nil {
 			g.scanUsedTypes(ret)
 		}
+	}
+	for _, et := range spec.Types {
+		g.goTypeQual[et.Name] = packageNameFromPath2(spec.Path) + "." + et.Name
 	}
 }
 
@@ -1485,6 +1511,20 @@ func (g *Generator) emitLetDecl(d *ast.LetDecl) {
 
 		hasFunParams := len(b.Params) > 0
 
+		// Non-private top-level lets are Go-exported (capitalized) so other
+		// packages can call them via Module.name → pkg.Name.
+		// Exception: Go's program entry point must remain lowercase `main`.
+		emitName := b.Name
+		if !d.Private {
+			if b.Name == "main" {
+				emitName = "main"
+			} else {
+				emitName = exported(b.Name)
+			}
+		}
+		g.goopToGo[b.Name] = emitName
+		funcName = emitName
+
 		if !hasFunParams && !isCompoundExpr(b.Body) {
 			// Simple value binding
 			if d.Mutable {
@@ -1633,6 +1673,44 @@ func (g *Generator) isChanMakeExpr(e ast.Expr) bool {
 	return qualified == "Chan.make" || qualified == "OwnedChan.make"
 }
 
+func (g *Generator) emitImplementsDecl(d *ast.ImplementsDecl) {
+	receiverType := g.goName(d.ForType)
+	for _, method := range d.Methods {
+		if len(method.Params) == 0 {
+			continue
+		}
+		g.currentFunc = method.Name
+		if method.RetType != nil {
+			g.funcRetType[method.Name] = g.typeToGo(method.RetType)
+		}
+		receiver := method.Params[0]
+		g.emitf("func (%s *%s) %s", receiver.Name, receiverType, method.Name)
+		g.emitParams(method.Params[1:])
+		if method.RetType != nil && g.typeToGo(method.RetType) != "struct{}" {
+			g.buf.WriteString(" " + g.typeToGo(method.RetType))
+		}
+		g.buf.WriteString(" {\n")
+		g.indent++
+		if method.RetType != nil && g.typeToGo(method.RetType) != "struct{}" {
+			g.emitReturnExpr(method.Body)
+		} else {
+			g.emitExpr(method.Body, true)
+		}
+		g.indent--
+		g.emitf("}\n\n")
+	}
+	if iface, ok := g.goTypeQual[d.Interface]; ok {
+		g.emitf("var _ %s = (*%s)(nil)\n\n", iface, receiverType)
+	}
+}
+
+func (g *Generator) emitGoSliceHelpers() {
+	g.emit("func go_slice_len[T any](xs []T) int { return len(xs) }\n\n")
+	g.emit("func go_slice_append[T any](xs []T, x T) []T { return append(xs, x) }\n\n")
+	g.emit("func go_slice_of_list[T any](xs []T) []T { return xs }\n\n")
+	g.emit("func list_of_go_slice[T any](xs []T) []T { return xs }\n\n")
+}
+
 func (g *Generator) emitParams(params []ast.Param) {
 	g.buf.WriteString("(")
 	first := true
@@ -1659,7 +1737,11 @@ func (g *Generator) emitParams(params []ast.Param) {
 		g.buf.WriteString(p.Name)
 		g.buf.WriteString(" ")
 		if p.Type != nil {
-			g.buf.WriteString(g.typeToGo(p.Type))
+			typeName := g.typeToGo(p.Type)
+			if p.Variadic && !strings.HasPrefix(typeName, "...") {
+				typeName = "..." + typeName
+			}
+			g.buf.WriteString(typeName)
 		} else if g.currentFunc != "" && g.varTypeMap != nil {
 			if t, ok := g.varTypeMap[g.currentFunc]; ok {
 				if pt := nthFunParam(t, i); pt != nil {
@@ -1709,6 +1791,43 @@ func (g *Generator) emitExpr(e ast.Expr, isStmt bool) {
 	switch e := e.(type) {
 	case *ast.LitExpr:
 		g.emitLit(e)
+	case *ast.NullExpr:
+		// Prefer typed nil when the expression type is known.
+		if g.currentFunc != "" {
+			if rt, ok := g.funcRetType[g.currentFunc]; ok && rt == "error" {
+				g.buf.WriteString("error(nil)")
+				return
+			}
+		}
+		if g.typeMap != nil {
+			if t, ok := g.typeMap[e]; ok {
+				goT := g.internalTypeToGo(t)
+				if goT == "error" {
+					g.buf.WriteString("error(nil)")
+					return
+				}
+				if strings.HasPrefix(goT, "*") || strings.Contains(goT, "interface") {
+					g.buf.WriteString("(" + goT + ")(nil)")
+					return
+				}
+				if goT != "" && goT != "interface{}" {
+					g.buf.WriteString("(*" + goT + ")(nil)")
+					return
+				}
+			}
+		}
+		g.buf.WriteString("nil")
+	case *ast.PtrOfExpr:
+		g.buf.WriteString("&(")
+		g.emitExpr(e.Inner, false)
+		g.buf.WriteString(")")
+	case *ast.IsNullExpr:
+		g.buf.WriteString("(")
+		g.emitExpr(e.Inner, false)
+		g.buf.WriteString(" == nil)")
+	case *ast.SpreadExpr:
+		g.emitExpr(e.Inner, false)
+		g.buf.WriteString("...")
 	case *ast.IdentExpr:
 		g.emitIdent(e)
 	case *ast.ConstructorExpr:
@@ -1868,8 +1987,8 @@ func (g *Generator) emitIdent(e *ast.IdentExpr) {
 			}
 		}
 	}
-	// Use the name as-is; prelude lowerings are handled in emitApp
-	g.buf.WriteString(e.Name)
+	// Use mapped Go name for exported lets (colorize → Colorize).
+	g.buf.WriteString(g.goName(e.Name))
 }
 
 func (g *Generator) emitConstructor(e *ast.ConstructorExpr) {
@@ -3076,24 +3195,31 @@ func (g *Generator) emitReturnExpr(e ast.Expr) {
 	}
 
 	// Emit as a return statement if it's not already a statement
-	switch e.(type) {
-	case *ast.IfExpr, *ast.MatchExpr, *ast.LetInExpr, *ast.AsMatchExpr, *ast.GuardExpr:
+	switch e := e.(type) {
+	case *ast.IfExpr:
+		// `if c then false else true` lowers to `!(c)` as an expression.
+		// In return position that still needs an explicit `return`.
+		if isNotPattern(e) {
+			g.emitf("return ")
+			g.emitIf(e)
+			g.buf.WriteString("\n")
+		} else {
+			g.emitIf(e)
+		}
+	case *ast.MatchExpr, *ast.LetInExpr, *ast.AsMatchExpr, *ast.GuardExpr:
 		// These emit their own stmt structure
 		g.emitExpr(e, true)
 	case *ast.TryExpr:
 		g.emitf("return ")
-		g.emitTry(e.(*ast.TryExpr), false)
+		g.emitTry(e, false)
 		g.buf.WriteString("\n")
 	case *ast.AssignExpr, *ast.ForExpr, *ast.WhileExpr, *ast.AssertExpr:
 		g.emitExpr(e, true)
 	case *ast.BeginExpr:
-		if hasRet {
-			g.emitf("return ")
-			g.emitBegin(e.(*ast.BeginExpr), false)
-			g.buf.WriteString("\n")
-		} else {
-			g.emitBegin(e.(*ast.BeginExpr), true)
-		}
+		// In return position, emit a statement block whose last stmt
+		// returns — do not wrap in an IIFE. Wrapping statement-shaped
+		// tails (match/if) as `return <stmts>` is invalid Go.
+		g.emitBeginReturnBlock(e)
 	default:
 		g.emitf("return ")
 		g.emitExpr(e, false)
@@ -3667,6 +3793,34 @@ func (g *Generator) emitFor(e *ast.ForExpr, isStmt bool) {
 	}
 }
 
+// emitBeginReturnBlock emits begin/end as a Go block in return position.
+// The last statement uses emitReturnExpr so match/if tails stay valid.
+func (g *Generator) emitBeginReturnBlock(e *ast.BeginExpr) {
+	g.buf.WriteString("{\n")
+	g.indent++
+	for i, s := range e.Stmts {
+		if i < len(e.Stmts)-1 {
+			if lit, ok := s.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+				continue
+			}
+			if containsCPSPerform(s) {
+				// Suspend at the surrounding function boundary so an effect
+				// handler can invoke the request's continuation.
+				g.emitf("return ")
+				g.emitExpr(s, false)
+				g.buf.WriteString("\n")
+				break
+			}
+			g.emitExpr(s, true)
+			g.buf.WriteString("\n")
+			continue
+		}
+		g.emitReturnExpr(s)
+	}
+	g.indent--
+	g.emitf("}\n")
+}
+
 func (g *Generator) emitBegin(e *ast.BeginExpr, isStmt bool) {
 	if isStmt {
 		g.buf.WriteString("{\n")
@@ -3714,9 +3868,16 @@ func (g *Generator) emitBegin(e *ast.BeginExpr, isStmt bool) {
 				g.buf.WriteString("\n")
 			}
 		} else if retGo != "struct{}" {
-			g.emitf("return ")
-			g.emitExpr(s, false)
-			g.buf.WriteString("\n")
+			// Statement-shaped tails must emit their own returns; prefixing
+			// `return` onto match/if produces illegal Go (`return _s := ...`).
+			switch s.(type) {
+			case *ast.IfExpr, *ast.MatchExpr, *ast.LetInExpr, *ast.AsMatchExpr, *ast.GuardExpr, *ast.BeginExpr:
+				g.emitReturnExpr(s)
+			default:
+				g.emitf("return ")
+				g.emitExpr(s, false)
+				g.buf.WriteString("\n")
+			}
 		} else {
 			g.emitExpr(s, true)
 			g.buf.WriteString("\n")

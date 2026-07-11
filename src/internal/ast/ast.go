@@ -34,7 +34,8 @@ type ImportSpec struct {
 	Kind  ImportKind
 	Path  string // import path string literal (logical or canonical)
 	Alias string
-	Vals  []ExternVal // go imports only: optional FFI signatures
+	Vals  []ExternVal  // go imports only: optional FFI signatures
+	Types []ExternType // go imports only: opaque Go named types
 }
 
 // OpenStmt is a legacy `open Path` statement (parser no longer produces these).
@@ -98,6 +99,21 @@ type ExternVal struct {
 	Type Type
 }
 
+// ExternType is an opaque Go named type imported from an FFI package.
+type ExternType struct {
+	Name string
+}
+
+// ImplementsDecl defines Go methods that make a Goop type satisfy an imported
+// Go interface.
+type ImplementsDecl struct {
+	Interface string
+	ForType   string
+	Methods   []LetBinding
+}
+
+func (*ImplementsDecl) topDeclNode() {}
+
 // ---------------------------------------------------------------------------
 // Bindings & parameters
 // ---------------------------------------------------------------------------
@@ -118,6 +134,7 @@ type Param struct {
 	Label    string // labelled arg `~x` / `~label:x` (empty = positional)
 	Optional bool   // `?x` optional labelled arg
 	Default  Expr   // default expression for optional labelled arguments
+	Variadic bool
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +234,18 @@ type TIdent struct {
 }
 
 func (*TIdent) typeNode() {}
+
+type TPtr struct{ Elem Type }
+
+func (*TPtr) typeNode() {}
+
+type TGoSlice struct{ Elem Type }
+
+func (*TGoSlice) typeNode() {}
+
+type TVariadic struct{ Elem Type }
+
+func (*TVariadic) typeNode() {}
 
 // TApp is type application: `order list`, `(int, string) result`.
 // Func is the "outer" type, Arg is the parameter.
@@ -319,6 +348,26 @@ type LitExpr struct {
 }
 
 func (*LitExpr) exprNode() {}
+
+// NullExpr is the Go FFI null pointer literal.
+type NullExpr struct{}
+
+func (*NullExpr) exprNode() {}
+
+// PtrOfExpr takes the address of an expression for Go FFI.
+type PtrOfExpr struct{ Inner Expr }
+
+func (*PtrOfExpr) exprNode() {}
+
+// IsNullExpr tests a Go FFI pointer against nil.
+type IsNullExpr struct{ Inner Expr }
+
+func (*IsNullExpr) exprNode() {}
+
+// SpreadExpr expands a Go slice in a variadic Go call.
+type SpreadExpr struct{ Inner Expr }
+
+func (*SpreadExpr) exprNode() {}
 
 // IdentExpr is an identifier reference: `x`, `Console.print_line`.
 type IdentExpr struct {

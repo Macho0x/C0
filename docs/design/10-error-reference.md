@@ -30,6 +30,7 @@ Error messages fall into three severity levels:
 | LEX | Lexer errors | `internal/lexer` |
 | PARSE | Parser errors | `internal/parser` |
 | TYPE | Type errors | `internal/typecheck` |
+| FFI-IMPL | Go interface implementation errors | `internal/typecheck` |
 | UNIFY | Unification errors | `internal/types/unify` |
 | EXHAUST | Exhaustiveness warnings | `internal/exhaustive` |
 | LINEAR | Linear discharge errors | `internal/linear`, `internal/channelrace` |
@@ -786,6 +787,22 @@ cannot be resolved. All type errors stop compilation.
   type Color = Red | Green
   let c = Color.Red
   ```
+
+---
+
+## FFI-IMPL — Go Interface Implementation Errors
+
+### FFI-IMPL001: Invalid `implements` declaration
+
+- **Error code**: `FFI-IMPL001`
+- **Severity**: Error
+- **Messages**: `unknown implementation type %q` or `method %q requires a receiver parameter`
+- **Trigger**: An `implements … for T` declaration names an unknown Goop
+  implementation type, or one of its methods omits its first receiver
+  parameter.
+- **Fix**: Declare `T` before the `implements` declaration and make every
+  method's first parameter the receiver (for example, `let String (p : point)
+  : string = …`).
 
 ---
 
@@ -1594,12 +1611,13 @@ associated with a specific source location.
 | LEX (Lexer) | 9 |
 | PARSE (Parser) | 23 |
 | TYPE (Typechecker, direct) | 13 |
+| FFI-IMPL (Go interface implementation) | 2 |
 | UNIFY (Unification) | 19 |
 | EXHAUST (Exhaustiveness) | 3 |
 | LINEAR (Linear checker) | 7 |
 | REFINE (Refinement solver) | 2 (+ 1 silent outcome) |
 | CLI (CLI/file/system) | 13 |
-| **Total** | **89** |
+| **Total** | **91** |
 
 ---
 

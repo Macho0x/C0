@@ -18,6 +18,30 @@ import (
 - **Signature block** — declare types for functions you call from Goop.
 - **Import-only** — `go "fmt"` with no block; pair with `@[go]` or generated bindings.
 
+## Implement Go interfaces
+
+Import an interface as an opaque Go type, then use `implements` to generate
+its pointer-receiver method set from native Goop methods:
+
+```goop
+import go "fmt" {
+  type Stringer
+}
+
+type point = { x : int; y : int }
+
+implements Stringer for point with
+  let String (p : point) : string =
+    int_to_string p.x ^ "," ^ int_to_string p.y
+end
+```
+
+This emits a Go assertion that `*point` satisfies `fmt.Stringer`; `@[go]` is
+not needed for method bodies expressible in Goop. For complete examples, see
+[`go_implements_stringer.goop`](../examples/go_implements_stringer.goop) and
+[`go_implements_slog_handler.goop`](../examples/go_implements_slog_handler.goop),
+which implements a native `slog.Handler`.
+
 ## Inline Go with `@[go]`
 
 ```goop

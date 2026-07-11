@@ -104,6 +104,10 @@ func unify(sub Subst, t1, t2 Type) error {
 		return nil
 
 	case *TRecord:
+		// Record implementors may be used where a Go interface is expected.
+		if r, ok := t2.(*TGoNamed); ok && r.Interface {
+			return nil
+		}
 		r, ok := t2.(*TRecord)
 		if !ok {
 			return mismatch(t1, t2, "expected a record")
@@ -239,6 +243,51 @@ func unify(sub Subst, t1, t2 Type) error {
 			return mismatch(t1, t2, "expected a channel type")
 		}
 		return unify(sub, l.Elem, r.Elem)
+
+	case *TError:
+		switch t2.(type) {
+		case *TError:
+			return nil
+		case *TPtr:
+			// null (nil) is a valid error value
+			return nil
+		default:
+			return mismatch(t1, t2, "expected error")
+		}
+
+	case *TPtr:
+		switch r := t2.(type) {
+		case *TPtr:
+			return unify(sub, l.Elem, r.Elem)
+		case *TError:
+			return nil
+		default:
+			return mismatch(t1, t2, "expected a pointer")
+		}
+
+	case *TGoSlice:
+		r, ok := t2.(*TGoSlice)
+		if !ok {
+			return mismatch(t1, t2, "expected a go_slice")
+		}
+		return unify(sub, l.Elem, r.Elem)
+
+	case *TGoNamed:
+		switch r := t2.(type) {
+		case *TGoNamed:
+			if l.Pkg == r.Pkg && l.Name == r.Name {
+				return nil
+			}
+			return mismatch(t1, t2, "different Go named types")
+		case *TRecord, *TAdt:
+			// Implementor value used where a Go interface is expected.
+			if l.Interface {
+				return nil
+			}
+			return mismatch(t1, t2, "expected Go named type "+l.String())
+		default:
+			return mismatch(t1, t2, "expected Go named type")
+		}
 	}
 
 	return mismatch(t1, t2, "unknown type")

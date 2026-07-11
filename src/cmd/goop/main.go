@@ -1335,22 +1335,38 @@ func runTests(dir string) int {
 }
 
 // loadProjectConfig finds and loads the goop.toml for the given source file.
+// It walks from the file's directory up to the filesystem root, then tries cwd.
+// Important: config.LoadConfig returns DefaultConfig() when a path is missing,
+// so we must Stat the file before treating a load as a real project config.
 func loadProjectConfig(srcFile string) *config.Config {
-	// Look in the directory containing the source file
-	dir := filepath.Dir(srcFile)
-	cfgPath := filepath.Join(dir, "goop.toml")
-	cfg, err := config.LoadConfig(cfgPath)
-	if err == nil && cfg != nil {
-		return cfg
+	dir, err := filepath.Abs(filepath.Dir(srcFile))
+	if err != nil {
+		dir = filepath.Dir(srcFile)
 	}
-	// Fallback: look in the current working directory
+	for {
+		cfgPath := filepath.Join(dir, "goop.toml")
+		if st, err := os.Stat(cfgPath); err == nil && !st.IsDir() {
+			cfg, err := config.LoadConfig(cfgPath)
+			if err == nil && cfg != nil {
+				return cfg
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
 	cwd, _ := os.Getwd()
-	cfgPath = filepath.Join(cwd, "goop.toml")
-	cfg, err = config.LoadConfig(cfgPath)
-	if err == nil && cfg != nil {
-		return cfg
+	if cwd != "" {
+		cfgPath := filepath.Join(cwd, "goop.toml")
+		if st, err := os.Stat(cfgPath); err == nil && !st.IsDir() {
+			cfg, err := config.LoadConfig(cfgPath)
+			if err == nil && cfg != nil {
+				return cfg
+			}
+		}
 	}
-	// Return default config
 	return config.DefaultConfig()
 }
 

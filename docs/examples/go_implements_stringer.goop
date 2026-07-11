@@ -1,0 +1,25 @@
+module GoImplementsStringer
+
+(* Example: satisfy fmt.Stringer from native Goop. *)
+
+import go "fmt" {
+  type Stringer
+}
+
+type point = { x : int; y : int }
+
+implements Stringer for point with
+  let String (p : point) : string =
+    int_to_string p.x ^ "," ^ int_to_string p.y
+end
+
+@[go] {
+  func demo() string {
+    p := point{X: 3, Y: 4}
+    var s fmt.Stringer = &p
+    return s.String()
+  }
+}
+val demo : unit -> string
+
+let main () = print_line (demo ())

@@ -1,0 +1,23 @@
+module main
+
+import go "fmt" {
+  type Stringer
+}
+
+type point = { x : int; y : int }
+
+implements Stringer for point with
+  let String (p : point) : string =
+    int_to_string p.x ^ "," ^ int_to_string p.y
+end
+
+@[go] {
+  func check() string {
+    p := point{X: 1, Y: 2}
+    var s fmt.Stringer = &p
+    return s.String()
+  }
+}
+val check : unit -> string
+
+let main () = assert (check () = "1,2")

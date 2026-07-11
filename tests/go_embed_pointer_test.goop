@@ -1,0 +1,16 @@
+module main
+
+(* Regression: Go pointer types inside @[go] must parse (Goop Lang embed opacity). *)
+
+@[go] {
+  type box struct{ n int }
+  func newBox(n int) *box { return &box{n: n} }
+  func boxVal(b *box) int { return b.n }
+}
+val newBox : int -> unit
+val boxVal : unit -> int
+
+let main () =
+  let b = newBox 7 in
+  let chk = assert (boxVal b = 7) in
+  print_line "go_embed_pointer ok"

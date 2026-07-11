@@ -28,6 +28,13 @@ import goop "std.io"
 
 `go` after `import` is contextual (same keyword as `go expr` concurrency). There is no `import c`.
 
+## Go interfaces without embeds
+
+Go interfaces can be imported with `type Name` and implemented directly in
+Goop with `implements`; method bodies that Goop can express no longer require
+an `@[go]` escape hatch. `@[go]` remains available for opaque Go helpers and
+other code Goop cannot express. See [17-go-implements.md](17-go-implements.md).
+
 ## Hard break (1.2.0)
 
 Removed: `import golang`, `alias golang`, `@golang { }`, and the `golang` keyword.

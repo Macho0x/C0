@@ -52,6 +52,7 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] `goop.toml` check severities (`concurrent`, `refinement_unproven`, `smt`).
 - [x] Nil channel detection (flow-sensitive initialization checking).
 - [x] Unified import syntax (`import go` / `import goop`).
+- [x] **Go interface FFI (1.3.0):** `type` imports, `implements`, pointer/null, `error`, and `go_slice`; native `fmt.Stringer` and `slog.Handler` examples.
 - [x] Package manager (`goop get`, `goop.lock`).
 - [x] **OCaml alignment (1.0):** `ref`/`while`/`function`/exceptions/`failwith`/`mod`; remove F# CE, `?`, Kit macros, `newtype`, effect rows, `panic`, `%`.
 - [x] **Effect handlers (1.0):** OCaml 5-style `effect` / `perform` / handlers, CPS-lowered.

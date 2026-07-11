@@ -1,0 +1,11 @@
+module main
+
+@[go] {
+  import "fmt"
+  func joinTwo(a, b string) string {
+    return fmt.Sprintf("%s-%s", a, b)
+  }
+}
+val joinTwo : string -> string -> string
+
+let main () = assert (joinTwo "a" "b" = "a-b")
