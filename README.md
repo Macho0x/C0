@@ -127,13 +127,15 @@ Highlights: ADTs + exhaustive `match`, `ref`/`!`/`:=`, `go`/`chan`/`select`/`go 
 
 ## FAQ
 
-**Is 1.4.0 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
+**Is 1.5.0 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
 
 **How is this different from Borgo or Dingo?** Goop is a full compiler with OCaml-aligned syntax and compile-time safety for gradual migration to Go. Dingo-style `?` and F# computation expressions were removed in 1.0.
 
 **Do I need OCaml or Z3?** No. Pattern matching from Rust/Swift/Kotlin transfers. Z3 is optional (`[check] smt = true`).
 
 ## Status
+
+**v1.5.0** — OCaml-faithful call lowering: capitalized multi-arg apps, `unit` erasure, if-as-expression IIFEs; unblocks shrinking `@[go]` in slog libraries like treelog.
 
 **v1.4.0** — Go method and field FFI: `val (x:T).M` imports lower to native Go selectors, including callbacks, `go_slice` indexing, and variadic `any` calls; fewer `@[go]` adapters are needed.
 

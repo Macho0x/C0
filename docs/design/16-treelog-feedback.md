@@ -7,7 +7,18 @@ module (e.g. `strategy option` returning `Some Full`).
 **Guidance:** avoid constructor names `None` and `Some` in user ADTs; prefer
 `NoMask`, `Absent`, etc.
 
-## Native `slog.Handler` implementations
+## Codegen: call lowering for native slog libraries (1.5.0)
+
+Treelog migration away from `@[go]` needed:
+
+1. Capitalized multi-arg apps (`Emit_request a b c d` → one Go call)
+2. Unit erasure (`Now ()`, `NewID ()`, `colors.gray ()`)
+3. If-as-expression on let RHS (`let service = if …`)
+
+These shipped in **1.5.0** ([19-call-lowering.md](19-call-lowering.md)).
+Handle/sanitize can move to native Goop next; Options should use `'a option`
+and Scope’s error API should be `Fail` (not `Error`) to avoid the builtin
+`error` clash.
 
 Goop 1.3.0's `implements` declaration can emit the pointer-receiver method set
 needed by `slog.Handler`, so Treelog can define a native handler without an

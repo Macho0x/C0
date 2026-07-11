@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.5.0
+
+### Call lowering (OCaml-faithful)
+
+- Capitalized multi-arg lets lower to one Go call (`Add(2, 3)`), not curried
+  `Add(2)(3)`.
+- `unit` parameters are erased from Go signatures; `f ()` / `M.f ()` no longer
+  pass `struct{}{}` (including cross-package Goop calls and `time.Now ()`).
+- `let x = if c then a else b` lowers via an IIFE so if-expressions work on
+  let RHS and in expression position.
+- Option/result Go type names use a consistent `optionTypeSuffix` so helpers
+  match call sites (`OptionQuoteparams`).
+
+### Tests
+
+- `capitalized_multi_arg_test`, `go_unit_elision_test`, `if_expr_let_test`
+
+### Docs
+
+- Design note [19-call-lowering.md](docs/design/19-call-lowering.md); lowering
+  and treelog feedback updates.
+
 ## 1.4.0
 
 ### Go method and field FFI

@@ -1,0 +1,8 @@
+module main
+
+(* if-expressions must be usable on the RHS of let (IIFE lowering). *)
+
+let main () =
+  let x = if true then 1 else 2 in
+  let y = if x = 1 then "a" else "b" in
+  assert (x = 1 && y = "a")

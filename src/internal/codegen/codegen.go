@@ -250,11 +250,11 @@ func (g *Generator) internalTypeToGo(t types.Type) string {
 			return "func() " + g.internalTypeToGo(t.Args[0])
 		}
 		if t.Name == "option" && len(t.Args) > 0 {
-			return "Option" + exported(g.internalTypeToGo(t.Args[0]))
+			return "Option" + optionTypeSuffix(g.internalTypeToGo(t.Args[0]))
 		}
 		if t.Name == "result" && len(t.Args) > 0 {
 			arg := g.internalTypeToGo(t.Args[0])
-			return "Result" + exported(arg)
+			return "Result" + optionTypeSuffix(arg)
 		}
 		return "interface{}"
 	case *types.TRecord:
@@ -472,10 +472,11 @@ func (g *Generator) prescan(mod *ast.Module) {
 					// surrounding handler resumes its continuation.
 					g.funcRetType[b.Name] = "interface{}"
 				}
-				// Filter empty-named params
+				// Filter empty-named and unit params (OCaml `()` / `_u: unit`
+				// lower to zero Go parameters).
 				realCount := 0
 				for _, p := range b.Params {
-					if p.Name != "" {
+					if p.Name != "" && !isUnitParam(p) {
 						realCount++
 					}
 				}
@@ -570,7 +571,7 @@ func (g *Generator) scanUsedTypes(at ast.Type) {
 			switch ident.Name {
 			case "option":
 				elemGo := g.typeToGo(t.Arg)
-				goType := "Option" + exported(elemGo)
+				goType := "Option" + optionTypeSuffix(elemGo)
 				g.usedOption[goType] = elemGo
 			case "result":
 				elemGo := g.typeToGo(t.Arg)
@@ -754,7 +755,9 @@ func (g *Generator) typeToGo(at ast.Type) string {
 		case "array":
 			return "[]" + argName
 		case "option":
-			return "Option" + exported(argName)
+			return "Option" + optionTypeSuffix(argName)
+		case "ref":
+			return "*" + argName
 		case "result":
 			// result applied to a tuple → result<A, B>
 			return "Result" + exported(argName)
@@ -789,6 +792,22 @@ func (g *Generator) typeToGo(at ast.Type) string {
 	default:
 		return "interface{}"
 	}
+}
+
+// optionTypeSuffix turns an element Go type into a valid identifier suffix.
+// External types (for example io.Writer) cannot be used verbatim in an
+// identifier such as OptionIo.Writer.
+func optionTypeSuffix(goType string) string {
+	if dot := strings.LastIndex(goType, "."); dot >= 0 {
+		goType = goType[dot+1:]
+	}
+	var b strings.Builder
+	for _, r := range goType {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return exported(b.String())
 }
 
 func (g *Generator) recordNameFromType(t *ast.TRecord) string {
@@ -1190,6 +1209,9 @@ func (g *Generator) emitTupleTypes() {
 
 func (g *Generator) emitOptionTypes() {
 	for goType, elemGo := range g.usedOption {
+		if qualified, ok := g.goTypeQual[elemGo]; ok {
+			elemGo = qualified
+		}
 		short := strings.TrimPrefix(goType, "Option")
 		tagType := "OptionTag" + short
 		g.emitf("// Option type: %s\n", goType)
@@ -1554,10 +1576,11 @@ func (g *Generator) emitLetDecl(d *ast.LetDecl) {
 		// the function name context.
 		g.recordMapping(g.goLine, 0) // approximate Goop line = current Go line
 
-		// Filter out empty-named params (from `()` parsing quirk)
+		// Filter out empty-named params (from `()` parsing quirk) and unit
+		// params (`_u: unit`) — they are not Go parameters.
 		realParams := make([]ast.Param, 0, len(b.Params))
 		for _, p := range b.Params {
-			if p.Name != "" {
+			if p.Name != "" && !isUnitParam(p) {
 				realParams = append(realParams, p)
 			}
 		}
@@ -1766,6 +1789,16 @@ func (g *Generator) emitGoSliceHelpers() {
 	g.emit("func list_of_go_slice[T any](xs []T) []T { return xs }\n\n")
 }
 
+func isUnitParam(p ast.Param) bool {
+	if p.Type == nil {
+		return false
+	}
+	if id, ok := p.Type.(*ast.TIdent); ok && id.Name == "unit" {
+		return true
+	}
+	return false
+}
+
 func (g *Generator) emitParams(params []ast.Param) {
 	g.buf.WriteString("(")
 	first := true
@@ -1890,7 +1923,7 @@ func (g *Generator) emitExpr(e ast.Expr, isStmt bool) {
 	case *ast.AppExpr:
 		g.emitApp(e, isStmt)
 	case *ast.IfExpr:
-		g.emitIf(e)
+		g.emitIf(e, isStmt)
 	case *ast.MatchExpr:
 		g.emitMatch(e)
 	case *ast.LetInExpr:
@@ -2055,6 +2088,10 @@ func (g *Generator) emitConstructor(e *ast.ConstructorExpr) {
 	if pkg, ok := g.openExports[e.Name]; ok {
 		g.buf.WriteString(pkg + "." + e.Name)
 		if e.Arg != nil {
+			if lit, ok := e.Arg.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+				g.buf.WriteString("()")
+				return
+			}
 			g.buf.WriteString("(")
 			g.emitExpr(e.Arg, false)
 			g.buf.WriteString(")")
@@ -2064,18 +2101,48 @@ func (g *Generator) emitConstructor(e *ast.ConstructorExpr) {
 	// Check for extern-qualified names first
 	if _, ok := g.externNames[e.Name]; ok {
 		if tup := g.externReturnTuple(e.Name); tup != nil && e.Arg != nil {
+			if lit, ok := e.Arg.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+				g.emitExternTupleCall(&ast.IdentExpr{Name: e.Name}, nil, tup, false)
+				return
+			}
 			g.emitExternTupleCall(&ast.IdentExpr{Name: e.Name}, []ast.Expr{e.Arg}, tup, false)
 			return
 		}
 		if qualified, ok := g.externNames[e.Name]; ok {
 			g.buf.WriteString(qualified)
 			if e.Arg != nil {
+				if lit, ok := e.Arg.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+					// OCaml `f ()` on a zero-arg Go func → f(), not f(struct{}{})
+					g.buf.WriteString("()")
+					return
+				}
 				g.buf.WriteString("(")
 				g.emitExpr(e.Arg, false)
 				g.buf.WriteString(")")
 			}
 			return
 		}
+	}
+	// Capitalized user lets are tokenized as constructors (`Add 2`).
+	if count, ok := g.funcParamCount[e.Name]; ok {
+		goN := g.goName(e.Name)
+		if e.Arg == nil {
+			g.buf.WriteString(goN)
+			return
+		}
+		if lit, ok := e.Arg.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+			g.buf.WriteString(goN + "()")
+			return
+		}
+		if count > 1 {
+			g.emitPartialApp(e.Name, []ast.Expr{e.Arg}, count)
+			return
+		}
+		g.buf.WriteString(goN)
+		g.buf.WriteString("(")
+		g.emitExpr(e.Arg, false)
+		g.buf.WriteString(")")
+		return
 	}
 	// Check user-defined ADTs first (they take priority over built-in names)
 	varName := g.findVariantStruct(e.Name, e.TypePrefix)
@@ -2537,10 +2604,14 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 				return
 			}
 		}
-		// qualified call like Console.print_line
+		// qualified call like colors.gray () / Console.print_line
 		g.emitFieldAccess(field)
 		g.buf.WriteString("(")
-		g.emitExpr(e.Arg, false)
+		if lit, ok := e.Arg.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+			// unit erased — zero-arg Go call
+		} else {
+			g.emitExpr(e.Arg, false)
+		}
 		g.buf.WriteString(")")
 		if isStmt {
 			g.buf.WriteString("\n")
@@ -2587,14 +2658,14 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 	funcExpr := args[0].(ast.Expr)
 	args = args[1:]
 
-	// Flatten ConstructorExpr with embedded Arg for extern functions.
-	// The parser may represent "Mod a b" as
-	// AppExpr(Func=ConstructorExpr(Mod, Arg=a), Arg=b), which means
-	// collectArgs only sees [ConstructorExpr(Mod, a), b] instead of
-	// [Mod, a, b]. Un-embed the first arg so all args are in one flat list.
+	// Flatten ConstructorExpr with embedded Arg for user lets and externs.
+	// The parser represents "Add 2 3" / "Mod a b" as
+	// AppExpr(Func=ConstructorExpr(Add, Arg=2), Arg=3), so collectArgs only
+	// sees [ConstructorExpr(Add, 2), 3]. Un-embed the first arg so all args
+	// are in one flat list and we emit Add(2, 3) rather than Add(2)(3).
 	if cons, ok := funcExpr.(*ast.ConstructorExpr); ok && cons.Arg != nil {
-		if _, isExtern := g.externNames[cons.Name]; isExtern {
-			funcExpr = &ast.IdentExpr{Name: cons.Name}
+		if g.shouldFlattenCtorCall(cons.Name) {
+			funcExpr = &ast.IdentExpr{Name: cons.Name, Loc: cons.Loc}
 			args = append([]ast.Expr{cons.Arg}, args...)
 		}
 	}
@@ -2715,18 +2786,25 @@ func (g *Generator) emitApp(e *ast.AppExpr, isStmt bool) {
 		if paramCnt, ok := g.funcParamCount[funcName]; ok && paramCnt == 0 {
 			goto afterArgs
 		}
-		// For extern functions, strip unit arguments — Goop's `unit` type maps
-		// to zero Go parameters.
-		if _, isExtern := g.externNames[funcName]; isExtern {
-			var filtered []ast.Expr
-			for _, a := range args {
-				// Unit literals are LitExpr with Kind == token.UNIT
-				if lit, ok := a.(*ast.LitExpr); !ok || lit.Kind != token.UNIT {
-					filtered = append(filtered, a)
-				}
+		// Also try exported name.
+		if goName, ok := g.goopToGo[funcName]; ok {
+			if paramCnt, ok := g.funcParamCount[goName]; ok && paramCnt == 0 {
+				goto afterArgs
 			}
-			args = filtered
 		}
+	}
+	// Strip unit arguments everywhere — Goop erases `unit` parameters, so
+	// OCaml `f ()` / `M.f ()` must not pass `struct{}{}` (including cross-
+	// package Goop calls where funcParamCount is unknown).
+	{
+		var filtered []ast.Expr
+		for _, a := range args {
+			if lit, ok := a.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+				continue
+			}
+			filtered = append(filtered, a)
+		}
+		args = filtered
 	}
 	for i, arg := range args {
 		if i > 0 {
@@ -2749,6 +2827,31 @@ func (g *Generator) getExprName(e ast.Expr) string {
 		return cons.Name
 	}
 	return ""
+}
+
+// shouldFlattenCtorCall reports whether a ConstructorExpr with an embedded
+// first argument is actually a capitalized function/extern application
+// (OCaml juxtaposition), not an ADT / option / result constructor.
+func (g *Generator) shouldFlattenCtorCall(name string) bool {
+	switch name {
+	case "None", "Some", "Ok", "Error", "Err":
+		return false
+	}
+	if g.findVariantStruct(name, "") != "" {
+		return false
+	}
+	if _, ok := g.externNames[name]; ok {
+		return true
+	}
+	if _, ok := g.funcParamCount[name]; ok {
+		return true
+	}
+	if goName, ok := g.goopToGo[name]; ok {
+		if _, ok := g.funcParamCount[goName]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *Generator) emitExternTupleCall(funcExpr ast.Expr, args []ast.Expr, tup *ast.TTuple, isStmt bool) {
@@ -3141,18 +3244,51 @@ func isNotPattern(e *ast.IfExpr) bool {
 		trueLit.Kind == token.TRUE && trueLit.Value == true
 }
 
-func (g *Generator) emitIf(e *ast.IfExpr) {
+func (g *Generator) emitIf(e *ast.IfExpr, isStmt bool) {
 	// Detect the `not` desugar pattern: if condition then false else true → !condition
 	if isNotPattern(e) {
 		g.buf.WriteString("!(")
 		g.emitExpr(e.Cond, false)
 		g.buf.WriteString(")")
+		if isStmt {
+			g.buf.WriteString("\n")
+		}
 		return
 	}
 
-	// General case: emit as a Go if/else statement.
-	// When used as an expression (in a function call), this is valid Go because
-	// each branch terminates with `return` emitting `return false / return true`.
+	// Expression form (e.g. `let x = if c then a else b`): wrap in an IIFE so
+	// the result can appear on the RHS of `:=` / in call args. OCaml if-as-
+	// expression; Go needs a block returning a value.
+	if !isStmt {
+		retGo := "interface{}"
+		if g.typeMap != nil {
+			if t, ok := g.typeMap[e]; ok {
+				retGo = g.internalTypeToGo(t)
+			}
+		}
+		g.varCounter++
+		tmpFn := fmt.Sprintf("__ife%d", g.varCounter)
+		oldFunc := g.currentFunc
+		g.currentFunc = tmpFn
+		g.funcRetType[tmpFn] = retGo
+		g.buf.WriteString("func() " + retGo + " {\n")
+		g.indent++
+		g.emitf("if ")
+		g.emitExpr(e.Cond, false)
+		g.buf.WriteString(" {\n")
+		g.indent++
+		g.emitReturnExpr(e.ThenBranch)
+		g.indent--
+		g.emitf("}\n")
+		g.emitReturnExpr(e.ElseBranch)
+		g.indent--
+		g.buf.WriteString("}()")
+		delete(g.funcRetType, tmpFn)
+		g.currentFunc = oldFunc
+		return
+	}
+
+	// Statement / return-position form: branches emit their own returns.
 	g.emitf("if ")
 	g.emitExpr(e.Cond, false)
 	g.buf.WriteString(" {\n")
@@ -3355,10 +3491,10 @@ func (g *Generator) emitReturnExpr(e ast.Expr) {
 		// In return position that still needs an explicit `return`.
 		if isNotPattern(e) {
 			g.emitf("return ")
-			g.emitIf(e)
+			g.emitIf(e, false)
 			g.buf.WriteString("\n")
 		} else {
-			g.emitIf(e)
+			g.emitIf(e, true)
 		}
 	case *ast.MatchExpr, *ast.LetInExpr, *ast.AsMatchExpr, *ast.GuardExpr:
 		// These emit their own stmt structure

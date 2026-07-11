@@ -1,0 +1,13 @@
+module main
+
+import go "time" {
+  type Time
+  val Now : unit -> Time
+  val (t : Time).IsZero : unit -> bool
+}
+
+(* OCaml `Now ()` must lower to time.Now(), not time.Now(struct{}{}). *)
+
+let main () =
+  let t = Now () in
+  assert (not (t.IsZero ()))

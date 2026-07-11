@@ -1,0 +1,14 @@
+module main
+
+(* Capitalized multi-arg lets must lower to one Go call, not curried apps. *)
+
+let Add (a: int) (b: int) : int = a + b
+
+let Emit_request (a: int) (b: int) (c: int) (d: int) : int =
+  a + b + c + d
+
+let main () =
+  begin
+    assert (Add 2 3 = 5);
+    assert (Emit_request 1 2 3 4 = 10)
+  end

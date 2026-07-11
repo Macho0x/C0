@@ -68,6 +68,16 @@ try body finally cleanup
 
 Fully applied multi-arg functions → multi-parameter Go funcs. Partial application → closures.
 
+Capitalized lets (`Add 2 3`) are parsed with an embedded first constructor
+argument; codegen flattens that to `Add(2, 3)`. See
+[19-call-lowering.md](19-call-lowering.md).
+
+`unit` parameters are erased from Go signatures. Calls of the form `f ()`
+omit the argument (including qualified `M.f ()` and externs like `time.Now ()`).
+
+`let x = if c then a else b` lowers to an immediately invoked function so the
+`if` can appear in expression position.
+
 ## Modules
 
 A Goop module maps to a Go package (name lowercased; exports title-cased). Nested `struct` modules flatten or nest as packages according to the compiler’s module pass (minimal).

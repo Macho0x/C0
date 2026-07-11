@@ -1,26 +1,25 @@
-# Goop 1.4.0
+# Goop 1.5.0
 
-Goop 1.4.0 adds Go method and field imports. Goop code can now call selectors
-on opaque imported Go values without introducing a one-off `@[go]` adapter.
+Goop 1.5.0 hardens OCaml-style call lowering so libraries can drop `@[go]`
+adapters that existed only to paper over codegen gaps.
 
 ## Highlights
 
-- **Method imports:** declare `val (x : T).M : A -> B` in an `import go`
-  block and call it with `x.M arg` (or `T.M x arg`).
-- **Field imports:** a non-arrow selector type, such as
-  `val (a : Attr).Key : string`, lowers to a Go field read.
-- **Go-shaped values:** callbacks, `go_slice` indexing (`xs.(i)`), `any_of`,
-  and `spread` work with imported methods and variadic APIs.
-- **Examples:** [`go_method_calls.goop`](docs/examples/go_method_calls.goop)
-  imports `bytes.Buffer.String`; the native
-  [`slog.Handler`](docs/examples/go_implements_slog_handler.goop) example
-  now imports and calls `slog.New` and `Logger.Info`.
+- **Capitalized multi-arg apps:** `Add 2 3` → `Add(2, 3)`.
+- **Unit erasure:** `unit` params are not Go parameters; `Now ()` → `time.Now()`,
+  and `let f (_u: unit) = …` → `func F()`.
+- **If-as-expression:** `let x = if c then a else b` emits a valid Go IIFE.
+- **Option naming:** consistent `optionTypeSuffix` for generated helpers.
 
 ## Verification
 
-- `goop check docs/examples/go_method_calls.goop`
-- `goop check docs/examples/go_implements_stringer.goop`
-- `goop check docs/examples/go_implements_slog_handler.goop`
-- `goop test tests/`
-- Verify generated Go contains direct selector calls such as `b.String()` and
-  accepts the emitted `slog.Handler` assertion.
+- `go test ./...` (from `src/`)
+- `goop test tests/` → 90 passed, 0 failed
+- Treelog: `goop test .` → 4 passed, 0 failed (recompiled under 1.5)
+
+## Treelog note
+
+1.5 unblocks native Options/Scope/Handle work. Treelog still uses a hybrid
+`implements` + `@[go]` Handle/sanitize layer; a follow-on pass migrates Options
+(`'a option`), Scope (`Fail` + Lock/Unlock), and Handle to majority Goop using
+these lowerings.
