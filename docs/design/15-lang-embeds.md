@@ -52,3 +52,7 @@ Modules with `@[c]` require `CGO_ENABLED=1` and a system C toolchain.
 
 - [`extern_demo.goop`](../examples/extern_demo.goop) — `import go` + `@[go]`
 - [`cgo_demo.goop`](../examples/cgo_demo.goop) — `@[c]` + `val`
+
+## Editor highlighting
+
+In VS Code/Cursor, `@[go]` / `@[c]` (and future `@[lang]`) share one scope (`keyword.embed.goop`, amber `#D7BA7D`). The `{ … }` body uses normal Go/C grammar colors — the embed tag is not tinted with the block.

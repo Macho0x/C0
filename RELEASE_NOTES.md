@@ -1,13 +1,12 @@
-# Goop 1.2.0
+# Goop 1.2.1
 
-Lang embeds: hard-break rename to `import go` / `@[go]`, plus cgo-shaped `@[c]`.
+Editor highlighting for lang embeds plus minor compiler hygiene.
 
 ## Highlights
 
-- **Breaking:** `import golang`, `@golang`, and the `golang` keyword are removed — use `import go` and `@[go]`
-- **`@[c]`:** inline C via cgo (preamble + `import "C"` + primitive `val` wrappers)
-- **Docs:** [15-lang-embeds.md](docs/design/15-lang-embeds.md), tutorial interop chapter, [`cgo_demo.goop`](docs/examples/cgo_demo.goop)
-- **Tests:** `c_embed_*` e2e; renamed `import_go` / `go_embed`; TextMate scopes for `@[go]` / `@[c]`
+- **`@[go]` / `@[c]` tags:** unified amber embed-marker color (`keyword.embed.goop`); inline Go/C bodies use normal grammar highlighting
+- **VS Code extension 0.3.4** — reload window after update to pick up theme + grammar
+- **Compiler:** remove dead `desugarIs` / `desugarAs`, unused `parseADTTypeKind`
 
 ## Verification
 

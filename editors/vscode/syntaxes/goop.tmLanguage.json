@@ -35,14 +35,20 @@
       "patterns": [
         {
           "name": "meta.embedded.block.go",
-          "begin": "@\\[go\\]\\s*\\{",
+          "begin": "(@\\[go\\])\\s*\\{",
+          "beginCaptures": {
+            "1": { "name": "keyword.embed.goop" }
+          },
           "end": "\\}",
           "contentName": "source.go",
           "patterns": [{ "include": "source.go" }]
         },
         {
           "name": "meta.embedded.block.c",
-          "begin": "@\\[c\\]\\s*\\{",
+          "begin": "(@\\[c\\])\\s*\\{",
+          "beginCaptures": {
+            "1": { "name": "keyword.embed.goop" }
+          },
           "end": "\\}",
           "contentName": "source.c",
           "patterns": [{ "include": "source.c" }]

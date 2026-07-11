@@ -2,7 +2,7 @@
   "name": "goop",
   "displayName": "Goop Language Support",
   "description": "Syntax highlighting and LSP support for Goop, a statically typed language that compiles to Go",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "publisher": "goop",
   "icon": "icons/goop-icon-square-transparentbg.png",
   "repository": {
@@ -93,12 +93,8 @@
               "settings": { "foreground": "#D4D4D4" }
             },
             {
-              "scope": "meta.embedded.block.go",
-              "settings": { "foreground": "#9CDCFE" }
-            },
-            {
-              "scope": "meta.embedded.block.c",
-              "settings": { "foreground": "#9CDCFE" }
+              "scope": "keyword.embed.goop",
+              "settings": { "foreground": "#D7BA7D" }
             }
           ]
         }

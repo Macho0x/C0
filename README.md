@@ -123,7 +123,7 @@ Highlights: ADTs + exhaustive `match`, `ref`/`!`/`:=`, `go`/`chan`/`select`/`go 
 
 ## FAQ
 
-**Is 1.2.0 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
+**Is 1.2.1 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
 
 **How is this different from Borgo or Dingo?** Goop is a full compiler with OCaml-aligned syntax and compile-time safety for gradual migration to Go. Dingo-style `?` and F# computation expressions were removed in 1.0.
 
@@ -131,7 +131,9 @@ Highlights: ADTs + exhaustive `match`, `ref`/`!`/`:=`, `go`/`chan`/`select`/`go 
 
 ## Status
 
-**v1.2.0** — Lang embeds: `import go` / `@[go]` / `@[c]` (cgo); hard-break remove `golang`/`@golang`. See [CHANGELOG](CHANGELOG.md) · [15-lang-embeds](docs/design/15-lang-embeds.md).
+**v1.2.1** — `@[lang]` embed tag highlighting (amber marker, normal body colors); dead-code cleanup. See [CHANGELOG](CHANGELOG.md).
+
+**v1.2.0** — Lang embeds: `import go` / `@[go]` / `@[c]` (cgo); hard-break remove `golang`/`@golang`. See [15-lang-embeds](docs/design/15-lang-embeds.md).
 
 **v1.1.1** — Tests/examples overhaul, `select` channel lowering fix, stronger e2e.
 

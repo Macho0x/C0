@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.1
+
+### Editor / hygiene
+
+- Syntax: `@[go]` / `@[c]` tags use unified `keyword.embed.goop` (amber `#D7BA7D`); embed bodies keep normal Go/C colors (no block-wide tint)
+- VS Code extension 0.3.4; grammar synced to Zed
+- Remove unused `desugarIs` / `desugarAs`, `parseADTTypeKind`, dummy `var g`
+
 ## 1.2.0
 
 ### Breaking — lang embeds and Go imports

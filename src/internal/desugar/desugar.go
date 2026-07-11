@@ -329,45 +329,6 @@ func desugarFunction(e *ast.FunctionExpr) ast.Expr {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Desugaring rules (legacy match macros — kept for migration)
-// ---------------------------------------------------------------------------
-
-// expr is pattern → match expr with | pattern -> true | _ -> false
-func desugarIs(e *ast.IsExpr) ast.Expr {
-	return &ast.MatchExpr{
-		Scrutinee: DesugarExpr(e.Left),
-		Arms: []ast.MatchArm{
-			{
-				Pattern: e.Pattern,
-				Body:    &ast.LitExpr{Value: true, Kind: token.TRUE},
-			},
-			{
-				Pattern: &ast.WildcardPattern{},
-				Body:    &ast.LitExpr{Value: false, Kind: token.FALSE},
-			},
-		},
-	}
-}
-
-// expr as pattern -> then else elseExpr
-// → match expr with | pattern -> then | _ -> elseExpr
-func desugarAs(e *ast.AsMatchExpr) ast.Expr {
-	return &ast.MatchExpr{
-		Scrutinee: DesugarExpr(e.Left),
-		Arms: []ast.MatchArm{
-			{
-				Pattern: e.Pattern,
-				Body:    DesugarExpr(e.Body),
-			},
-			{
-				Pattern: &ast.WildcardPattern{},
-				Body:    DesugarExpr(e.ElseBody),
-			},
-		},
-	}
-}
-
 // guard p1 = e1 and p2 = e2 ... else elseExpr
 // → nested match where the innermost binding returns its bound value:
 //
@@ -660,5 +621,3 @@ func wrapAsyncFuture(value ast.Expr) ast.Expr {
 		Body: &ast.IdentExpr{Name: "__async_ch"},
 	}
 }
-
-var g string // dummy for LetOp binding name

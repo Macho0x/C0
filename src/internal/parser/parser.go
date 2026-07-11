@@ -780,14 +780,6 @@ func (p *Parser) parseRecordTypeKind() *ast.RecordTypeKind {
 	return rk
 }
 
-func (p *Parser) parseADTTypeKind() *ast.ADTTypeKind {
-	// Leading pipe already matched or present
-	if p.cur().Type == token.PIPE {
-		p.advance()
-	}
-	return p.parseADTTypeKindNoPipe()
-}
-
 func (p *Parser) parseADTTypeKindNoPipe() *ast.ADTTypeKind {
 	ak := &ast.ADTTypeKind{}
 	for {
