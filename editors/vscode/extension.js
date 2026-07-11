@@ -33,7 +33,8 @@ function expandConfigPath(value, workspaceRoot) {
  * @returns {string}
  */
 function resolveGoopPath(config, workspaceRoot) {
-  const configured = config.get("path", "").trim();
+  const raw = config.get("path");
+  const configured = (raw == null ? "" : String(raw)).trim();
   if (configured) {
     const expanded = expandConfigPath(configured, workspaceRoot);
     if (path.isAbsolute(expanded)) {

@@ -76,6 +76,7 @@ This workspace sets `"goop.path": "${workspaceFolder}/goop"` in `.vscode/setting
 | No LSP errors | Build `./goop`; check **Output** panel → **Goop Language Server** |
 | No file icon | Enable **Goop File Icons** theme (optional, see above) |
 | Stale colors after grammar change | Re-run install script, reload window |
+| `Cannot read properties of null (reading 'length')` | Rebuild `./goop`, reinstall extension 0.3.5+ (`./scripts/install-editor-extension.sh`), reload window — fixed LSP notification handling |
 
 ## Grammar source
 

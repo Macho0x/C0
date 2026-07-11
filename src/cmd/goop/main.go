@@ -478,7 +478,10 @@ func runLSP() {
 			continue
 		}
 		resp := server.handleLSPRequest(req)
-		sendLSPResponse(stdout, resp)
+		// LSP notifications have no id and must not receive a response.
+		if req.ID != nil {
+			sendLSPResponse(stdout, resp)
+		}
 	}
 }
 
@@ -512,6 +515,8 @@ func (s *LSPServer) handleLSPRequest(req Request) Response {
 		return s.handleDefinition(req)
 	case "textDocument/completion":
 		return s.handleCompletion(req)
+	case "initialized", "exit":
+		return Response{Jsonrpc: "2.0"}
 	default:
 		return Response{
 			Jsonrpc: "2.0",
@@ -552,20 +557,15 @@ func (s *LSPServer) handleDidChange(req Request) Response {
 
 // handleDocumentUpdate parses and type-checks a document, storing results for LSP use.
 func (s *LSPServer) handleDocumentUpdate(params json.RawMessage) {
-	var p struct {
-		TextDocument struct {
-			URI  string `json:"uri"`
-			Text string `json:"text"`
-		} `json:"textDocument"`
+	uri, text, ok := documentTextFromParams(params)
+	if !ok {
+		return
 	}
-	json.Unmarshal(params, &p)
-
-	uri := p.TextDocument.URI
-	src := []byte(p.TextDocument.Text)
 	fileName := uriToPath(uri)
 
 	// Store source text
-	s.documents[uri] = p.TextDocument.Text
+	s.documents[uri] = text
+	src := []byte(text)
 
 	mod, parseErr := parser.Parse(fileName, src)
 	var diagnostics []Diagnostic
@@ -595,6 +595,35 @@ func (s *LSPServer) handleDocumentUpdate(params json.RawMessage) {
 	}
 
 	s.publishDiagnostics(uri, diagnostics)
+}
+
+// documentTextFromParams extracts URI and full document text from didOpen or didChange params.
+func documentTextFromParams(params json.RawMessage) (uri, text string, ok bool) {
+	var open struct {
+		TextDocument struct {
+			URI  string `json:"uri"`
+			Text string `json:"text"`
+		} `json:"textDocument"`
+	}
+	if json.Unmarshal(params, &open) == nil && open.TextDocument.URI != "" && open.TextDocument.Text != "" {
+		return open.TextDocument.URI, open.TextDocument.Text, true
+	}
+
+	var change struct {
+		TextDocument struct {
+			URI string `json:"uri"`
+		} `json:"textDocument"`
+		ContentChanges []struct {
+			Text string `json:"text"`
+		} `json:"contentChanges"`
+	}
+	if json.Unmarshal(params, &change) == nil && change.TextDocument.URI != "" {
+		if len(change.ContentChanges) == 0 {
+			return change.TextDocument.URI, "", true
+		}
+		return change.TextDocument.URI, change.ContentChanges[len(change.ContentChanges)-1].Text, true
+	}
+	return "", "", false
 }
 
 // diagnosticFromError creates a Diagnostic with proper LSP range from an error.
