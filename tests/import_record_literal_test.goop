@@ -1,0 +1,21 @@
+module main
+
+(* Cross-package record literals must lower to pkg.Cfg{...}, not struct{...}.
+   Option fields must use pkg.NewOptionString{Some,None}, not local undefs. *)
+
+import goop . "github.com/Macho0x/Goop/tests/fixtures/recpkg"
+
+let main () =
+  let c = { name = "x"; n = 1; label = Some "hi" } in
+  let c2 = bump c in
+  let c3 = { n = 7; name = "y"; label = None } in
+  let c4 = with_label c3 "z" in
+  begin
+    assert (c.name = "x");
+    assert (c.n = 1);
+    assert (c2.n = 2);
+    assert (c3.name = "y");
+    assert (c3.n = 7);
+    assert (c4.name = "y");
+    print_line "import_record_literal OK"
+  end

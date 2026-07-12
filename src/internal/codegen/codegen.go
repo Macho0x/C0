@@ -51,6 +51,8 @@ type Generator struct {
 	// type tracking
 	adts            map[string]*ast.TypeDecl // ADT declarations
 	records         map[string]*ast.TypeDecl // record declarations
+	importedRecords map[string]*ast.TypeDecl // records from open-imported Goop modules
+	importedOptions map[string]string        // OptionGoType → owning Go package (from imported records)
 	opaqueTypes     map[string]*ast.TypeDecl // opaque (linear) type declarations
 	newtypes        map[string]*ast.TypeDecl // nominal newtype declarations
 	classes         map[string]*ast.ClassDecl
@@ -92,6 +94,7 @@ type Generator struct {
 	rowParamName map[string]string // funcName → row param name
 
 	currentFunc         string // function being generated (for ? operator)
+	optionCtorHint      string // OptionGoType hint while emitting typed record fields
 	varCounter          int    // for generating unique tmp variable names
 	needFmt             bool   // whether to import "fmt"
 	needCgo             bool   // whether @[c] embeds require import "C"
@@ -146,6 +149,8 @@ func NewGenerator(srcFile string, cfg *config.Config) *Generator {
 		openExports:      make(map[string]string),
 		adts:             make(map[string]*ast.TypeDecl),
 		records:          make(map[string]*ast.TypeDecl),
+		importedRecords:  make(map[string]*ast.TypeDecl),
+		importedOptions:  make(map[string]string),
 		opaqueTypes:      make(map[string]*ast.TypeDecl),
 		newtypes:         make(map[string]*ast.TypeDecl),
 		classes:          make(map[string]*ast.ClassDecl),
@@ -290,6 +295,25 @@ func (g *Generator) internalRecordToGo(t *types.TRecord) string {
 				}
 				if match {
 					return g.goName(name)
+				}
+			}
+		}
+	}
+	for name, td := range g.importedRecords {
+		if rk, ok := td.Kind.(*ast.RecordTypeKind); ok {
+			if len(rk.Fields) == len(t.Fields) {
+				match := true
+				for i, f := range rk.Fields {
+					if f.Name != t.Fields[i].Name {
+						match = false
+						break
+					}
+				}
+				if match {
+					if pkg, ok := g.openExports[name]; ok {
+						return pkg + "." + exported(name)
+					}
+					return exported(name)
 				}
 			}
 		}
@@ -1007,14 +1031,89 @@ func (g *Generator) collectDotExports(dep *ast.Module, goPkg string) {
 			}
 			for _, b := range d.Bindings {
 				g.openExports[b.Name] = goPkg
+				emitName := b.Name
+				if b.Name != "main" {
+					emitName = exported(b.Name)
+				}
+				realCount := 0
+				paramTypes := make([]string, 0)
+				for _, p := range b.Params {
+					if p.Name != "" && !isUnitParam(p) {
+						realCount++
+						if p.Type != nil {
+							paramTypes = append(paramTypes, g.typeToGo(p.Type))
+						} else {
+							paramTypes = append(paramTypes, "interface{}")
+						}
+					}
+				}
+				g.funcParamCount[b.Name] = realCount
+				g.funcParamCount[emitName] = realCount
+				g.funcParamTypes[b.Name] = paramTypes
+				if b.RetType != nil {
+					g.funcRetType[b.Name] = g.typeToGo(b.RetType)
+				}
+				g.goopToGo[b.Name] = emitName
 			}
 		case *ast.TypeDecl:
 			if d.Private {
 				continue
 			}
 			g.openExports[d.Name] = goPkg
+			if rk, ok := d.Kind.(*ast.RecordTypeKind); ok {
+				g.importedRecords[d.Name] = d
+				g.goopToGo[d.Name] = exported(d.Name)
+				g.registerImportedOptionFields(rk, goPkg)
+			}
 		}
 	}
+}
+
+// registerImportedOptionFields maps option field Go types to the package that
+// owns the record, so Some/None lower to pkg.NewOptionTSome (not local undefs).
+func (g *Generator) registerImportedOptionFields(rk *ast.RecordTypeKind, goPkg string) {
+	for _, f := range rk.Fields {
+		g.registerImportedOptionType(f.Type, goPkg)
+	}
+}
+
+func (g *Generator) registerImportedOptionType(t ast.Type, goPkg string) {
+	if t == nil {
+		return
+	}
+	switch typ := t.(type) {
+	case *ast.TApp:
+		if ident, ok := typ.Func.(*ast.TIdent); ok && ident.Name == "option" {
+			elemGo := g.typeToGo(typ.Arg)
+			goType := "Option" + optionTypeSuffix(elemGo)
+			g.importedOptions[goType] = goPkg
+			return
+		}
+		g.registerImportedOptionType(typ.Func, goPkg)
+		g.registerImportedOptionType(typ.Arg, goPkg)
+	case *ast.TTuple:
+		for _, e := range typ.Elems {
+			g.registerImportedOptionType(e, goPkg)
+		}
+	case *ast.TFun:
+		g.registerImportedOptionType(typ.From, goPkg)
+		g.registerImportedOptionType(typ.To, goPkg)
+	case *ast.TRecord:
+		for _, f := range typ.Fields {
+			g.registerImportedOptionType(f.Type, goPkg)
+		}
+	case *ast.RefinementType:
+		g.registerImportedOptionType(typ.Inner, goPkg)
+	}
+}
+
+// resolveCallTarget returns the Go qualified name for a call target,
+// including package prefix for open-imported lets.
+func (g *Generator) resolveCallTarget(name string) string {
+	if pkg, ok := g.openExports[name]; ok {
+		return pkg + "." + exported(name)
+	}
+	return g.goName(name)
 }
 
 // resolveOpens is deprecated; use collectImports.
@@ -1209,6 +1308,9 @@ func (g *Generator) emitTupleTypes() {
 
 func (g *Generator) emitOptionTypes() {
 	for goType, elemGo := range g.usedOption {
+		if _, imported := g.importedOptions[goType]; imported {
+			continue
+		}
 		if qualified, ok := g.goTypeQual[elemGo]; ok {
 			elemGo = qualified
 		}
@@ -2133,21 +2235,39 @@ func (g *Generator) emitIdent(e *ast.IdentExpr) {
 		return
 	}
 	if pkg, ok := g.openExports[e.Name]; ok {
-		if _, local := g.funcParamCount[e.Name]; !local {
-			if _, local := g.funcRetType[e.Name]; !local {
-				g.buf.WriteString(pkg + "." + e.Name)
-				return
-			}
-		}
+		g.buf.WriteString(pkg + "." + exported(e.Name))
+		return
 	}
 	// Use mapped Go name for exported lets (colorize → Colorize).
 	g.buf.WriteString(g.goName(e.Name))
 }
 
 func (g *Generator) emitConstructor(e *ast.ConstructorExpr) {
-	// Open-module exported value called as Constructor token (MixedCaps).
+	// Open-module exported capitalized lets — same flatten/partial-app path
+	// as local lets (imported Capitalized names are Constructor tokens).
 	if pkg, ok := g.openExports[e.Name]; ok {
-		g.buf.WriteString(pkg + "." + e.Name)
+		if count, ok := g.funcParamCount[e.Name]; ok {
+			goN := pkg + "." + exported(e.Name)
+			if e.Arg == nil {
+				g.buf.WriteString(goN)
+				return
+			}
+			if lit, ok := e.Arg.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
+				g.buf.WriteString(goN + "()")
+				return
+			}
+			if count > 1 {
+				g.emitPartialApp(e.Name, []ast.Expr{e.Arg}, count)
+				return
+			}
+			g.buf.WriteString(goN)
+			g.buf.WriteString("(")
+			g.emitExpr(e.Arg, false)
+			g.buf.WriteString(")")
+			return
+		}
+		// Non-function open export (e.g. type name used as constructor token).
+		g.buf.WriteString(pkg + "." + exported(e.Name))
 		if e.Arg != nil {
 			if lit, ok := e.Arg.(*ast.LitExpr); ok && lit.Kind == token.UNIT {
 				g.buf.WriteString("()")
@@ -2230,11 +2350,11 @@ func (g *Generator) emitConstructor(e *ast.ConstructorExpr) {
 	switch e.Name {
 	case "None":
 		optType := g.resolveOptionGoType(e)
-		g.buf.WriteString("New" + optType + "None()")
+		g.buf.WriteString(g.qualifyOptionCtor("New" + optType + "None()"))
 		return
 	case "Some":
 		optType := g.resolveOptionGoType(e)
-		g.buf.WriteString("New" + optType + "Some(")
+		g.buf.WriteString(g.qualifyOptionCtor("New" + optType + "Some("))
 		g.emitExpr(e.Arg, false)
 		g.buf.WriteString(")")
 		return
@@ -2715,6 +2835,9 @@ func (g *Generator) findOptionType() string {
 }
 
 func (g *Generator) resolveOptionGoType(e ast.Expr) string {
+	if g.optionCtorHint != "" {
+		return g.optionCtorHint
+	}
 	if g.typeMap != nil && e != nil {
 		if t, ok := g.typeMap[e]; ok {
 			goT := g.internalTypeToGo(t)
@@ -2724,6 +2847,23 @@ func (g *Generator) resolveOptionGoType(e ast.Expr) string {
 		}
 	}
 	return g.findOptionType()
+}
+
+// qualifyOptionCtor prefixes NewOptionT{Some,None} with the owning package
+// when that option type comes from an open-imported record field.
+func (g *Generator) qualifyOptionCtor(ctorCall string) string {
+	// ctorCall is "NewOptionFooSome(" or "NewOptionFooNone()"
+	name := ctorCall
+	if i := strings.IndexAny(name, "()"); i >= 0 {
+		name = name[:i]
+	}
+	optType := strings.TrimPrefix(name, "New")
+	optType = strings.TrimSuffix(optType, "Some")
+	optType = strings.TrimSuffix(optType, "None")
+	if pkg, ok := g.importedOptions[optType]; ok {
+		return pkg + "." + ctorCall
+	}
+	return ctorCall
 }
 
 func (g *Generator) findResultType() string {
@@ -3070,6 +3210,11 @@ func (g *Generator) shouldFlattenCtorCall(name string) bool {
 	if _, ok := g.externNames[name]; ok {
 		return true
 	}
+	if _, ok := g.openExports[name]; ok {
+		if _, ok := g.funcParamCount[name]; ok {
+			return true
+		}
+	}
 	if _, ok := g.funcParamCount[name]; ok {
 		return true
 	}
@@ -3110,7 +3255,7 @@ func (g *Generator) emitExternTupleCall(funcExpr ast.Expr, args []ast.Expr, tup 
 
 func (g *Generator) emitPartialApp(funcName string, givenArgs []ast.Expr, totalParams int) {
 	remaining := totalParams - len(givenArgs)
-	goFuncName := funcName
+	goFuncName := g.resolveCallTarget(funcName)
 
 	// Determine return type from function's return type (now correctly flattened)
 	retType := "interface{}"
@@ -4813,13 +4958,19 @@ func (g *Generator) emitRecord(e *ast.RecordExpr) {
 	// Determine the record type from fields
 	recName := g.inferRecordName(e)
 	g.buf.WriteString(recName + "{")
+	fieldTypes := g.recordFieldASTTypes(recName)
 	for i, f := range e.Fields {
 		if i > 0 {
 			g.buf.WriteString(", ")
 		}
 		g.buf.WriteString(exported(f.Name) + ": ")
 		if f.Value != nil {
+			prevHint := g.optionCtorHint
+			if ft, ok := fieldTypes[f.Name]; ok {
+				g.optionCtorHint = g.optionGoTypeFromAST(ft)
+			}
 			g.emitExpr(f.Value, false)
+			g.optionCtorHint = prevHint
 		} else {
 			// Field punning
 			g.buf.WriteString(f.Name)
@@ -4828,21 +4979,80 @@ func (g *Generator) emitRecord(e *ast.RecordExpr) {
 	g.buf.WriteString("}")
 }
 
-func (g *Generator) inferRecordName(e *ast.RecordExpr) string {
-	// Match against known record types
+// recordFieldASTTypes returns field name → AST type for a local or imported record.
+func (g *Generator) recordFieldASTTypes(recName string) map[string]ast.Type {
+	out := make(map[string]ast.Type)
+	base := recName
+	if i := strings.LastIndex(recName, "."); i >= 0 {
+		base = recName[i+1:]
+	}
 	for name, td := range g.records {
-		rk := td.Kind.(*ast.RecordTypeKind)
-		if len(rk.Fields) == len(e.Fields) {
-			match := true
-			for i, f := range rk.Fields {
-				if i >= len(e.Fields) || f.Name != e.Fields[i].Name {
-					match = false
-					break
+		if g.goName(name) == base || exported(name) == base {
+			if rk, ok := td.Kind.(*ast.RecordTypeKind); ok {
+				for _, f := range rk.Fields {
+					out[f.Name] = f.Type
 				}
 			}
-			if match {
-				return g.goName(name)
+			return out
+		}
+	}
+	for name, td := range g.importedRecords {
+		if exported(name) == base {
+			if rk, ok := td.Kind.(*ast.RecordTypeKind); ok {
+				for _, f := range rk.Fields {
+					out[f.Name] = f.Type
+				}
 			}
+			return out
+		}
+	}
+	return out
+}
+
+func (g *Generator) optionGoTypeFromAST(t ast.Type) string {
+	if t == nil {
+		return ""
+	}
+	if app, ok := t.(*ast.TApp); ok {
+		if ident, ok := app.Func.(*ast.TIdent); ok && ident.Name == "option" {
+			return "Option" + optionTypeSuffix(g.typeToGo(app.Arg))
+		}
+	}
+	return ""
+}
+
+func recordFieldNamesMatch(rk *ast.RecordTypeKind, fields []ast.RecordField) bool {
+	if len(rk.Fields) != len(fields) {
+		return false
+	}
+	lit := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		lit[f.Name] = true
+	}
+	for _, f := range rk.Fields {
+		if !lit[f.Name] {
+			return false
+		}
+	}
+	return true
+}
+
+func (g *Generator) inferRecordName(e *ast.RecordExpr) string {
+	// Local records first (same-package wins on name collision).
+	for name, td := range g.records {
+		rk := td.Kind.(*ast.RecordTypeKind)
+		if recordFieldNamesMatch(rk, e.Fields) {
+			return g.goName(name)
+		}
+	}
+	// Open-imported records → pkg.ExportedName{...}
+	for name, td := range g.importedRecords {
+		rk := td.Kind.(*ast.RecordTypeKind)
+		if recordFieldNamesMatch(rk, e.Fields) {
+			if pkg, ok := g.openExports[name]; ok {
+				return pkg + "." + exported(name)
+			}
+			return exported(name)
 		}
 	}
 	return "struct{...}"
@@ -4880,7 +5090,18 @@ func (g *Generator) emitRecordUpdate(e *ast.RecordUpdateExpr) {
 	// Emit overridden fields
 	for _, f := range e.Fields {
 		g.emitf("%s: ", exported(f.Name))
+		prevHint := g.optionCtorHint
+		if td != nil {
+			rk := td.Kind.(*ast.RecordTypeKind)
+			for _, rf := range rk.Fields {
+				if rf.Name == f.Name {
+					g.optionCtorHint = g.optionGoTypeFromAST(rf.Type)
+					break
+				}
+			}
+		}
 		g.emitExpr(f.Value, false)
+		g.optionCtorHint = prevHint
 		g.buf.WriteString(",\n")
 	}
 	// Remove trailing comma by seeking back
@@ -4889,14 +5110,35 @@ func (g *Generator) emitRecordUpdate(e *ast.RecordUpdateExpr) {
 }
 
 func (g *Generator) inferRecordUpdateName(e *ast.RecordUpdateExpr) string {
-	// Try to determine from the base expression's type
-	// The base is typically an identifier
+	// Prefer inferred type of the base expression.
+	if t := g.typeOf(e.Base); t != nil {
+		if tr, ok := t.(*types.TRecord); ok {
+			if name := g.internalRecordToGo(tr); name != "interface{}" {
+				return name
+			}
+		}
+	}
 	if ident, ok := e.Base.(*ast.IdentExpr); ok {
-		// Look up the parameter or variable's type
-		// This is an approximation — check known records
+		if g.varTypeMap != nil {
+			if t, ok := g.varTypeMap[ident.Name]; ok {
+				if tr, ok := t.(*types.TRecord); ok {
+					if name := g.internalRecordToGo(tr); name != "interface{}" {
+						return name
+					}
+				}
+			}
+		}
 		for name := range g.records {
 			if g.goName(name) == g.goName(ident.Name) || name == ident.Name {
 				return g.goName(name)
+			}
+		}
+		for name := range g.importedRecords {
+			if name == ident.Name || exported(name) == ident.Name {
+				if pkg, ok := g.openExports[name]; ok {
+					return pkg + "." + exported(name)
+				}
+				return exported(name)
 			}
 		}
 	}
@@ -4906,6 +5148,15 @@ func (g *Generator) inferRecordUpdateName(e *ast.RecordUpdateExpr) string {
 func (g *Generator) findRecordType(goName string) *ast.TypeDecl {
 	for name, td := range g.records {
 		if g.goName(name) == goName {
+			return td
+		}
+	}
+	for name, td := range g.importedRecords {
+		qual := exported(name)
+		if pkg, ok := g.openExports[name]; ok {
+			qual = pkg + "." + exported(name)
+		}
+		if qual == goName || exported(name) == goName {
 			return td
 		}
 	}

@@ -109,32 +109,50 @@ func TestLookupFuncNonExistent(t *testing.T) {
 	}
 }
 
-// TestLookupFuncContainsParams checks the params and results of
-// strings.Contains, which is func(string, string) bool.
-func TestLookupFuncContainsParams(t *testing.T) {
-	sig, err := LookupFunc("strings", "Contains")
+func TestLookupVarStdout(t *testing.T) {
+	typ, err := LookupVar("os", "Stdout")
 	if err != nil {
-		t.Skipf("gosig fallback not available: %v", err)
+		t.Skipf("gosig LookupVar not available: %v", err)
 	}
-	if sig == nil {
-		t.Skip("nil FuncSig")
+	if typ == "" {
+		t.Fatal("expected non-empty type for os.Stdout")
 	}
-
-	if len(sig.Params) != 2 {
-		t.Fatalf("expected 2 params, got %d", len(sig.Params))
-	}
-	for i, p := range sig.Params {
-		if p.Type != "string" {
-			t.Errorf("param %d: expected 'string', got %q", i, p.Type)
-		}
-		if !strings.Contains(p.Type, "string") {
-			t.Errorf("param %d type should contain 'string', got %q", i, p.Type)
-		}
-	}
-	if len(sig.Results) != 1 {
-		t.Errorf("expected 1 result, got %d", len(sig.Results))
-	}
-	if len(sig.Results) == 1 && sig.Results[0].Type != "bool" {
-		t.Errorf("expected result type 'bool', got %q", sig.Results[0].Type)
+	// Relative qualifier → "File" or "*File"; absolute may include "os."
+	if !strings.Contains(typ, "File") {
+		t.Errorf("expected File in os.Stdout type, got %q", typ)
 	}
 }
+
+func TestLookupFuncTimeNow(t *testing.T) {
+	sig, err := LookupFunc("time", "Now")
+	if err != nil {
+		t.Skipf("gosig LookupFunc time.Now: %v", err)
+	}
+	if sig == nil || len(sig.Results) != 1 {
+		t.Fatalf("expected 1 result for time.Now, got %+v", sig)
+	}
+	if !strings.Contains(sig.Results[0].Type, "Time") {
+		t.Errorf("expected Time result, got %q", sig.Results[0].Type)
+	}
+}
+
+func TestLookupFuncJSONMarshal(t *testing.T) {
+	sig, err := LookupFunc("encoding/json", "Marshal")
+	if err != nil {
+		t.Skipf("gosig LookupFunc json.Marshal: %v", err)
+	}
+	if sig == nil || len(sig.Results) < 1 {
+		t.Fatalf("expected results for json.Marshal, got %+v", sig)
+	}
+}
+
+func TestLookupVarHTTPStatusOK(t *testing.T) {
+	typ, err := LookupVar("net/http", "StatusOK")
+	if err != nil {
+		t.Skipf("gosig LookupVar StatusOK: %v", err)
+	}
+	if typ != "int" {
+		t.Errorf("expected int for StatusOK, got %q", typ)
+	}
+}
+

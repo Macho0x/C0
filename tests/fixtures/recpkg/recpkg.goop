@@ -1,0 +1,16 @@
+module Recpkg
+
+type Cfg = {
+  name: string;
+  n: int;
+  label: string option;
+}
+
+let default_cfg () : Cfg =
+  { name = "default"; n = 0; label = None }
+
+let bump (c : Cfg) : Cfg =
+  { c with n = c.n + 1 }
+
+let with_label (c : Cfg) (s : string) : Cfg =
+  { c with label = Some s }

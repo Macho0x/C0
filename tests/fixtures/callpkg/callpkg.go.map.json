@@ -1,0 +1,37 @@
+{
+  "version": 3,
+  "source": "tests/fixtures/callpkg/callpkg.goop",
+  "generated": "callpkg.go",
+  "mappings": [
+    {
+      "c0_line": 1,
+      "c0_column": 0,
+      "go_line": 1,
+      "go_column": 1
+    },
+    {
+      "c0_line": 3,
+      "c0_column": 0,
+      "go_line": 3,
+      "go_column": 1
+    },
+    {
+      "c0_line": 5,
+      "c0_column": 0,
+      "go_line": 5,
+      "go_column": 1
+    },
+    {
+      "c0_line": 7,
+      "c0_column": 0,
+      "go_line": 7,
+      "go_column": 1
+    },
+    {
+      "c0_line": 1,
+      "c0_column": 1,
+      "go_line": 22,
+      "go_column": 1
+    }
+  ]
+}

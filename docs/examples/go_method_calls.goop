@@ -1,10 +1,11 @@
 module main
 
-(* Import and invoke bytes.Buffer.String without an @[go] method wrapper. *)
+(* Import and invoke bytes.Buffer.String without an @[go] method wrapper.
+   Heap Buffer APIs use Buffer ptr (*bytes.Buffer), matching Go receivers. *)
 
 import go "bytes" {
   type Buffer
-  val (b : Buffer).String : unit -> string
+  val (b : Buffer ptr).String : unit -> string
 }
 
 @[go] {
@@ -14,7 +15,7 @@ import go "bytes" {
     return b
   }
 }
-val newBuffer : unit -> Buffer
+val newBuffer : unit -> Buffer ptr
 
 let main () =
   let b = newBuffer () in

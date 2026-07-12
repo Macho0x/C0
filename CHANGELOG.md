@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.6.0
+
+### Cross-package codegen
+
+- Open-imported record types register in codegen; literals and updates emit
+  `pkg.Name{…}` (not anonymous `struct{…}`).
+- Option fields on imported records qualify constructors
+  (`pkg.NewOptionWriterSome`, `pkg.NewOptionStringNone`).
+- Capitalized open-export calls share the local flatten / unit-elision path
+  via `resolveCallTarget` (`pkg.NewScope(…)`, including partial apps).
+
+### Parser / DX
+
+- Multiline juxtaposition when the next token is `LPAREN` (or the arg line is
+  indented past the callee).
+- LSP `uriToPath` URL-decodes `%20` etc.; workspace `rootUri` fallback for
+  `module_root` when `FindProjectRoot` fails on encoded paths.
+
+### FFI / types
+
+- Opaque heap types and pointer-receiver methods documented and tested as
+  `T ptr` (`Buffer ptr` for `*bytes.Buffer`).
+- `gosig`: `SetLoadDir`, `LookupVar`, named Go types → `TGoNamed` / `TPtr` /
+  slices; untyped const strings normalize (`untyped int` → `int`).
+
+### Tests
+
+- `import_record_literal_test`, `import_capitalized_call_test`,
+  `multiline_paren_app_test`, fixtures under `tests/fixtures/{recpkg,callpkg}/`
+- Buffer-ptr updates: `go_method_import_test`, docs examples / tutorial
+
 ## 1.5.0
 
 ### Call lowering (OCaml-faithful)

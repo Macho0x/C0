@@ -1,0 +1,16 @@
+module main
+
+(* Cross-line parenthesized / indented application must parse and run. *)
+
+let add (a : int) (b : int) : int = a + b
+
+let main () =
+  let x =
+    add
+      (add 1 2)
+      3
+  in
+  begin
+    assert (x = 6);
+    print_line "multiline_paren_app OK"
+  end

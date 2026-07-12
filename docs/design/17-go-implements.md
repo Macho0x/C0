@@ -68,6 +68,10 @@ Rules:
 | Variadic params `...T` and `spread xs` | `...T` / `xs...` |
 | Goop `T -> U` where Go expects `func(T) U` | matching `func` literal |
 
+Heap / mutable Go types and pointer-receiver methods should be declared as
+`T ptr` in FFI vals (e.g. `Buffer ptr` for `*bytes.Buffer`). Opaque `type T`
+alone is the Go value type (clarified in **1.6.0**).
+
 **Non-goals for 1.3.0:** `defer` keyword; bare `import go "pkg"` auto-export
 discovery; OCaml objects satisfying Go interfaces; rewriting all of stdlib off
 `@[go]`.

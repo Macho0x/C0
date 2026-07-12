@@ -1,0 +1,11 @@
+module Callpkg
+
+let Add (a : int) (b : int) : int = a + b
+
+let Emit_request (a : int) (b : int) (c : int) (d : int) : int =
+  a + b + c + d
+
+let Zero_arg () : int = 42
+
+let New_scope (log : string) (attrs : int) : string =
+  log ^ ":" ^ int_to_string attrs

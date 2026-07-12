@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -487,8 +488,9 @@ func runLSP() {
 }
 
 type LSPServer struct {
-	documents map[string]string
-	states    map[string]*DocumentState // document states by URI
+	documents     map[string]string
+	states        map[string]*DocumentState // document states by URI
+	workspaceRoot string                    // from initialize rootUri / workspaceFolders
 }
 
 // DocumentState holds parsed module and type info for a document
@@ -533,6 +535,23 @@ func (s *LSPServer) handleLSPRequest(req Request) Response {
 }
 
 func (s *LSPServer) handleInitialize(req Request) Response {
+	var params struct {
+		RootURI          string `json:"rootUri"`
+		RootPath         string `json:"rootPath"`
+		WorkspaceFolders []struct {
+			URI string `json:"uri"`
+		} `json:"workspaceFolders"`
+	}
+	_ = json.Unmarshal(req.Params, &params)
+	root := ""
+	if params.RootURI != "" {
+		root = uriToPath(params.RootURI)
+	} else if len(params.WorkspaceFolders) > 0 {
+		root = uriToPath(params.WorkspaceFolders[0].URI)
+	} else if params.RootPath != "" {
+		root = params.RootPath
+	}
+	s.workspaceRoot = root
 	return lspResult(req.ID, InitializeResult{
 		Capabilities: ServerCapabilities{
 			TextDocumentSync:           1,
@@ -580,6 +599,11 @@ func (s *LSPServer) handleDocumentUpdate(params json.RawMessage) {
 		mod = desugar.DesugarModule(mod)
 
 		lspCfg := loadProjectConfig(fileName)
+		if (lspCfg == nil || lspCfg.ModuleRoot == "") && s.workspaceRoot != "" {
+			if fallback := loadProjectConfig(filepath.Join(s.workspaceRoot, "dummy.goop")); fallback != nil && fallback.ModuleRoot != "" {
+				lspCfg = fallback
+			}
+		}
 		tm, vtm, typeErrs := typecheckModule(mod, fileName, lspCfg)
 		for _, terr := range typeErrs {
 			diagnostics = append(diagnostics, diagnosticFromError(terr))
@@ -1065,12 +1089,21 @@ func sendLSPResponse(w io.Writer, resp Response) {
 	}
 }
 
-// Convert file URI to path
+// Convert file URI to path. Decodes percent-encoding so paths with spaces
+// (file:///…/Goop%20Tree%20Logger/…) resolve to real filesystem paths.
 func uriToPath(uri string) string {
+	path := uri
 	if strings.HasPrefix(uri, "file://") {
-		return uri[7:]
+		path = uri[len("file://"):]
+		// file:///abs/path → /abs/path on Unix (three slashes → keep leading /)
+		if strings.HasPrefix(path, "/") && len(uri) > len("file:///") && uri[len("file://")] == '/' {
+			// already absolute with leading slash after stripping file://
+		}
 	}
-	return uri
+	if decoded, err := url.PathUnescape(path); err == nil {
+		path = decoded
+	}
+	return path
 }
 
 // ---------------------------------------------------------------------------

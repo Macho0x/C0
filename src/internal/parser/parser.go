@@ -1125,9 +1125,12 @@ func (p *Parser) isRightAssoc(op token.TokenType) bool {
 func (p *Parser) parseExpr(minPrec int) ast.Expr {
 	left := p.parsePrefix()
 	// Track line of the leftmost expression for offside rule.
+	// baseCol stays fixed so indented continuations compare to the callee.
 	leftLine := p.cur().Loc.Line
+	baseCol := p.cur().Loc.Column
 	if p.pos > 0 {
 		leftLine = p.tokens[p.pos-1].Loc.Line
+		baseCol = p.tokens[p.pos-1].Loc.Column
 	}
 
 	for {
@@ -1179,8 +1182,13 @@ func (p *Parser) parseExpr(minPrec int) ast.Expr {
 		}
 
 		// Function application (juxtaposition) — highest precedence
-		// after postfix. Only apply when on the same line (offside rule).
-		if (p.canStartExpr(cur) || cur.Type == token.QUESTION) && precApp >= minPrec && cur.Loc.Line == leftLine {
+		// after postfix. Same-line args always apply (offside rule).
+		// Cross-line: allow parenthesized args, or any arg indented past the
+		// callee (OCaml-style layout without full structural offside).
+		sameLine := cur.Loc.Line == leftLine
+		parenCont := !sameLine && cur.Type == token.LPAREN
+		indentCont := !sameLine && cur.Loc.Column > baseCol && p.canStartExpr(cur)
+		if (p.canStartExpr(cur) || cur.Type == token.QUESTION) && precApp >= minPrec && (sameLine || parenCont || indentCont) {
 			appLoc := cur.Loc // location of the argument start
 			arg := p.parsePrefix()
 			left = &ast.AppExpr{Func: left, Arg: arg, Loc: appLoc}

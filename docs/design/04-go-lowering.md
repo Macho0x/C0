@@ -110,9 +110,12 @@ An `import go` signature block can also declare selectors:
 ```goop
 import go "bytes" {
   type Buffer
-  val (b : Buffer).String : unit -> string
+  val (b : Buffer ptr).String : unit -> string
 }
 ```
+
+Use `T ptr` when Go methods take pointer receivers (e.g. `*bytes.Buffer`).
+Opaque `type Buffer` alone is the Go value type.
 
 `val (x : T).M : A -> B` lowers to `x.M(a)`. A non-arrow declaration such as
 `val (a : Attr).Key : string` lowers to the Go field selector `a.Key`.

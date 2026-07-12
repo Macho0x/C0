@@ -2,7 +2,7 @@ module main
 
 import go "bytes" {
   type Buffer
-  val (b : Buffer).String : unit -> string
+  val (b : Buffer ptr).String : unit -> string
 }
 
 @[go] {
@@ -12,7 +12,7 @@ import go "bytes" {
     return b
   }
 }
-val newBuffer : unit -> Buffer
+val newBuffer : unit -> Buffer ptr
 
 let main () =
   let b = newBuffer () in

@@ -37,6 +37,23 @@ needed by `slog.Handler`, so Treelog can define a native handler without an
 `@[go]` wrapper for the handler methods. See
 [`go_implements_slog_handler.goop`](../examples/go_implements_slog_handler.goop).
 
+## Cross-package libraries (1.6.0)
+
+1.5 same-package lowering was not enough for consumers of a published Goop
+package. Gaps forced lowercase bridges (`scope_new`, `opts_stdout_dev`, …).
+
+**Fixed in 1.6.0:**
+
+1. Imported record literals → `pkg.Options{…}` (option fields →
+   `pkg.NewOptionTSome` / `None`)
+2. Capitalized open-export calls flatten and qualify (`treelog.NewScope(…)`)
+3. Multiline parenthesized apps (readable `appendAttr` chains)
+4. `Buffer ptr` for `*bytes.Buffer` / pointer receivers
+5. LSP URI decode so workspace paths with spaces resolve `module_root`
+
+Libraries should expose Capitalized APIs and record types directly; do **not**
+add lowercase bridges solely for codegen workarounds.
+
 ## Codegen: `let main` must stay `func main`
 
 Export capitalization of top-level lets turned `let main () = ...` into

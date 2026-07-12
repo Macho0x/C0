@@ -30,22 +30,35 @@ type FuncSig struct {
 // cache avoids reloading the same package multiple times.
 var cache sync.Map // key "importPath.funcName" → cachedResult
 
+// loadDir is the working directory for packages.Load (project root / go.mod).
+var (
+	loadDirMu sync.RWMutex
+	loadDir   string
+)
+
 type cachedResult struct {
 	sig *FuncSig
+	typ string // for LookupVar
 	err error
 }
 
-// LookupFunc loads a Go package via packages.Load and looks up a function's
-// parameter and result types. Results are cached in memory keyed by
-// (importPath, funcName). A 5-second timeout prevents hung loads from
-// blocking the compiler.
-func LookupFunc(importPath, funcName string) (*FuncSig, error) {
-	key := importPath + "." + funcName
-	if cached, ok := cache.Load(key); ok {
-		cr := cached.(cachedResult)
-		return cr.sig, cr.err
-	}
+// SetLoadDir sets the directory used for packages.Load (typically the Go
+// module root containing go.mod). Empty resets to the process working dir.
+func SetLoadDir(dir string) {
+	loadDirMu.Lock()
+	loadDir = dir
+	loadDirMu.Unlock()
+	// Invalidate cache when the load directory changes.
+	cache = sync.Map{}
+}
 
+func currentLoadDir() string {
+	loadDirMu.RLock()
+	defer loadDirMu.RUnlock()
+	return loadDir
+}
+
+func loadPackage(importPath string) (*packages.Package, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -57,32 +70,42 @@ func LookupFunc(importPath, funcName string) (*FuncSig, error) {
 			packages.NeedDeps |
 			packages.NeedModule,
 		Context: ctx,
+		Dir:     currentLoadDir(),
 	}
 
 	pkgs, err := packages.Load(cfg, importPath)
 	if err != nil {
-		cr := cachedResult{err: fmt.Errorf("loading package %q: %w", importPath, err)}
-		cache.Store(key, cr)
-		return nil, cr.err
+		return nil, fmt.Errorf("loading package %q: %w", importPath, err)
 	}
-
 	if len(pkgs) == 0 {
-		cr := cachedResult{err: fmt.Errorf("no packages found for import path %q", importPath)}
-		cache.Store(key, cr)
-		return nil, cr.err
+		return nil, fmt.Errorf("no packages found for import path %q", importPath)
 	}
-
 	pkg := pkgs[0]
 	if len(pkg.Errors) > 0 {
-		cr := cachedResult{err: fmt.Errorf("package %q has errors: %v", importPath, pkg.Errors[0])}
-		cache.Store(key, cr)
-		return nil, cr.err
+		return nil, fmt.Errorf("package %q has errors: %v", importPath, pkg.Errors[0])
+	}
+	if pkg.Types == nil || pkg.Types.Scope() == nil {
+		return nil, fmt.Errorf("package %q has no type information (try adding it to go.mod?)", importPath)
+	}
+	return pkg, nil
+}
+
+// LookupFunc loads a Go package via packages.Load and looks up a function's
+// parameter and result types. Results are cached in memory keyed by
+// (importPath, funcName). A 5-second timeout prevents hung loads from
+// blocking the compiler.
+func LookupFunc(importPath, funcName string) (*FuncSig, error) {
+	key := "fn:" + importPath + "." + funcName
+	if cached, ok := cache.Load(key); ok {
+		cr := cached.(cachedResult)
+		return cr.sig, cr.err
 	}
 
-	if pkg.Types == nil || pkg.Types.Scope() == nil {
-		cr := cachedResult{err: fmt.Errorf("package %q has no type information (try adding it to go.mod?)", importPath)}
+	pkg, err := loadPackage(importPath)
+	if err != nil {
+		cr := cachedResult{err: err}
 		cache.Store(key, cr)
-		return nil, cr.err
+		return nil, err
 	}
 
 	obj := pkg.Types.Scope().Lookup(funcName)
@@ -133,6 +156,62 @@ func LookupFunc(importPath, funcName string) (*FuncSig, error) {
 	cr := cachedResult{sig: fsig}
 	cache.Store(key, cr)
 	return fsig, nil
+}
+
+// LookupVar loads a package-level var or const and returns its Go type string.
+func LookupVar(importPath, varName string) (string, error) {
+	key := "var:" + importPath + "." + varName
+	if cached, ok := cache.Load(key); ok {
+		cr := cached.(cachedResult)
+		return cr.typ, cr.err
+	}
+
+	pkg, err := loadPackage(importPath)
+	if err != nil {
+		cr := cachedResult{err: err}
+		cache.Store(key, cr)
+		return "", err
+	}
+
+	obj := pkg.Types.Scope().Lookup(varName)
+	if obj == nil {
+		cr := cachedResult{err: fmt.Errorf("var/const %q not found in package %q", varName, importPath)}
+		cache.Store(key, cr)
+		return "", cr.err
+	}
+
+	switch obj.(type) {
+	case *gotypes.Var, *gotypes.Const:
+		// ok
+	default:
+		cr := cachedResult{err: fmt.Errorf("%q is not a var/const (got %T)", varName, obj)}
+		cache.Store(key, cr)
+		return "", cr.err
+	}
+
+	qual := relativeQualifier(importPath)
+	typ := normalizeGoTypeString(gotypes.TypeString(obj.Type(), qual))
+	cr := cachedResult{typ: typ}
+	cache.Store(key, cr)
+	return typ, nil
+}
+
+// normalizeGoTypeString maps untyped constants to their default Go types.
+func normalizeGoTypeString(typ string) string {
+	switch typ {
+	case "untyped int":
+		return "int"
+	case "untyped float":
+		return "float64"
+	case "untyped string":
+		return "string"
+	case "untyped bool":
+		return "bool"
+	case "untyped rune":
+		return "rune"
+	default:
+		return typ
+	}
 }
 
 // relativeQualifier returns a types.Qualifier that strips the current package

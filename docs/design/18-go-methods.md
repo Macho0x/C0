@@ -81,4 +81,12 @@ spread xs
 - Auto-discovery of all exports from a bare `import go "pkg"`
 - Changing OCaml `#method` object semantics
 
-See also: [17-go-implements.md](17-go-implements.md), [15-lang-embeds.md](15-lang-embeds.md).
+## Pointer receivers and heap types (1.6.0)
+
+Opaque `type Buffer` maps to the Go **value** type. Methods and APIs that
+need `*bytes.Buffer` (pointer receivers, `io.Writer`) must declare
+`Buffer ptr` on vals and receivers. There is no auto-coercion between
+`Buffer` and `Buffer ptr`.
+
+See also: [17-go-implements.md](17-go-implements.md), [15-lang-embeds.md](15-lang-embeds.md),
+[04-go-lowering.md](04-go-lowering.md).

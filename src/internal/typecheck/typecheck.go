@@ -205,6 +205,9 @@ func CheckWithTypesForFile(mod *ast.Module, srcFile string, cfg *config.Config, 
 	}
 	if srcFile != "" {
 		root := modresolve.FindProjectRoot(srcFile)
+		if root != "" {
+			gosig.SetLoadDir(root)
+		}
 		resolver = modresolve.New(cfg, lock, root)
 		var graphErr error
 		deps, graphErr = resolver.LoadModuleGraph(srcFile, mod)
@@ -2013,6 +2016,13 @@ func (c *Checker) refineExternType(importPath, funcName string, declared types.T
 	if importPath == "" {
 		return nil // same-package externs have no Go package to load
 	}
+
+	// Package-level vars/consts (Stdout, LevelInfo) keep their Goop-declared
+	// FFI types; do not override with gosig (*File vs Writer, etc.).
+	if _, isFun := declared.(*types.TFun); !isFun {
+		return nil
+	}
+
 	sig, err := gosig.LookupFunc(importPath, funcName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "goop: gosig fallback for %s.%s: %v\n", importPath, funcName, err)
@@ -2027,7 +2037,7 @@ func (c *Checker) refineExternType(importPath, funcName string, declared types.T
 	case 0:
 		resultType = types.Unit
 	case 1:
-		rt := goTypeToC0Type(sig.Results[0].Type)
+		rt := goTypeToC0TypeInPkg(sig.Results[0].Type, importPath)
 		if rt == nil {
 			fmt.Fprintf(os.Stderr, "goop: gosig fallback for %s.%s: cannot map Go result type %q to Goop\n",
 				importPath, funcName, sig.Results[0].Type)
@@ -2037,7 +2047,7 @@ func (c *Checker) refineExternType(importPath, funcName string, declared types.T
 	case 2:
 		elems := make([]types.Type, 2)
 		for i, r := range sig.Results {
-			rt := goTypeToC0Type(r.Type)
+			rt := goTypeToC0TypeInPkg(r.Type, importPath)
 			if rt == nil {
 				fmt.Fprintf(os.Stderr, "goop: gosig fallback for %s.%s: cannot map Go result type %q to Goop\n",
 					importPath, funcName, r.Type)
@@ -2056,10 +2066,9 @@ func (c *Checker) refineExternType(importPath, funcName string, declared types.T
 	// type) to preserve it if the Go sig is less specific.
 	declaredResult := extractResultType(declared)
 	if declaredResult != nil && resultType != nil {
-		// If declared result is more specific than what gosig can infer,
-		// keep the declared one.  For example, if Goop says `string` but
-		// gosig maps the Go type to `interface{}`, keep Goop's `string`.
-		if isMoreSpecific(declaredResult, resultType) {
+		// Prefer the Goop-declared FFI type when it names the same Go type
+		// (gosig may emit unqualified ".Time" vs declared "time.Time" / Level).
+		if isMoreSpecific(declaredResult, resultType) || sameGoNamed(declaredResult, resultType) {
 			resultType = declaredResult
 		}
 	}
@@ -2067,13 +2076,23 @@ func (c *Checker) refineExternType(importPath, funcName string, declared types.T
 	// Build curried param types → result.
 	result := resultType
 	for i := len(sig.Params) - 1; i >= 0; i-- {
-		c0ParamType := goTypeToC0Type(sig.Params[i].Type)
+		c0ParamType := goTypeToC0TypeInPkg(sig.Params[i].Type, importPath)
 		if c0ParamType == nil {
 			fmt.Fprintf(os.Stderr, "goop: gosig fallback for %s.%s: cannot map Go type %q to Goop\n",
 				importPath, funcName, sig.Params[i].Type)
 			return nil
 		}
 		result = &types.TFun{From: c0ParamType, To: result}
+	}
+
+	// Zero-arg Go funcs are declared in Goop as `unit -> T` (OCaml style).
+	// Preserve that arrow when the declared type uses unit.
+	if len(sig.Params) == 0 {
+		if fn, ok := declared.(*types.TFun); ok {
+			if p, ok := fn.From.(*types.Prim); ok && p.Name == "unit" {
+				result = &types.TFun{From: types.Unit, To: result}
+			}
+		}
 	}
 
 	return result
@@ -2109,15 +2128,41 @@ func isMoreSpecific(a, b types.Type) bool {
 	return false
 }
 
+// sameGoNamed reports whether a and b refer to the same Go named type
+// (possibly with different/empty package qualifiers from gosig).
+func sameGoNamed(a, b types.Type) bool {
+	an, aok := a.(*types.TGoNamed)
+	bn, bok := b.(*types.TGoNamed)
+	if aok && bok {
+		return an.Name == bn.Name
+	}
+	ap, aok := a.(*types.TPtr)
+	bp, bok := b.(*types.TPtr)
+	if aok && bok {
+		return sameGoNamed(ap.Elem, bp.Elem)
+	}
+	return false
+}
+
 // goTypeToC0Type converts a Go type string (as returned by go/types) to a
 // Goop internal type. Returns nil if the type cannot be mapped.
-//
-// Handles: int, int8..int64, uint..uint64, float64→float, float32, bool,
-// string, rune, []byte→bytes, []T→T list, func(A,B)C→A→B→C, chan T→T chan.
 func goTypeToC0Type(goType string) types.Type {
-	// Strip leading "*" in case of named pointer types; we treat them
-	// as the underlying type for simplicity.
-	goType = strings.TrimPrefix(goType, "*")
+	return goTypeToC0TypeInPkg(goType, "")
+}
+
+// goTypeToC0TypeInPkg is like goTypeToC0Type but fills in the package name for
+// unqualified named types using importPath (e.g. "Time" from "time" → time.Time).
+func goTypeToC0TypeInPkg(goType, importPath string) types.Type {
+	goType = strings.TrimSpace(goType)
+
+	// Pointer types: *T → T ptr (preserve pointer structure for FFI).
+	if strings.HasPrefix(goType, "*") {
+		elem := goTypeToC0TypeInPkg(strings.TrimPrefix(goType, "*"), importPath)
+		if elem == nil {
+			return nil
+		}
+		return &types.TPtr{Elem: elem}
+	}
 
 	// Primitive types
 	switch goType {
@@ -2146,9 +2191,9 @@ func goTypeToC0Type(goType string) types.Type {
 		return &types.TError{}
 	}
 
-	// Slice type: []T
+	// Slice type: []T → Goop list (historical mapping; go_slice is declared explicitly)
 	if strings.HasPrefix(goType, "[]") {
-		elem := goTypeToC0Type(strings.TrimPrefix(goType, "[]"))
+		elem := goTypeToC0TypeInPkg(strings.TrimPrefix(goType, "[]"), importPath)
 		if elem == nil {
 			return nil
 		}
@@ -2157,7 +2202,7 @@ func goTypeToC0Type(goType string) types.Type {
 
 	// Channel type: chan T
 	if strings.HasPrefix(goType, "chan ") {
-		elem := goTypeToC0Type(strings.TrimPrefix(goType, "chan "))
+		elem := goTypeToC0TypeInPkg(strings.TrimPrefix(goType, "chan "), importPath)
 		if elem == nil {
 			return nil
 		}
@@ -2174,7 +2219,38 @@ func goTypeToC0Type(goType string) types.Type {
 		return types.Fresh("'a")
 	}
 
-	// For everything else (named types, structs, etc.), we can't map.
+	// Named types: Time, time.Time, slog.Level, bytes.Buffer, etc.
+	if named := goNamedFromString(goType); named != nil {
+		if named.Pkg == "" && importPath != "" {
+			named.Pkg = pkgFromPath(importPath)
+		}
+		return named
+	}
+
+	return nil
+}
+
+// goNamedFromString maps a Go named-type string to TGoNamed.
+func goNamedFromString(s string) *types.TGoNamed {
+	if s == "" || strings.ContainsAny(s, " [](){},") {
+		return nil
+	}
+	if i := strings.LastIndex(s, "."); i >= 0 {
+		pkg := s[:i]
+		name := s[i+1:]
+		if pkg == "" || name == "" {
+			return nil
+		}
+		// Only accept simple pkg.Name (no nested path separators in the short name).
+		if strings.Contains(pkg, "/") {
+			pkg = pkgFromPath(pkg)
+		}
+		return &types.TGoNamed{Pkg: pkg, Name: name, Interface: true}
+	}
+	// Unqualified name from relativeQualifier (same package as import).
+	if s[0] >= 'A' && s[0] <= 'Z' {
+		return &types.TGoNamed{Pkg: "", Name: s, Interface: true}
+	}
 	return nil
 }
 

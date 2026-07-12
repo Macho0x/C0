@@ -139,12 +139,12 @@ func TestExternMethodCallCodegen(t *testing.T) {
 	src := `module main
 import go "bytes" {
   type Buffer
-  val (b : Buffer).String : unit -> string
+  val (b : Buffer ptr).String : unit -> string
 }
 @[go] {
   func newBuffer() *bytes.Buffer { return new(bytes.Buffer) }
 }
-val newBuffer : unit -> Buffer
+val newBuffer : unit -> Buffer ptr
 let main () = let b = newBuffer () in b.String ()
 `
 	mod, err := parser.Parse("method.goop", []byte(src))

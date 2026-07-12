@@ -26,11 +26,15 @@ but not in the type after `:`:
 ```goop
 import go "bytes" {
   type Buffer
-  val (b : Buffer).String : unit -> string
+  val (b : Buffer ptr).String : unit -> string
 }
 
-let text (b : Buffer) = b.String ()
+let text (b : Buffer ptr) = b.String ()
 ```
+
+Heap / mutable Go types whose methods use pointer receivers should be typed
+as `T ptr` (e.g. `Buffer ptr` for `*bytes.Buffer`). Opaque `type Buffer` alone
+maps to the Go value type `bytes.Buffer`.
 
 An arrow type declares a method; a non-arrow type declares a field:
 

@@ -1,0 +1,14 @@
+module main
+
+(* Cross-package Capitalized multi-arg apps must flatten to one Go call. *)
+
+import goop . "github.com/Macho0x/Goop/tests/fixtures/callpkg"
+
+let main () =
+  begin
+    assert (Add 2 3 = 5);
+    assert (Emit_request 1 2 3 4 = 10);
+    assert (Zero_arg () = 42);
+    assert (New_scope "log" 7 = "log:7");
+    print_line "import_capitalized_call OK"
+  end

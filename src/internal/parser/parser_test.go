@@ -853,6 +853,135 @@ func TestMigrationErrors(t *testing.T) {
 	}
 }
 
+func TestParseMultilineParenApp(t *testing.T) {
+	src := `module main
+let f (x: int) : int = x
+let main () =
+  let x =
+    f
+      (1 + 2)
+  in
+  assert (x = 3)
+`
+	mod, err := parser.Parse("multiline_paren.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	found := false
+	var walk func(ast.Expr)
+	walk = func(e ast.Expr) {
+		if e == nil {
+			return
+		}
+		if app, ok := e.(*ast.AppExpr); ok {
+			if id, ok := app.Func.(*ast.IdentExpr); ok && id.Name == "f" {
+				found = true
+			}
+			walk(app.Func)
+			walk(app.Arg)
+			return
+		}
+		switch e := e.(type) {
+		case *ast.LetInExpr:
+			for _, b := range e.Bindings {
+				walk(b.Body)
+			}
+			walk(e.Body)
+		case *ast.ParenExpr:
+			walk(e.Inner)
+		case *ast.BinaryExpr:
+			walk(e.Left)
+			walk(e.Right)
+		case *ast.AppExpr:
+			walk(e.Func)
+			walk(e.Arg)
+		}
+	}
+	for _, d := range mod.Decls {
+		if ld, ok := d.(*ast.LetDecl); ok {
+			for _, b := range ld.Bindings {
+				walk(b.Body)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected AppExpr f (1+2) from cross-line parenthesized arg")
+	}
+}
+
+func TestParseMultilineNestedParenApp(t *testing.T) {
+	src := `module main
+let appendAttr xs a = xs
+let emptyAttrs () = 0
+let attrString k v = 1
+let main () =
+  let x =
+    appendAttr
+      (appendAttr (emptyAttrs ()) (attrString "a" "b"))
+      (attrString "c" "d")
+  in
+  ()
+`
+	_, err := parser.Parse("multiline_nested.goop", []byte(src))
+	if err != nil {
+		t.Fatalf("parse nested multiline appendAttr: %v", err)
+	}
+}
+
+func TestRejectCrossLineBareIdentApp(t *testing.T) {
+	// Flat f\n g must NOT become an application (would glue next decl).
+	src := `module main
+let f x = x
+let g = 1
+let main () =
+  let x =
+    f
+    g
+  in
+  ()
+`
+	_, err := parser.Parse("bare_crossline.goop", []byte(src))
+	// May parse as incomplete let or unexpected token — either way must not
+	// silently treat g as an argument of f across lines without parens.
+	if err == nil {
+		// If it parses, ensure the body is not App(f, g).
+		mod, _ := parser.Parse("bare_crossline.goop", []byte(src))
+		var isAppFG bool
+		var walk func(ast.Expr)
+		walk = func(e ast.Expr) {
+			if e == nil {
+				return
+			}
+			if app, ok := e.(*ast.AppExpr); ok {
+				if id, ok := app.Func.(*ast.IdentExpr); ok && id.Name == "f" {
+					if arg, ok := app.Arg.(*ast.IdentExpr); ok && arg.Name == "g" {
+						isAppFG = true
+					}
+				}
+				walk(app.Func)
+				walk(app.Arg)
+			}
+			switch e := e.(type) {
+			case *ast.LetInExpr:
+				for _, b := range e.Bindings {
+					walk(b.Body)
+				}
+				walk(e.Body)
+			}
+		}
+		for _, d := range mod.Decls {
+			if ld, ok := d.(*ast.LetDecl); ok {
+				for _, b := range ld.Bindings {
+					walk(b.Body)
+				}
+			}
+		}
+		if isAppFG {
+			t.Fatal("cross-line bare ident must not form App(f, g)")
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
