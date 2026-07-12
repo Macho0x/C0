@@ -25,6 +25,7 @@
 - Exhaustive ADTs and pattern matching
 - Branded IDs (single-ctor ADTs) so `order_id` ≠ `symbol`
 - Go interop and deploy — same runtime, stdlib, and binaries
+- Cache-only builds — edit `.goop`, run `goop build` / `goop test`
 
 ### Non-exhaustive match (EXHAUST003)
 
@@ -50,38 +51,17 @@ let handleAck (ack: OrderAck) : string =
 ```bash
 cd src && go build -o ../goop ./cmd/goop
 ../goop check docs/examples/hello.goop
-../goop build docs/examples/hello.goop   # cache-only; binary → ./goop-out
+../goop build docs/examples/hello.goop   # → ./goop-out (Go stays in $GOOP_HOME/build)
 ./goop-out
 ../goop test tests/
 ```
 
-**Goop 1.8+** keeps generated `.go` under `$GOOP_HOME/build` (default
-`~/.cache/goop/build`). Your project tree stays `.goop`-only. Use `--in-tree`
-only when inspecting emitted Go or mixing handwritten `.go` files; `--emit-map`
-writes optional source maps.
-
-| Command | Role |
-|---------|------|
-| `goop check` | Type-check + safety (no artifacts) |
-| `goop build` | Full Goop build (deps + `go build` in cache) |
-| `goop test` | Run `*_test.goop` in ephemeral cache sandboxes |
-| `goop compile` | Emit Go to cache only |
-
-Details: [CLI artifacts](docs/design/20-cli-artifacts.md) · [Tutorial](docs/tutorial/README.md)
-
-<p align="center">
-  <a href="docs/tutorial/README.md">Tutorial</a> ·
-  <a href="docs/design/STYLE.md">STYLE</a> ·
-  <a href="docs/design/20-cli-artifacts.md">CLI artifacts</a> ·
-  <a href="docs/examples/">Examples</a> ·
-  <a href="https://github.com/Macho0x/Goop/releases">Releases</a>
-</p>
-
----
+Generated `.go` never lands in your project tree by default. See
+[CLI artifacts](docs/design/20-cli-artifacts.md) · [tutorial](docs/tutorial/README.md).
 
 ## How Goop compares
 
-Goop targets **compile-time** checks that Go leaves to runtime tests, panics, or `-race`. Style: [STYLE.md](docs/design/STYLE.md).
+Compile-time checks that Go leaves to tests, panics, or `-race`. Style: [STYLE.md](docs/design/STYLE.md).
 
 | Safety feature | Go | Rust | OCaml | Goop |
 |---|---|---|---|---|
@@ -89,30 +69,21 @@ Goop targets **compile-time** checks that Go leaves to runtime tests, panics, or
 | No null by default (`option`) | ❌ | ✅ | ✅ | ✅ |
 | Branded IDs (single-ctor ADT) | ❌ | ✅ | ✅ | ✅ |
 | Effect handlers (OCaml 5-style) | ❌ | ❌ | ✅ | ✅ (CPS-lowered) |
-| Nil channel misuse | ❌ (blocks/panics at runtime) | N/A | N/A | ✅ (NIL001) |
-| Data race detection | ⚠️ runtime (`-race`) | ✅ (borrow checker) | ❌ | ✅ (linear pass, conservative) |
-| Refinement / contract checks | ❌ | ⚠️ limited | ⚠️ limited | ✅ VC + optional Z3 + guards |
-| Native Go stdlib + deploy model | ✅ | ❌ | ❌ | ✅ |
-
-✅ compile-time · ⚠️ partial or runtime · ❌ not available
-
-## Trading bot safety
-
-Venue integrations and order routers fail on unhandled ADT variants, swapped string IDs, and nil channels — Goop catches those at compile time. Full matrix: [12-trading-bot-safety.md](docs/design/12-trading-bot-safety.md). Examples: [`branded_ids.goop`](docs/examples/branded_ids.goop) · [`trading_order_ack_test.goop`](tests/trading_order_ack_test.goop).
+| Nil channel misuse | ❌ (runtime) | N/A | N/A | ✅ (NIL001) |
+| Data race detection | ⚠️ `-race` | ✅ | ❌ | ✅ (linear, conservative) |
+| Refinement / contracts | ❌ | ⚠️ | ⚠️ | ✅ VC + optional Z3 |
+| Native Go stdlib + deploy | ✅ | ❌ | ❌ | ✅ |
 
 ## Go interop
 
-Call any Go package, implement Go interfaces in native Goop, and embed Go when
-needed — migrate file by file in the same module.
+Call Go packages, implement Go interfaces in Goop, and embed Go when needed:
 
 ```goop
 module main
 
-import (
-  go "strings" {
-    val ToUpper : string -> string
-  }
-)
+import go "strings" {
+  val ToUpper : string -> string
+}
 
 @[go] {
   func greet(name string) string {
@@ -125,64 +96,32 @@ let main () : unit =
   print_line (greet (ToUpper "goop"))
 ```
 
-- **`import go "path"`** — Go packages (optional `{ val … }` signatures)
-- **`type Name` in an `import go` block** — opaque Go named types for `implements`
-- **`implements Interface for T with … end`** — pointer-receiver Go interface methods, including `fmt.Stringer` and `slog.Handler`
-- **`val (x : T).M : τ` in an `import go` block** — call imported Go methods and read imported Go fields without an `@[go]` wrapper
-- **`import goop "path"`** — other Goop modules
-- **`@[go] { … }`** — embed multi-statement Go in the same file
-- **`@[c] { … }`** — embed C via cgo (primitive `val` auto-wrappers)
+`import go` / `import goop` · `implements` · Go methods/fields · `@[go]` / `@[c]` embeds.
+Examples: [`extern_demo.goop`](docs/examples/extern_demo.goop) · [`go_method_calls.goop`](docs/examples/go_method_calls.goop) · [`go_implements_slog_handler.goop`](docs/examples/go_implements_slog_handler.goop).
 
-See [`extern_demo.goop`](docs/examples/extern_demo.goop) · [`go_method_calls.goop`](docs/examples/go_method_calls.goop) · [`cgo_demo.goop`](docs/examples/cgo_demo.goop) · [`go_implements_stringer.goop`](docs/examples/go_implements_stringer.goop) · [`go_implements_slog_handler.goop`](docs/examples/go_implements_slog_handler.goop).
+## Language & status
 
-## Language features
+Everyday surface: [STYLE.md](docs/design/STYLE.md) · [`docs/examples/`](docs/examples/).
 
-Everyday surface: [STYLE.md](docs/design/STYLE.md) · tutorial · [`docs/examples/`](docs/examples/) (`branded_ids`, `linear_resource`, `concurrency`, `result_match`, `effects`, `modules`, `exceptions`).
-
-Highlights: ADTs + exhaustive `match`, `ref`/`!`/`:=`, `go`/`chan`/`select`/`go (move …)`, linear resources, `where` refinements (optional Z3), minimal `effect`/`perform` handlers (CPS-lowered).
+**Current: [v1.8.0](https://github.com/Macho0x/Goop/releases/tag/v1.8.0)** — cache-only `goop build` / `compile` under `$GOOP_HOME/build`, with transitive `import goop` deps. Prior highlights: Go struct/slog FFI (1.7), cross-package libraries (1.6), call lowering (1.5). Full history: [CHANGELOG](CHANGELOG.md) · [RELEASE_NOTES](RELEASE_NOTES.md).
 
 ## FAQ
 
-**Is 1.5.0 production-ready?** Current release is shipped (compiler, type checker, codegen, LSP, e2e tests). Some OCaml features are pragmatic subsets (GADTs, objects, shallow effects); we are not claiming production load readiness yet.
+**Production-ready?** The compiler, checker, codegen, LSP, and e2e suite ship and are exercised in CI. Some OCaml corners are pragmatic subsets; we are not claiming production load readiness yet.
 
-**How is this different from Borgo or Dingo?** Goop is a full compiler with OCaml-aligned syntax and compile-time safety for gradual migration to Go. Dingo-style `?` and F# computation expressions were removed in 1.0.
+**Borgo / Dingo?** Goop is a full compiler with OCaml-aligned syntax and compile-time safety for gradual Go migration. Dingo-style `?` and F# computation expressions were removed in 1.0.
 
-**Do I need OCaml or Z3?** No. Pattern matching from Rust/Swift/Kotlin transfers. Z3 is optional (`[check] smt = true`).
-
-## Status
-
-**v1.5.0** — OCaml-faithful call lowering: capitalized multi-arg apps, `unit` erasure, if-as-expression IIFEs; unblocks shrinking `@[go]` in slog libraries like treelog.
-
-**v1.4.0** — Go method and field FFI: `val (x:T).M` imports lower to native Go selectors, including callbacks, `go_slice` indexing, and variadic `any` calls; fewer `@[go]` adapters are needed.
-
-**v1.3.0** — Go interface FFI: `type` imports and native `implements`; `ptr`/`null`, `error`, and `go_slice` support; `fmt.Stringer` and `slog.Handler` examples.
-
-**v1.2.3** — VS Code 0.3.7: embed-tag amber works on all themes (tokenColorCustomizations top-level).
-
-**v1.2.2** — VS Code/LSP catch-up: Format Document, grammar keywords, framing fix. Extension 0.3.6.
-
-**v1.2.1** — `@[lang]` embed tag highlighting (amber marker, normal body colors); dead-code cleanup. See [CHANGELOG](CHANGELOG.md).
-
-**v1.2.0** — Lang embeds: `import go` / `@[go]` / `@[c]` (cgo); hard-break remove `golang`/`@golang`. See [15-lang-embeds](docs/design/15-lang-embeds.md).
-
-**v1.1.1** — Tests/examples overhaul, `select` channel lowering fix, stronger e2e.
-
-**v1.1.0** — OCaml parity mega-ship (modules, types, objects, shallow effects). See [parity](docs/design/14-ocaml-parity.md).
-
-**v1.0.1** — Docs/README cleanup, example renames, real effects demo.
-
-**v1.0.0** — OCaml-aligned surface, CPS effect handlers, optional Z3 SMT.
+**Need OCaml or Z3?** No. Pattern matching from Rust/Swift/Kotlin transfers. Z3 is optional (`[check] smt = true`).
 
 ## Documentation
 
 | Resource | Link |
 |---|---|
-| [Language tutorial](docs/tutorial/README.md) | 7 chapters, linked examples |
-| [Standard library reference](docs/stdlib/README.md) | Prelude, builtins, `std.*` |
-| [Design docs](docs/design/) | [STYLE](docs/design/STYLE.md), [parity](docs/design/14-ocaml-parity.md) |
-| [Examples](docs/examples/) | Runnable; CI checks all |
-| [Grammar](docs/spec/grammar.md) | Draft |
-| [Contributing](CONTRIBUTING.md) | Build, editors, doc workflow |
+| [Tutorial](docs/tutorial/README.md) | Getting started through concurrency |
+| [Stdlib](docs/stdlib/README.md) | Prelude, builtins, `std.*` |
+| [Design](docs/design/) | STYLE, CLI artifacts, FFI |
+| [Examples](docs/examples/) | Runnable; CI `goop check` |
+| [Contributing](CONTRIBUTING.md) | Build and test workflow |
 
 ## License
 
