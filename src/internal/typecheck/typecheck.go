@@ -118,6 +118,20 @@ type Checker struct {
 	extensible      map[string]bool
 	classes         map[string]*classInfo
 	goFields        map[string]map[string]types.Type
+	goStructs       map[string]*goStructSchema // Goop type name → struct field schema
+	goImportPaths   map[string]string          // Goop type name → Go import path
+}
+
+// goStructSchema holds exported (+ promoted) fields for an imported Go struct.
+type goStructSchema struct {
+	Pkg    string
+	Name   string
+	Fields []goStructField
+}
+
+type goStructField struct {
+	GoName string
+	Typ    types.Type
 }
 
 // pkgFromPath extracts a Go package name from an import path (last segment).
@@ -149,7 +163,11 @@ func (c *Checker) bindExternVals(importPath string, vals []ast.ExternVal) {
 		}
 		scheme := types.Mono(t)
 		if c.env.Lookup(ev.Name) != nil {
-			c.errorf("extern binding %q conflicts with existing name", ev.Name)
+			// Field/method short names often collide with imported type names
+			// (e.g. type Value vs Attr.Value). Keep Type.Name qualified binds only.
+			if ev.Kind == ast.ExternFunc {
+				c.errorf("extern binding %q conflicts with existing name", ev.Name)
+			}
 		} else {
 			c.env.Bind(ev.Name, scheme)
 		}
@@ -178,7 +196,37 @@ func goNamedTypeName(t types.Type) string {
 func (c *Checker) bindExternTypes(importPath string, externTypes []ast.ExternType) {
 	pkgName := pkgFromPath(importPath)
 	for _, et := range externTypes {
-		c.env.Bind(et.Name, types.Mono(&types.TGoNamed{Pkg: pkgName, Name: et.Name, Interface: true}))
+		isInterface := true
+		var schema *goStructSchema
+		if info, err := gosig.LookupType(importPath, et.Name); err == nil && info != nil {
+			switch info.Kind {
+			case gosig.TypeKindInterface:
+				isInterface = true
+			case gosig.TypeKindStruct:
+				isInterface = false
+				schema = &goStructSchema{Pkg: pkgName, Name: et.Name}
+				for _, f := range info.Fields {
+					ft := goTypeToC0TypeInPkg(f.Type, importPath)
+					if ft == nil {
+						ft = &types.TGoNamed{Pkg: pkgName, Name: f.Type, Interface: true}
+					}
+					schema.Fields = append(schema.Fields, goStructField{GoName: f.Name, Typ: ft})
+				}
+			default:
+				isInterface = false
+			}
+		}
+		c.env.Bind(et.Name, types.Mono(&types.TGoNamed{Pkg: pkgName, Name: et.Name, Interface: isInterface}))
+		if c.goImportPaths == nil {
+			c.goImportPaths = make(map[string]string)
+		}
+		c.goImportPaths[et.Name] = importPath
+		if schema != nil {
+			if c.goStructs == nil {
+				c.goStructs = make(map[string]*goStructSchema)
+			}
+			c.goStructs[et.Name] = schema
+		}
 	}
 }
 
@@ -242,6 +290,8 @@ func checkWithDepsAndImports(mod *ast.Module, deps map[string]*ast.Module, resol
 		extensible:      make(map[string]bool),
 		classes:         make(map[string]*classInfo),
 		goFields:        make(map[string]map[string]types.Type),
+		goStructs:       make(map[string]*goStructSchema),
+		goImportPaths:   make(map[string]string),
 	}
 	c.initBuiltins()
 	c.importedModule = mod.Name
@@ -901,21 +951,18 @@ func (c *Checker) checkBinding(b ast.LetBinding) types.Type {
 		paramTypes = append(paramTypes, pt)
 	}
 
-	// Infer body type
-	bodyType := c.infer(b.Body)
-
-	c.env = saved
-
-	// If there's a return type annotation, unify with it
+	// Infer body type (propagate return annotation for ptr_of / Go struct literals)
+	var bodyType types.Type
 	if b.RetType != nil {
 		retType := c.convertASTType(b.RetType)
+		bodyType = c.inferWithExpected(b.Body, retType)
 		c.unify(bodyType, retType)
-		// Use the annotation type (concrete) instead of the body type
-		// (which may be an unresolved TVar). The unification ensures
-		// they're equivalent, but retType is concrete while bodyType
-		// may still be a TVar that gets generalized incorrectly.
 		bodyType = retType
+	} else {
+		bodyType = c.infer(b.Body)
 	}
+
+	c.env = saved
 
 	// Wrap in function types (curried)
 	result := bodyType
@@ -1159,7 +1206,17 @@ func (c *Checker) inferApp(e *ast.AppExpr) types.Type {
 			argType = c.infer(e.Arg)
 		}
 	} else {
-		argType = c.infer(e.Arg)
+		resolvedFunc := types.Apply(c.sub, funcType)
+		if tfun, ok := resolvedFunc.(*types.TFun); ok {
+			expected := types.Apply(c.sub, tfun.From)
+			if _, isTVar := expected.(*types.TVar); !isTVar {
+				argType = c.inferWithExpected(e.Arg, expected)
+			} else {
+				argType = c.infer(e.Arg)
+			}
+		} else {
+			argType = c.infer(e.Arg)
+		}
 	}
 	// A positional argument skips any outstanding optional labelled
 	// parameters. Their defaults are supplied by the callee/codegen.
@@ -1615,6 +1672,96 @@ func (c *Checker) inferRecord(e *ast.RecordExpr) types.Type {
 		fields[i] = types.Field{Name: f.Name, Type: ft}
 	}
 	return &types.TRecord{Fields: fields}
+}
+
+// inferWithExpected infers e, using expected to guide ptr_of and Go struct literals.
+func (c *Checker) inferWithExpected(e ast.Expr, expected types.Type) types.Type {
+	expected = types.Apply(c.sub, expected)
+	switch e := e.(type) {
+	case *ast.PtrOfExpr:
+		if p, ok := expected.(*types.TPtr); ok {
+			inner := c.inferWithExpected(e.Inner, p.Elem)
+			t := &types.TPtr{Elem: inner}
+			c.types[e] = t
+			return t
+		}
+	case *ast.RecordExpr:
+		if named, ok := expected.(*types.TGoNamed); ok && !named.Interface {
+			t := c.inferGoStructLiteral(e, named)
+			c.types[e] = t
+			return t
+		}
+	}
+	t := c.infer(e)
+	c.unify(t, expected)
+	return types.Apply(c.sub, expected)
+}
+
+func (c *Checker) inferGoStructLiteral(e *ast.RecordExpr, named *types.TGoNamed) types.Type {
+	schema := c.goStructs[named.Name]
+	if schema == nil {
+		c.errorfAt(e.Loc, "no field schema for Go struct %s (import type %s)", named.String(), named.Name)
+		return named
+	}
+	used := make(map[string]bool)
+	for _, f := range e.Fields {
+		gf, ok := matchGoStructField(schema, f.Name)
+		if !ok {
+			c.errorfAt(e.Loc, "unknown field %q on Go struct %s", f.Name, named.Name)
+			continue
+		}
+		if used[gf.GoName] {
+			c.errorfAt(e.Loc, "duplicate field %q on Go struct %s", f.Name, named.Name)
+			continue
+		}
+		used[gf.GoName] = true
+		var vt types.Type
+		if f.Value != nil {
+			vt = c.infer(f.Value)
+		} else {
+			vt = c.inferIdent(&ast.IdentExpr{Name: f.Name})
+		}
+		c.unifyGoField(vt, gf.Typ, named.Name)
+	}
+	return named
+}
+
+func matchGoStructField(schema *goStructSchema, goopName string) (goStructField, bool) {
+	var matches []goStructField
+	for _, f := range schema.Fields {
+		if strings.EqualFold(f.GoName, goopName) {
+			matches = append(matches, f)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], true
+	}
+	return goStructField{}, false
+}
+
+// unifyGoField unifies a literal field value with the Go struct field type,
+// allowing same-package named types that Go considers assignable (Level → Leveler).
+func (c *Checker) unifyGoField(val, field types.Type, structTypeName string) {
+	val = types.Apply(c.sub, val)
+	field = types.Apply(c.sub, field)
+	if vn, ok := val.(*types.TGoNamed); ok {
+		if fn, ok := field.(*types.TGoNamed); ok && fn.Interface {
+			path := c.goImportPaths[structTypeName]
+			if path == "" {
+				path = c.goImportPaths[fn.Name]
+			}
+			if path != "" {
+				if ok, err := gosig.Assignable(path, vn.Name, fn.Name); err == nil && ok {
+					return
+				}
+			}
+			// Same-package interface field: accept named non-interface values.
+			if vn.Pkg == fn.Pkg || vn.Pkg == "" || fn.Pkg == "" {
+				return
+			}
+		}
+	}
+	c.unify(val, field)
 }
 
 func (c *Checker) inferRecordUpdate(e *ast.RecordUpdateExpr) types.Type {
@@ -2433,12 +2580,14 @@ func (c *Checker) bindModuleExports(dep *ast.Module, prefix string, unqualified 
 		c.blockedNames[name] = dep.Name
 	}
 	depChecker := &Checker{
-		env:          NewEnv(nil),
-		sub:          types.EmptySubst(),
-		types:        make(typeinfo.TypeMap),
-		privateNames: priv,
-		blockedNames: make(map[string]string),
-		goFields:     make(map[string]map[string]types.Type),
+		env:           NewEnv(nil),
+		sub:           types.EmptySubst(),
+		types:         make(typeinfo.TypeMap),
+		privateNames:  priv,
+		blockedNames:  make(map[string]string),
+		goFields:      make(map[string]map[string]types.Type),
+		goStructs:     make(map[string]*goStructSchema),
+		goImportPaths: make(map[string]string),
 	}
 	depChecker.initBuiltins()
 	if len(dep.Imports) > 0 && resolver != nil {

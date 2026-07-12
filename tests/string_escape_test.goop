@@ -1,0 +1,17 @@
+module StringEscapeTest
+
+(* Hex, octal, and \e escapes decode in the lexer. *)
+
+let main () =
+  let esc = "\x1b" in
+  let red = "\x1b[31m" in
+  let reset = "\033[0m" in
+  let dim = "\e[2m" in
+  let chk1 = assert (esc ^ "[31m" = red) in
+  let chk2 = assert (esc ^ "[0m" = reset) in
+  let chk3 = assert (esc ^ "[2m" = dim) in
+  let chk4 = assert ("\n" = "\x0a") in
+  let chk5 = assert ("\t" = "\x09") in
+  let chk6 = assert ("\0" = "\x00") in
+  let chk7 = assert ("\r" = "\x0d") in
+  assert ("\377" = "\xff")

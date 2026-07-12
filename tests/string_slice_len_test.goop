@@ -1,0 +1,16 @@
+module StringSliceLenTest
+
+(* String.length and String.sub use Go byte semantics. *)
+
+let main () =
+  let chk1 = assert (String.length "" = 0) in
+  let chk2 = assert (String.length "abc" = 3) in
+  let chk3 = assert (String.length "\x1b[31m" = 5) in
+  let chk4 = assert (String.sub "abcdef" 0 0 = "") in
+  let chk5 = assert (String.sub "abcdef" 0 3 = "abc") in
+  let chk6 = assert (String.sub "abcdef" 3 3 = "def") in
+  let chk7 = assert (String.sub "abcdef" 2 2 = "cd") in
+  (* UTF-8: "é" is two bytes in Go *)
+  let e_acute = "\xc3\xa9" in
+  let chk8 = assert (String.length e_acute = 2) in
+  assert (String.sub e_acute 0 1 = "\xc3")

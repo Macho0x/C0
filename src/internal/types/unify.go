@@ -261,6 +261,12 @@ func unify(sub Subst, t1, t2 Type) error {
 			return unify(sub, l.Elem, r.Elem)
 		case *TError:
 			return nil
+		case *TGoNamed:
+			// *Implementor used where a Go interface is expected (slog.New, etc.).
+			if r.Interface {
+				return nil
+			}
+			return mismatch(t1, t2, "expected a pointer")
 		default:
 			return mismatch(t1, t2, "expected a pointer")
 		}
@@ -281,6 +287,11 @@ func unify(sub Subst, t1, t2 Type) error {
 			return mismatch(t1, t2, "different Go named types")
 		case *TRecord, *TAdt:
 			// Implementor value used where a Go interface is expected.
+			if l.Interface {
+				return nil
+			}
+			return mismatch(t1, t2, "expected Go named type "+l.String())
+		case *TPtr:
 			if l.Interface {
 				return nil
 			}

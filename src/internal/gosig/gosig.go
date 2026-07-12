@@ -37,9 +37,31 @@ var (
 )
 
 type cachedResult struct {
-	sig *FuncSig
-	typ string // for LookupVar
-	err error
+	sig  *FuncSig
+	typ  string    // for LookupVar
+	info *TypeInfo // for LookupType
+	err  error
+}
+
+// TypeKind classifies a looked-up Go named type.
+type TypeKind int
+
+const (
+	TypeKindStruct TypeKind = iota
+	TypeKindInterface
+	TypeKindOther
+)
+
+// TypeField is an exported (or promoted) field of a Go struct.
+type TypeField struct {
+	Name string // exported Go field name
+	Type string // Go type string via TypeString
+}
+
+// TypeInfo describes a Go named type for FFI struct/interface support.
+type TypeInfo struct {
+	Kind   TypeKind
+	Fields []TypeField // exported (+ promoted) fields for structs; nil for interfaces
 }
 
 // SetLoadDir sets the directory used for packages.Load (typically the Go
@@ -156,6 +178,118 @@ func LookupFunc(importPath, funcName string) (*FuncSig, error) {
 	cr := cachedResult{sig: fsig}
 	cache.Store(key, cr)
 	return fsig, nil
+}
+
+// LookupType loads a package-level named type and returns its kind and, for
+// structs, exported (+ promoted) fields. Results are cached keyed by
+// "ty:"+importPath+"."+typeName.
+func LookupType(importPath, typeName string) (*TypeInfo, error) {
+	key := "ty:" + importPath + "." + typeName
+	if cached, ok := cache.Load(key); ok {
+		cr := cached.(cachedResult)
+		return cr.info, cr.err
+	}
+
+	pkg, err := loadPackage(importPath)
+	if err != nil {
+		cr := cachedResult{err: err}
+		cache.Store(key, cr)
+		return nil, err
+	}
+
+	obj := pkg.Types.Scope().Lookup(typeName)
+	if obj == nil {
+		cr := cachedResult{err: fmt.Errorf("type %q not found in package %q", typeName, importPath)}
+		cache.Store(key, cr)
+		return nil, cr.err
+	}
+
+	tn, ok := obj.(*gotypes.TypeName)
+	if !ok {
+		cr := cachedResult{err: fmt.Errorf("%q is not a type (got %T)", typeName, obj)}
+		cache.Store(key, cr)
+		return nil, cr.err
+	}
+
+	qual := relativeQualifier(importPath)
+	info := &TypeInfo{}
+
+	switch u := tn.Type().Underlying().(type) {
+	case *gotypes.Struct:
+		info.Kind = TypeKindStruct
+		info.Fields = collectStructFields(u, qual)
+	case *gotypes.Interface:
+		info.Kind = TypeKindInterface
+	default:
+		info.Kind = TypeKindOther
+	}
+
+	cr := cachedResult{info: info}
+	cache.Store(key, cr)
+	return info, nil
+}
+
+// collectStructFields walks a Go struct, collecting exported fields and
+// promoted fields from anonymous struct embeds (Go field promotion).
+func collectStructFields(s *gotypes.Struct, qual gotypes.Qualifier) []TypeField {
+	var fields []TypeField
+	for i := 0; i < s.NumFields(); i++ {
+		f := s.Field(i)
+		if f.Anonymous() {
+			ut := f.Type().Underlying()
+			if ptr, ok := ut.(*gotypes.Pointer); ok {
+				ut = ptr.Elem().Underlying()
+			}
+			if emb, ok := ut.(*gotypes.Struct); ok {
+				fields = append(fields, collectStructFields(emb, qual)...)
+				continue
+			}
+			// Non-struct embed (e.g. interface): include if exported.
+			if f.Exported() {
+				fields = append(fields, TypeField{
+					Name: f.Name(),
+					Type: gotypes.TypeString(f.Type(), qual),
+				})
+			}
+			continue
+		}
+		if f.Exported() {
+			fields = append(fields, TypeField{
+				Name: f.Name(),
+				Type: gotypes.TypeString(f.Type(), qual),
+			})
+		}
+	}
+	return fields
+}
+
+// Assignable reports whether the named type fromTypeName is assignable to
+// toTypeName within the same package (e.g. slog.Level → slog.Leveler).
+func Assignable(importPath, fromTypeName, toTypeName string) (bool, error) {
+	pkg, err := loadPackage(importPath)
+	if err != nil {
+		return false, err
+	}
+
+	fromObj := pkg.Types.Scope().Lookup(fromTypeName)
+	if fromObj == nil {
+		return false, fmt.Errorf("type %q not found in package %q", fromTypeName, importPath)
+	}
+	toObj := pkg.Types.Scope().Lookup(toTypeName)
+	if toObj == nil {
+		return false, fmt.Errorf("type %q not found in package %q", toTypeName, importPath)
+	}
+
+	fromTN, ok := fromObj.(*gotypes.TypeName)
+	if !ok {
+		return false, fmt.Errorf("%q is not a type (got %T)", fromTypeName, fromObj)
+	}
+	toTN, ok := toObj.(*gotypes.TypeName)
+	if !ok {
+		return false, fmt.Errorf("%q is not a type (got %T)", toTypeName, toObj)
+	}
+
+	return gotypes.AssignableTo(fromTN.Type(), toTN.Type()), nil
 }
 
 // LookupVar loads a package-level var or const and returns its Go type string.

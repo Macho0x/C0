@@ -1,22 +1,16 @@
 module main
 
-(* Import and invoke bytes.Buffer.String without an @[go] method wrapper.
-   Heap Buffer APIs use Buffer ptr (*bytes.Buffer), matching Go receivers. *)
+(* Heap Buffer via ptr_of {} — no @[go] constructor. *)
 
 import go "bytes" {
   type Buffer
   val (b : Buffer ptr).String : unit -> string
+  val (b : Buffer ptr).WriteString : string -> ...any -> unit
 }
-
-@[go] {
-  func newBuffer() *bytes.Buffer {
-    b := new(bytes.Buffer)
-    b.WriteString("hello from bytes.Buffer")
-    return b
-  }
-}
-val newBuffer : unit -> Buffer ptr
 
 let main () =
-  let b = newBuffer () in
-  assert (b.String () = "hello from bytes.Buffer")
+  let b : Buffer ptr = ptr_of {} in
+  begin
+    b.WriteString "hello from bytes.Buffer";
+    assert (b.String () = "hello from bytes.Buffer")
+  end

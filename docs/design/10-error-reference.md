@@ -133,6 +133,22 @@ the parser cannot proceed.
   let s = "hello"
   ```
 
+### LEX005b: Invalid / incomplete string or character escape
+
+- **Error code**: (message-based; same ERROR token stream as other LEX codes)
+- **Severity**: Error
+- **Messages**:
+  - `invalid string escape \%c` / `invalid character escape \%c`
+  - `incomplete hex escape in string literal`
+  - `invalid hex digit in string escape`
+  - `octal escape out of range in string literal`
+- **Example**: `test.goop:1:10: incomplete hex escape in string literal`
+- **Trigger**: Unsupported escape (e.g. `\q`), `\x` with fewer than two hex
+  digits, non-hex after `\x`, or octal value &gt; 255 (`\400`).
+- **Fix**: Use `\n \t \r \\ \" \' \e`, `\xHH` (exactly two hex digits), or
+  `\ooo` (1–3 octal digits ≤ 255).
+- **Good**: `let s = "\x1b[31m"` or `let s = "\033[0m"` or `let s = "\e[0m"`
+
 ### LEX006: Unexpected end of file after single quote
 
 - **Error code**: `LEX006`

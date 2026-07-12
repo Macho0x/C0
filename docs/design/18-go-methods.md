@@ -63,6 +63,10 @@ log.With (spread args)
 
 Lowering preserves Go selector spelling (`Key`, `Attrs`, `Resolve`).
 
+When a field or method short name collides with an imported `type` (e.g.
+`type Value` and `val (a : Attr).Value`), only the qualified form
+`Attr.Value` / `a.Value` (via field access) is bound; free `Value` stays the type.
+
 ### `any`, spread, `go_slice` indexing
 
 ```goop
@@ -87,6 +91,28 @@ Opaque `type Buffer` maps to the Go **value** type. Methods and APIs that
 need `*bytes.Buffer` (pointer receivers, `io.Writer`) must declare
 `Buffer ptr` on vals and receivers. There is no auto-coercion between
 `Buffer` and `Buffer ptr`.
+
+## Go struct literals (1.7.0)
+
+Imported Go **structs** (via `type Name` + gosig) can be constructed with
+record literals when the expected type is `S` or `S ptr`:
+
+```goop
+import go "log/slog" {
+  type HandlerOptions
+  type Leveler
+  type Level
+  val LevelInfo : Level
+  val NewJSONHandler : Buffer ptr -> HandlerOptions ptr -> Handler
+}
+
+let opts : HandlerOptions ptr = ptr_of { level = LevelInfo }
+let mu : Mutex ptr = ptr_of {}
+```
+
+Field names match Go exported fields case-insensitively (`level` → `Level`).
+Omitted fields are zero. Interface fields accept Go-assignable named types
+(e.g. `Level` → `Leveler`).
 
 See also: [17-go-implements.md](17-go-implements.md), [15-lang-embeds.md](15-lang-embeds.md),
 [04-go-lowering.md](04-go-lowering.md).

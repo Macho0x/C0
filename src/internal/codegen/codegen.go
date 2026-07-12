@@ -3418,6 +3418,20 @@ func (g *Generator) emitPreludeCall(b *prelude.Binding, args []ast.Expr, callExp
 		g.buf.WriteString("}()")
 		return
 
+	case "string_sub":
+		// String.sub s start len → s[start : start+len]
+		if len(args) >= 3 {
+			g.emitExpr(args[0], false)
+			g.buf.WriteString("[")
+			g.emitExpr(args[1], false)
+			g.buf.WriteString(":")
+			g.emitExpr(args[1], false)
+			g.buf.WriteString("+")
+			g.emitExpr(args[2], false)
+			g.buf.WriteString("]")
+		}
+		return
+
 	case "ref_make":
 		elemGo := "interface{}"
 		if len(args) >= 1 && g.typeMap != nil {
@@ -4955,6 +4969,13 @@ func (g *Generator) emitRegion(e *ast.RegionExpr) {
 }
 
 func (g *Generator) emitRecord(e *ast.RecordExpr) {
+	// Go struct literal when typechecker assigned an imported Go named struct.
+	if t := g.typeOf(e); t != nil {
+		if named, ok := types.Apply(types.EmptySubst(), t).(*types.TGoNamed); ok && !named.Interface {
+			g.emitGoStructLiteral(e, named)
+			return
+		}
+	}
 	// Determine the record type from fields
 	recName := g.inferRecordName(e)
 	g.buf.WriteString(recName + "{")
@@ -4977,6 +4998,54 @@ func (g *Generator) emitRecord(e *ast.RecordExpr) {
 		}
 	}
 	g.buf.WriteString("}")
+}
+
+func (g *Generator) emitGoStructLiteral(e *ast.RecordExpr, named *types.TGoNamed) {
+	pkg := named.Pkg
+	if pkg == "" {
+		pkg = g.pkgAliasForGoName(named.Name)
+	}
+	if pkg != "" {
+		g.buf.WriteString(pkg + ".")
+	}
+	g.buf.WriteString(named.Name + "{")
+	for i, f := range e.Fields {
+		if i > 0 {
+			g.buf.WriteString(", ")
+		}
+		g.buf.WriteString(exported(f.Name) + ": ")
+		if f.Value != nil {
+			g.emitExpr(f.Value, false)
+		} else {
+			g.buf.WriteString(f.Name)
+		}
+	}
+	g.buf.WriteString("}")
+}
+
+// pkgAliasForGoName finds the Go import package name for an opaque type.
+func (g *Generator) pkgAliasForGoName(typeName string) string {
+	for path, pkg := range g.externImports {
+		switch {
+		case path == "log/slog" && (typeName == "HandlerOptions" || typeName == "Level" || typeName == "Leveler" || typeName == "Handler"):
+			return pkg
+		case path == "sync" && typeName == "Mutex":
+			return pkg
+		case path == "bytes" && typeName == "Buffer":
+			return pkg
+		default:
+			_ = path
+		}
+	}
+	if named := typeName; named != "" {
+		for path, pkg := range g.externImports {
+			if pkg == "slog" || pkg == "sync" || pkg == "bytes" {
+				return pkg
+			}
+			_ = path
+		}
+	}
+	return ""
 }
 
 // recordFieldASTTypes returns field name → AST type for a local or imported record.

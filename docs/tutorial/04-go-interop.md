@@ -36,6 +36,16 @@ Heap / mutable Go types whose methods use pointer receivers should be typed
 as `T ptr` (e.g. `Buffer ptr` for `*bytes.Buffer`). Opaque `type Buffer` alone
 maps to the Go value type `bytes.Buffer`.
 
+Construct empty Go structs and option bags with expected-typed `ptr_of`:
+
+```goop
+let buf : Buffer ptr = ptr_of {}
+let opts : HandlerOptions ptr = ptr_of { level = LevelInfo }
+```
+
+Pass implementors as `ptr_of { … }` wherever a Go interface is expected
+(`slog.New (ptr_of { last = "" })`).
+
 An arrow type declares a method; a non-arrow type declares a field:
 
 ```goop

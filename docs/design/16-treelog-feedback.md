@@ -88,3 +88,15 @@ expression-IIFE path in `emitBegin` likewise routes statement-shaped tails
 through `emitReturnExpr` instead of prefixing `return`.
 
 Regression: `tests/begin_match_return_test.goop`.
+
+## Goop 1.7.0 — string + Go struct FFI (treelog completion)
+
+Shipped:
+
+1. String escapes `\xHH` / `\ooo` / `\e`
+2. `String.length` / `String.sub` (byte semantics)
+3. Implementor `T ptr` → Go interface (`ptr_of {…}` for handlers)
+4. `slog.Level` ordered compare; `Value.Kind` / `Record` fields
+5. Full Go struct literals (`HandlerOptions`, empty `Mutex`/`Buffer`)
+
+Treelog can drop construction `@[go]` except crypto UUID and `Scope.Error`.

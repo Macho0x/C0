@@ -11,6 +11,25 @@ Goop is case-sensitive. Blocks use explicit delimiters (`let … in`, `begin/end
 // Line comments also supported
 ```
 
+## String and character literals
+
+Double-quoted strings and character literals support escapes decoded by the lexer:
+
+| Escape | Meaning |
+|--------|---------|
+| `\n` `\t` `\r` `\\` `\"` `\'` | usual |
+| `\e` | ESC (`0x1b`) |
+| `\xHH` | byte from exactly two hex digits |
+| `\ooo` | byte from 1–3 octal digits (value ≤ 255) |
+
+```goop
+let red = "\x1b[31m"
+let reset = "\033[0m"
+let dim = "\e[2m"
+```
+
+Invalid or incomplete escapes are lexer errors (see [10-error-reference.md](10-error-reference.md)).
+
 ## Identifiers and keywords
 
 - Identifiers: letter or `_`, then letters, digits, `_`, or `'`.

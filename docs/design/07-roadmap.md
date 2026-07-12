@@ -56,6 +56,7 @@ This file presents the same task list as `TODO.md`, organized by development pha
 - [x] **Go method/field FFI (1.4.0):** `val (x : T).M` selector imports, method calls, field reads, callbacks, `go_slice` indexing, and variadic `any`.
 - [x] **Call lowering (1.5.0):** capitalized multi-arg apps, unit param erasure, if-as-expression IIFE, consistent option suffixes ([19-call-lowering.md](19-call-lowering.md)).
 - [x] **Cross-package libraries (1.6.0):** imported record literals, Capitalized open-export calls, multiline paren apps, `T ptr` for heap Go types, gosig named types/`LookupVar`, LSP URI decode ([19-call-lowering.md](19-call-lowering.md), [16-treelog-feedback.md](16-treelog-feedback.md)).
+- [x] **Treelog FFI completion (1.7.0):** string escapes + `String.length`/`sub`; implementor `ptr_of` → interface; slog Kind/Level; Go struct literals (`HandlerOptions`, `Mutex`, `Buffer`) ([18-go-methods.md](18-go-methods.md), [16-treelog-feedback.md](16-treelog-feedback.md)).
 - [x] Package manager (`goop get`, `goop.lock`).
 - [x] **OCaml alignment (1.0):** `ref`/`while`/`function`/exceptions/`failwith`/`mod`; remove F# CE, `?`, Kit macros, `newtype`, effect rows, `panic`, `%`.
 - [x] **Effect handlers (1.0):** OCaml 5-style `effect` / `perform` / handlers, CPS-lowered.

@@ -9,6 +9,9 @@ import go "log/slog" {
   type Record
   type Attr
   type Level
+  type Logger
+  val New : Handler -> Logger
+  val (l : Logger).Info : string -> unit
 }
 
 type capture = {
@@ -22,18 +25,16 @@ implements Handler for capture with
       h.last <- "ok";
       null
     end
-  let WithAttrs (h : capture) (_attrs : Attr go_slice) : Handler = h
-  let WithGroup (h : capture) (_name : string) : Handler = h
+  let WithAttrs (h : capture) (_attrs : Attr go_slice) : Handler =
+    ptr_of { last = h.last }
+  let WithGroup (h : capture) (_name : string) : Handler =
+    ptr_of { last = h.last }
 end
 
-@[go] {
-  func runCapture() string {
-    h := &capture{Last: ""}
-    log := slog.New(h)
-    log.Info("hi")
-    return h.Last
-  }
-}
-val runCapture : unit -> string
-
-let main () = assert (runCapture () = "ok")
+let main () =
+  let h = ptr_of { last = "" } in
+  let log = New h in
+  begin
+    log.Info "hi";
+    assert (h.last = "ok")
+  end

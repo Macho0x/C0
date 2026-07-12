@@ -9,11 +9,13 @@ Builtins are part of the type system — not modules and not prelude bindings.
 | `int` | Machine integer |
 | `float` | Floating point |
 | `bool` | `true` / `false` |
-| `string` | UTF-8 string |
+| `string` | UTF-8 string (Go `string`; indexing via prelude is by **byte**) |
 | `unit` | Unit type `()` |
 | `bytes` | Byte sequence |
 | `rune` | Unicode code point |
 | `'a ref` | Mutable reference cell |
+
+Prelude string ops: `string_concat`, `String.length`, `String.sub` — see [prelude](prelude.md).
 
 ## Lists
 

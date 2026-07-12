@@ -1,33 +1,27 @@
-# Goop 1.6.0
+# Goop 1.7.0
 
-Goop 1.6.0 removes the last codegen gaps that forced multi-package libraries
-(like Treelog) to ship lowercase “bridge” wrappers. Cross-package record
-literals, Capitalized calls, multiline apps, Buffer pointer FFI, richer
-`gosig`, and LSP path decoding now work as OCaml-style Goop expects.
+Goop 1.7.0 completes the Treelog-driven FFI surface: string escapes and
+slicing, heap `ptr_of` for interface implementors, slog Value/Kind/Level
+interop, and full Go struct literals (including empty `Mutex`/`Buffer` and
+`HandlerOptions`).
 
 ## Highlights
 
-- **Cross-package records:** `{ service = … }` after `import goop . "pkg"`
-  lowers to `pkg.Options{…}` (including option fields as
-  `pkg.NewOptionTSome` / `None`).
-- **Cross-package Capitalized calls:** `NewScope log attrs` →
-  `treelog.NewScope(log, attrs)` — full apps, partial apps, and unit elision.
-- **Multiline apps:** juxtaposition may continue on the next line when the
-  argument is parenthesized (or indented past the callee).
-- **Buffer ptr:** heap/mutable Go types and pointer-receiver methods use
-  `T ptr` (e.g. `Buffer ptr` for `*bytes.Buffer`).
-- **gosig:** named Go types, `LookupVar`, and `packages.Config.Dir` from the
-  project root (graceful fallback when load fails).
-- **LSP:** `file://` URIs are URL-decoded; workspace root backs up
-  `module_root` when the file path alone cannot find `goop.toml`.
+- **String escapes:** `"\x1b[31m"`, `"\033[0m"`, `"\e[0m"`.
+- **`String.length` / `String.sub`:** Go byte length and slicing.
+- **`ptr_of` handlers:** `slog.New (ptr_of { last = "" })` with no `@[go]` ctor.
+- **Go struct FFI:** `ptr_of { level = LevelInfo }` for `HandlerOptions`;
+  `ptr_of {}` for `sync.Mutex` / `bytes.Buffer`.
+- **slog introspection:** `Value.Kind`, `Group`, `Record.Attrs` / fields;
+  native `Level` comparisons.
 
-## Libraries
+## Treelog
 
-Drop lowercase bridges that only existed for 1.5 codegen. Prefer Capitalized
-public APIs and record literals at the call site.
+Construction embeds for handlers, mutex, buffer, and JSON options can move to
+native Goop. Residual `@[go]`: crypto UUID and Go-facing `Scope.Error`.
 
 ## Verification
 
-- `go test ./...` (from `src/`)
-- `goop test tests/` → 94 passed, 0 failed
+- `go test ./...` (from `src/`) — all packages green
+- `goop test tests/` → 101 passed, 0 failed
 - Treelog: `goop test examples/` → 6 passed, 0 failed; `go build ./...`

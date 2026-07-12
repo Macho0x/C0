@@ -11,8 +11,13 @@ constr   := [A-Z][a-zA-Z0-9_']*
 polyvar  := '`' constr
 integer  := [0-9]+
 float    := [0-9]+ '.' [0-9]* | [0-9]* '.' [0-9]+
-string   := '"' [^"]* '"'
-char     := '\'' [^\']* '\''
+string   := '"' (str_char | escape)* '"'
+char     := '\'' (char_char | escape) '\''
+escape   := '\' ( 'n' | 't' | 'r' | '\\' | '"' | "'" | 'e'
+                | 'x' hex hex | oct oct? oct? )
+hex      := [0-9a-fA-F]
+oct      := [0-7]
+(* \e = ESC (0x1b); \xHH = byte; \ooo = 1–3 octal digits, value ≤ 255 *)
 unit     := '()'
 line_comment := '//' [^\n]*
 block_comment := '(*' … '*)'   (* nestable *)

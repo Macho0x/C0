@@ -170,6 +170,24 @@ func Default() *Prelude {
 		&pureEff,
 	)
 
+	// String.length / String.sub — Go byte semantics (len / s[i:i+n])
+	p.addWithEffects("String.length",
+		types.Mono(&types.TFun{From: types.String, To: types.Int}),
+		Lowering{Func: "len", Pkg: ""},
+		&pureEff,
+	)
+	p.addWithEffects("String.sub",
+		types.Mono(&types.TFun{
+			From: types.String,
+			To: &types.TFun{
+				From: types.Int,
+				To:   &types.TFun{From: types.Int, To: types.String},
+			},
+		}),
+		Lowering{Custom: "string_sub"},
+		&pureEff,
+	)
+
 	// failwith : string -> 'a
 	p.addWithEffects("failwith",
 		types.Mono(&types.TFun{From: types.String, To: b}),

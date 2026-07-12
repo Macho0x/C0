@@ -19,8 +19,11 @@ The prelude is injected by the type checker before user declarations. Bindings a
 | `int_to_string` | `int -> string` | `strconv.Itoa` |
 | `float_to_string` | `float -> string` | `fmt.Sprintf` |
 | `string_concat` | `string -> string -> string` | `+` operator |
+| `String.length` | `string -> int` | `len` (byte count) |
+| `String.sub` | `string -> int -> int -> string` | `s[i:i+n]` (byte slice; OOB panics) |
 
-In practice, use the `^` operator for string concatenation.
+In practice, use the `^` operator for string concatenation. `String.length` /
+`String.sub` follow Go byte indexing, not Unicode grapheme clusters.
 
 ## Lists
 

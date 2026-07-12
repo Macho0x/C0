@@ -72,6 +72,11 @@ Heap / mutable Go types and pointer-receiver methods should be declared as
 `T ptr` in FFI vals (e.g. `Buffer ptr` for `*bytes.Buffer`). Opaque `type T`
 alone is the Go value type (clarified in **1.6.0**).
 
+Goop records that `implements` a Go interface may be passed as **`T ptr`**
+(via `ptr_of { … }`) wherever the interface is expected — e.g.
+`slog.New (ptr_of { last = "" })`. Value records still coerce to interfaces
+as before.
+
 **Non-goals for 1.3.0:** `defer` keyword; bare `import go "pkg"` auto-export
 discovery; OCaml objects satisfying Go interfaces; rewriting all of stdlib off
 `@[go]`.

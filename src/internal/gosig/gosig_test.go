@@ -156,3 +156,84 @@ func TestLookupVarHTTPStatusOK(t *testing.T) {
 	}
 }
 
+func TestLookupTypeSlogHandlerOptions(t *testing.T) {
+	info, err := LookupType("log/slog", "HandlerOptions")
+	if err != nil {
+		t.Skipf("gosig LookupType not available: %v", err)
+	}
+	if info == nil {
+		t.Fatal("expected non-nil TypeInfo")
+	}
+	if info.Kind != TypeKindStruct {
+		t.Errorf("expected TypeKindStruct, got %v", info.Kind)
+	}
+	want := map[string]bool{"Level": true, "AddSource": true, "ReplaceAttr": true}
+	got := make(map[string]string, len(info.Fields))
+	for _, f := range info.Fields {
+		got[f.Name] = f.Type
+	}
+	for name := range want {
+		if _, ok := got[name]; !ok {
+			t.Errorf("missing field %q in HandlerOptions; got %v", name, got)
+		}
+	}
+	if len(info.Fields) != 3 {
+		t.Errorf("expected 3 exported fields, got %d: %v", len(info.Fields), info.Fields)
+	}
+}
+
+func TestLookupTypeSlogHandler(t *testing.T) {
+	info, err := LookupType("log/slog", "Handler")
+	if err != nil {
+		t.Skipf("gosig LookupType not available: %v", err)
+	}
+	if info == nil {
+		t.Fatal("expected non-nil TypeInfo")
+	}
+	if info.Kind != TypeKindInterface {
+		t.Errorf("expected TypeKindInterface, got %v", info.Kind)
+	}
+	if info.Fields != nil {
+		t.Errorf("expected nil Fields for interface, got %v", info.Fields)
+	}
+}
+
+func TestLookupTypeSyncMutex(t *testing.T) {
+	info, err := LookupType("sync", "Mutex")
+	if err != nil {
+		t.Skipf("gosig LookupType not available: %v", err)
+	}
+	if info == nil {
+		t.Fatal("expected non-nil TypeInfo")
+	}
+	if info.Kind != TypeKindStruct {
+		t.Errorf("expected TypeKindStruct, got %v", info.Kind)
+	}
+	// Mutex has no exported fields (implementation detail).
+	for _, f := range info.Fields {
+		t.Errorf("unexpected exported field on sync.Mutex: %+v", f)
+	}
+}
+
+func TestLookupTypeBytesBuffer(t *testing.T) {
+	info, err := LookupType("bytes", "Buffer")
+	if err != nil {
+		t.Skipf("gosig LookupType not available: %v", err)
+	}
+	if info == nil {
+		t.Fatal("expected non-nil TypeInfo")
+	}
+	if info.Kind != TypeKindStruct {
+		t.Errorf("expected TypeKindStruct, got %v", info.Kind)
+	}
+}
+
+func TestAssignableSlogLevelLeveler(t *testing.T) {
+	ok, err := Assignable("log/slog", "Level", "Leveler")
+	if err != nil {
+		t.Skipf("gosig Assignable not available: %v", err)
+	}
+	if !ok {
+		t.Error("expected slog.Level assignable to slog.Leveler")
+	}
+}

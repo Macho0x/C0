@@ -1,0 +1,25 @@
+module main
+
+(* Empty Go struct literals for sync.Mutex and bytes.Buffer. *)
+
+import go "sync" {
+  type Mutex
+  val (m : Mutex ptr).Lock : unit -> unit
+  val (m : Mutex ptr).Unlock : unit -> unit
+}
+
+import go "bytes" {
+  type Buffer
+  val (b : Buffer ptr).WriteString : string -> ...any -> unit
+  val (b : Buffer ptr).String : unit -> string
+}
+
+let main () =
+  let mu : Mutex ptr = ptr_of {} in
+  let buf : Buffer ptr = ptr_of {} in
+  begin
+    mu.Lock ();
+    buf.WriteString "hello";
+    mu.Unlock ();
+    assert (buf.String () = "hello")
+  end

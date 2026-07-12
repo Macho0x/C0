@@ -1,0 +1,65 @@
+module main
+
+(* Record.Attrs + Value.Kind / Group / Resolve from native Goop. *)
+
+import go "log/slog" {
+  type Record
+  type Attr
+  type Value
+  type Kind
+  val KindString : Kind
+  val KindGroup : Kind
+  val String : string -> string -> Attr
+  val Group : string -> ...any -> Attr
+  val (r : Record).Attrs : (Attr -> bool) -> unit
+  val (r : Record).Message : string
+  val (a : Attr).Key : string
+  val (a : Attr).Value : Value
+  val (v : Value).Resolve : unit -> Value
+  val (v : Value).Kind : unit -> Kind
+  val (v : Value).String : unit -> string
+  val (v : Value).Group : unit -> Attr go_slice
+}
+
+import go "time" {
+  type Time
+  val Now : unit -> Time
+}
+
+@[go] {
+  func newRecord() slog.Record {
+    r := slog.NewRecord(time.Now(), slog.LevelInfo, "hello", 0)
+    r.AddAttrs(slog.String("user", "ada"), slog.Group("meta", slog.String("role", "admin")))
+    return r
+  }
+}
+val newRecord : unit -> Record
+
+let inspect (a : Attr) : bool =
+  let v = a.Value.Resolve () in
+  let k = v.Kind () in
+  if k = KindString && a.Key = "user" then
+    begin
+      assert (v.String () = "ada");
+      true
+    end
+  else if k = KindGroup && a.Key = "meta" then
+    begin
+      assert (go_slice_len (v.Group ()) = 1);
+      true
+    end
+  else
+    true
+
+let main () =
+  let r = newRecord () in
+  let n = ref 0 in
+  begin
+    assert (r.Message = "hello");
+    Record.Attrs r (fun a ->
+      begin
+        n := !n + 1;
+        inspect a
+      end);
+    assert (!n = 2)
+  end

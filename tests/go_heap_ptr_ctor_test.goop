@@ -1,7 +1,6 @@
-module GoImplementsSlogHandler
+module main
 
-(* Example: minimal slog.Handler implemented in native Goop.
-   Heap construction uses ptr_of (no @[go] ctor). *)
+(* Construct a slog.Handler implementor with ptr_of — no @[go] ctor. *)
 
 import go "context" {
   type Context
@@ -25,7 +24,7 @@ implements Handler for capture with
   let Enabled (h : capture) (_ctx : Context) (_level : Level) : bool = true
   let Handle (h : capture) (_ctx : Context) (_r : Record) : error =
     begin
-      h.last <- "handled";
+      h.last <- "ok";
       null
     end
   let WithAttrs (h : capture) (_attrs : Attr go_slice) : Handler =
@@ -38,6 +37,6 @@ let main () =
   let h = ptr_of { last = "" } in
   let log = New h in
   begin
-    log.Info "hello from Goop Handler";
-    print_line h.last
+    log.Info "hi";
+    assert (h.last = "ok")
   end

@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.7.0
+
+### Strings
+
+- Lexer escapes: `\xHH` (2 hex), `\ooo` (1–3 octal ≤ 255), `\e` (ESC), plus
+  existing `\n \t \r \\ \" \'`.
+- Prelude: `String.length` / `String.sub` (Go byte semantics).
+
+### FFI
+
+- Implementor `T ptr` unifies with Go interfaces (`ptr_of {…}` for
+  `slog.Handler` without `@[go]` ctors).
+- Field/method short-name binds skip on collision with imported type names.
+- **Go struct literals:** gosig `LookupType` / `Assignable`; typed
+  `{ level = … }` / `ptr_of {}` for imported structs (`HandlerOptions`,
+  `Mutex`, `Buffer`); Level → Leveler field assignability.
+- Native `slog.Level` `>=` and `Value.Kind` / `Record` field imports.
+
+### Tests
+
+- `string_escape_test`, `string_slice_len_test`, `go_heap_ptr_ctor_test`,
+  `go_level_compare_test`, `go_slog_record_value_test`,
+  `go_handler_options_test`, `go_go_struct_literal_test`
+- `lexer_test.go` unit coverage for escapes
+
+### Docs
+
+- Grammar / syntax / error-reference escape docs; prelude string ops;
+  18-go-methods struct literals; 16-treelog-feedback 1.7 section.
+
 ## 1.6.0
 
 ### Cross-package codegen

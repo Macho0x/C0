@@ -1,0 +1,51 @@
+module main
+
+(* Native slog.Level ordered comparison in Enabled. *)
+
+import go "context" {
+  type Context
+}
+
+import go "log/slog" {
+  type Handler
+  type Record
+  type Attr
+  type Level
+  type Logger
+  val New : Handler -> Logger
+  val LevelInfo : Level
+  val LevelDebug : Level
+  val LevelError : Level
+  val (l : Logger).Info : string -> unit
+  val (l : Logger).Debug : string -> ...any -> unit
+}
+
+type gate = {
+  mutable seen : bool;
+  min : Level;
+}
+
+implements Handler for gate with
+  let Enabled (h : gate) (_ctx : Context) (level : Level) : bool =
+    level >= h.min
+  let Handle (h : gate) (_ctx : Context) (_r : Record) : error =
+    begin
+      h.seen <- true;
+      null
+    end
+  let WithAttrs (h : gate) (_attrs : Attr go_slice) : Handler =
+    ptr_of { seen = h.seen; min = h.min }
+  let WithGroup (h : gate) (_name : string) : Handler =
+    ptr_of { seen = h.seen; min = h.min }
+end
+
+let main () =
+  let h = ptr_of { seen = false; min = LevelInfo } in
+  let log = New h in
+  begin
+    log.Debug "skip" "k" "v";
+    assert (h.seen = false);
+    log.Info "keep";
+    assert (h.seen = true);
+    assert (LevelError >= LevelInfo)
+  end

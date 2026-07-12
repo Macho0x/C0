@@ -2,7 +2,7 @@
 //
 // It handles:
 //   - Nested block comments (* ... *) and line comments //
-//   - Double-quoted strings (no escape sequences yet)
+//   - Double-quoted strings with escapes (\n \t \r \\ \" \e \xHH \ooo)
 //   - Integers, floats, chars, polymorphic variants (`Tag)
 //   - All keywords and operators defined in the token package
 package lexer
@@ -430,27 +430,11 @@ func (l *Lexer) lexString() {
 		}
 		if r == '\\' {
 			l.consumeN(1)
-			r2, _ := l.peekRune()
-			if r2 == 0 {
-				l.errorf("unterminated string escape")
+			b, ok := l.lexEscapeByte("string")
+			if !ok {
 				return
 			}
-			l.consumeN(1)
-			switch r2 {
-			case 'n':
-				buf.WriteByte('\n')
-			case 't':
-				buf.WriteByte('\t')
-			case '\\':
-				buf.WriteByte('\\')
-			case '"':
-				buf.WriteByte('"')
-			case 'r':
-				buf.WriteByte('\r')
-			default:
-				buf.WriteByte('\\')
-				buf.WriteRune(r2)
-			}
+			buf.WriteByte(b)
 		} else {
 			buf.WriteRune(r)
 			l.consumeN(1)
@@ -482,20 +466,17 @@ func (l *Lexer) lexCharOrTyvar() {
 		l.emit(token.TYVAR, name, nil)
 	} else {
 		// Character literal: consume the next character and then expect closing quote.
-		ch := l.advance()
-		if ch == '\\' {
-			esc, _ := l.peekRune()
-			l.advance()
-			switch esc {
-			case 'n':
-				ch = '\n'
-			case 't':
-				ch = '\t'
-			case '\\':
-				ch = '\\'
-			case '\'':
-				ch = '\''
+		var ch rune
+		r0, _ := l.peekRune()
+		if r0 == '\\' {
+			l.consumeN(1)
+			b, ok := l.lexEscapeByte("character")
+			if !ok {
+				return
 			}
+			ch = rune(b)
+		} else {
+			ch = l.advance()
 		}
 		r2, _ := l.peekRune()
 		if r2 != '\'' {
@@ -504,6 +485,100 @@ func (l *Lexer) lexCharOrTyvar() {
 		}
 		l.consumeN(1) // skip closing '
 		l.emit(token.CHAR, string(ch), ch)
+	}
+}
+
+// lexEscapeByte parses a string/char escape after the leading backslash has
+// already been consumed. Supports \n \t \r \\ \" \' \e \xHH and \ooo (1–3 octal).
+func (l *Lexer) lexEscapeByte(kind string) (byte, bool) {
+	r, _ := l.peekRune()
+	if r == 0 {
+		l.errorf("unterminated %s escape", kind)
+		return 0, false
+	}
+	switch r {
+	case 'n':
+		l.consumeN(1)
+		return '\n', true
+	case 't':
+		l.consumeN(1)
+		return '\t', true
+	case 'r':
+		l.consumeN(1)
+		return '\r', true
+	case '\\':
+		l.consumeN(1)
+		return '\\', true
+	case '"':
+		l.consumeN(1)
+		return '"', true
+	case '\'':
+		l.consumeN(1)
+		return '\'', true
+	case 'e':
+		l.consumeN(1)
+		return 0x1b, true
+	case 'x':
+		l.consumeN(1)
+		return l.lexHexEscape(kind)
+	case '0', '1', '2', '3', '4', '5', '6', '7':
+		return l.lexOctalEscape(kind)
+	default:
+		l.errorf("invalid %s escape \\%c", kind, r)
+		return 0, false
+	}
+}
+
+func (l *Lexer) lexHexEscape(kind string) (byte, bool) {
+	var val int
+	for i := 0; i < 2; i++ {
+		r, _ := l.peekRune()
+		if r == 0 || r == '"' || r == '\'' || r == '\n' {
+			l.errorf("incomplete hex escape in %s literal", kind)
+			return 0, false
+		}
+		d, ok := hexDigit(r)
+		if !ok {
+			l.errorf("invalid hex digit in %s escape", kind)
+			return 0, false
+		}
+		l.consumeN(1)
+		val = val*16 + d
+	}
+	return byte(val), true
+}
+
+func (l *Lexer) lexOctalEscape(kind string) (byte, bool) {
+	var val int
+	for i := 0; i < 3; i++ {
+		r, _ := l.peekRune()
+		if r < '0' || r > '7' {
+			break
+		}
+		l.consumeN(1)
+		val = val*8 + int(r-'0')
+		if val > 255 {
+			l.errorf("octal escape out of range in %s literal", kind)
+			return 0, false
+		}
+	}
+	if val > 255 {
+		l.errorf("octal escape out of range in %s literal", kind)
+		return 0, false
+	}
+	return byte(val), true
+}
+
+func hexDigit(r rune) (int, bool) {
+	switch {
+	case r >= '0' && r <= '9':
+		return int(r - '0'), true
+	case r >= 'a' && r <= 'f':
+		return int(r-'a') + 10, true
+	case r >= 'A' && r <= 'F':
+		return int(r-'A') + 10, true
+	default:
+		return 0, false
 	}
 }
 

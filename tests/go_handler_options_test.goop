@@ -1,0 +1,30 @@
+module main
+
+(* Native slog.HandlerOptions via Go struct literal + ptr_of. *)
+
+import go "bytes" {
+  type Buffer
+  val (b : Buffer ptr).String : unit -> string
+}
+
+import go "log/slog" {
+  type Handler
+  type HandlerOptions
+  type Leveler
+  type Level
+  type Logger
+  val LevelInfo : Level
+  val NewJSONHandler : Buffer ptr -> HandlerOptions ptr -> Handler
+  val New : Handler -> Logger
+  val (l : Logger).Info : string -> ...any -> unit
+}
+
+let main () =
+  let buf : Buffer ptr = ptr_of {} in
+  let opts : HandlerOptions ptr = ptr_of { level = LevelInfo } in
+  let h = NewJSONHandler buf opts in
+  let log = New h in
+  begin
+    log.Info "hi" "k" "v";
+    assert (String.length (buf.String ()) > 0)
+  end

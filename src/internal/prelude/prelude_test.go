@@ -23,7 +23,7 @@ func TestPreludeBindings(t *testing.T) {
 
 	// Check that key bindings exist
 	names := []string{"print_line", "print", "int_to_string", "float_to_string",
-		"string_concat", "list_length", "list_append", "failwith", "ref"}
+		"string_concat", "String.length", "String.sub", "list_length", "list_append", "failwith", "ref"}
 	for _, name := range names {
 		b := p.Lookup(name)
 		if b == nil {
