@@ -1499,8 +1499,9 @@ associated with a specific source location.
 - **Severity**: Error
 - **Message**:
   ```
-  Usage: goop [--no-source-map] <command> <file.goop>
-  Commands: lex, parse, check, compile, build, test, resolve
+  Usage: goop [--in-tree] [--emit-map] [--no-source-map] [--color] [-i] <command> <file.goop>
+  Commands: lex, parse, check, compile, build, test, get, resolve, lsp, fmt (format)
+  compile/build write to $GOOP_HOME/build by default; --in-tree writes beside source
   ```
 - **Example**: Running `c0` with no arguments.
 - **Trigger**: The `c0` command is invoked with fewer than 2 arguments (and
@@ -1559,10 +1560,12 @@ associated with a specific source location.
 
 - **Error code**: `CLI007`
 - **Severity**: Error
-- **Message**: `write error: %v`
-- **Example**: `write error: write /path/to/output.go: permission denied`
-- **Trigger**: The generated Go file cannot be written to disk.
-- **Fix**: Check disk permissions and available space.
+- **Message**: `write error: %v` or `cache dir: %v`
+- **Example**: `write error: write /home/user/.cache/goop/build/compile-…/main.go: permission denied`
+- **Trigger**: The generated Go file (or build cache directory) cannot be written.
+  Default output is under `$GOOP_HOME/build` (see [20-cli-artifacts.md](20-cli-artifacts.md)).
+  With `--in-tree`, output is beside the `.goop` source.
+- **Fix**: Ensure `$GOOP_HOME` (or the source directory for `--in-tree`) is writable. Check disk space.
 
 ### CLI008: Temp directory error (build)
 
@@ -1616,6 +1619,7 @@ associated with a specific source location.
 - **Message**: `source map create error: %v` or `source map write error: %v`
 - **Example**: `source map create error: permission denied`
 - **Trigger**: The source map file could not be created or written.
+  Source maps are off by default; enable with `--emit-map`.
 - **Fix**: Check disk permissions. Source map generation is optional — the
   `.go` output is still generated.
 

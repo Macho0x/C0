@@ -28,7 +28,12 @@ go test ./...
 
 # All examples (CI does this)
 for f in ../docs/examples/*.goop; do ../goop check "$f"; done
+
+# Cache-only build smoke (no .go left in docs/examples)
+../goop build ../docs/examples/hello.goop && ./goop-out && rm -f ./goop-out
 ```
+
+Generated Go lives under `$GOOP_HOME/build` by default. See [20-cli-artifacts.md](docs/design/20-cli-artifacts.md).
 
 ### Where tests and examples live
 

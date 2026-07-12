@@ -1,27 +1,33 @@
-# Goop 1.7.0
+# Goop 1.8.0
 
-Goop 1.7.0 completes the Treelog-driven FFI surface: string escapes and
-slicing, heap `ptr_of` for interface implementors, slog Value/Kind/Level
-interop, and full Go struct literals (including empty `Mutex`/`Buffer` and
-`HandlerOptions`).
+Goop 1.8.0 delivers a **full Goop build**: edit `.goop`, run `goop build` /
+`goop test`, and never see generated `.go` or `.map.json` in your project tree.
 
 ## Highlights
 
-- **String escapes:** `"\x1b[31m"`, `"\033[0m"`, `"\e[0m"`.
-- **`String.length` / `String.sub`:** Go byte length and slicing.
-- **`ptr_of` handlers:** `slog.New (ptr_of { last = "" })` with no `@[go]` ctor.
-- **Go struct FFI:** `ptr_of { level = LevelInfo }` for `HandlerOptions`;
-  `ptr_of {}` for `sync.Mutex` / `bytes.Buffer`.
-- **slog introspection:** `Value.Kind`, `Group`, `Record.Attrs` / fields;
-  native `Level` comparisons.
+- **Cache-only artifacts:** `goop compile` and `goop build` write under
+  `$GOOP_HOME/build` (default `~/.cache/goop/build`).
+- **Real `goop build`:** transitive `import goop` dependencies are compiled
+  into the sandbox and linked via `replace` — the same wiring `goop test`
+  already used.
+- **Source maps opt-in:** `--emit-map`; `--in-tree` remains for inspecting
+  generated Go or mixed Go+Goop packages.
+- **Clean trees:** no leaked `go.mod` beside sources; CI asserts examples stay
+  free of generated `.go`.
 
-## Treelog
+## Workflow
 
-Construction embeds for handlers, mutex, buffer, and JSON options can move to
-native Goop. Residual `@[go]`: crypto UUID and Go-facing `Scope.Error`.
+```bash
+goop check main.goop
+goop build main.goop    # → ./goop-out for module main
+goop test examples/
+```
+
+See [docs/design/20-cli-artifacts.md](docs/design/20-cli-artifacts.md).
 
 ## Verification
 
 - `go test ./...` (from `src/`) — all packages green
-- `goop test tests/` → 101 passed, 0 failed
-- Treelog: `goop test examples/` → 6 passed, 0 failed; `go build ./...`
+- `goop test tests/` → 101+ passed
+- `goop build docs/examples/hello.goop` with no `.go` left in `docs/examples/`
+- Treelog: `goop test examples/` with the 1.8.0 binary

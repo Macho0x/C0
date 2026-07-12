@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.8.0
+
+### Tooling
+
+- **Cache-only compile/build:** `goop compile` and `goop build` write generated
+  Go under `$GOOP_HOME/build` by default. Project trees stay `.goop`-only.
+- **`goop build` wires `import goop` deps** into the build sandbox (same model
+  as `goop test`), then runs `go build` there. Main packages emit `./goop-out`.
+- Flags: `--in-tree` (legacy beside-source output), `--emit-map` (source maps;
+  off by default), `--no-source-map` kept as a no-op alias.
+- No more leaked temporary `go.mod` in the source directory after build.
+
+### Tests / CI
+
+- CLI integration tests for cache defaults, in-tree, maps, deps, library
+  builds, and mixed `--in-tree` packages.
+- CI smoke: `goop build` on `hello.goop` and assert no `.go` left in examples.
+
+### Docs
+
+- Tutorial / README / CONTRIBUTING updated for cache-only workflow.
+- New [20-cli-artifacts.md](docs/design/20-cli-artifacts.md).
+
 ## 1.7.0
 
 ### Strings

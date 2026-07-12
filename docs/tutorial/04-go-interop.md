@@ -123,7 +123,18 @@ See [modules guide](../design/05-modules-and-packages.md).
 
 ## Gradual migration
 
-`.goop` and `.go` files coexist in one module. Migrate function by function; `go build` compiles the generated Go alongside hand-written Go.
+`.goop` and `.go` files can coexist in one module for migration. Default
+`goop build` / `goop compile` keep generated Go in `$GOOP_HOME/build` so the
+source tree stays `.goop`-only.
+
+For mixed packages (hand-written `.go` beside `.goop`), use:
+
+```bash
+goop build --in-tree main.goop
+```
+
+That writes the generated file next to sources and runs `go build` in the
+source directory (legacy coexistence mode).
 
 Full examples: [`extern_demo.goop`](../examples/extern_demo.goop), [`cgo_demo.goop`](../examples/cgo_demo.goop).
 

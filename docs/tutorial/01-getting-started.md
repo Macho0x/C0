@@ -1,6 +1,8 @@
 # 1. Getting started
 
-Goop compiles to Go. You write `.goop` files, type-check them, and emit readable Go source.
+Goop compiles to Go. You write `.goop` files; the toolchain type-checks them and
+emits Go into a build cache under `$GOOP_HOME/build` (default `~/.cache/goop/build`).
+Your project tree stays `.goop`-only unless you pass `--in-tree`.
 
 ## Your first program
 
@@ -28,6 +30,34 @@ go build -o ../goop ./cmd/goop
 ```
 
 `goop check` runs parsing, type inference, effect checking, and safety passes (exhaustiveness, linear analysis, nil channels, refinements).
+
+## Build and run
+
+```bash
+./goop build docs/examples/hello.goop
+# wrote ~/.cache/goop/build/build-…/main.go
+# build succeeded in …
+./goop-out
+# Hello, Goop!
+```
+
+`goop build` compiles the entry file and transitive `import goop` deps into the
+cache, then runs `go build` there. For `module main`, the binary is written to
+`./goop-out` in the current working directory.
+
+| Command | Default output | Notes |
+|---------|----------------|-------|
+| `goop compile` | `$GOOP_HOME/build/compile-*/` | Emit Go only; no `go build` |
+| `goop build` | `$GOOP_HOME/build/build-*/` + `./goop-out` for main | Full Goop build |
+| `goop test` | `$GOOP_HOME/build/test-*/` (ephemeral) | Runs `*_test.goop` |
+
+Flags:
+
+- `--in-tree` — write `.go` beside the `.goop` source (legacy / mixed Go+Goop)
+- `--emit-map` — write `.map.json` next to the generated `.go`
+- `--no-source-map` — accepted alias; maps are off by default
+
+See also [20-cli-artifacts.md](../design/20-cli-artifacts.md).
 
 ## Project layout
 

@@ -106,17 +106,26 @@ type ServerCapabilities struct {
 	DocumentFormattingProvider bool `json:"documentFormattingProvider"`
 }
 
+// CLI flags shared by compile/build.
+var (
+	cliInTree  bool // --in-tree: write .go beside source (legacy)
+	cliEmitMap bool // --emit-map: write .map.json next to generated .go
+)
+
 func main() {
 	// Parse optional flags
 	args := os.Args[1:]
-	globalWriteMap := true
 	colorOutput := false
 	inPlace := false // -i flag for in-place formatting
 	var filtered []string
 	for _, a := range args {
 		switch a {
 		case "--no-source-map":
-			globalWriteMap = false
+			cliEmitMap = false // accepted alias; maps are off by default
+		case "--emit-map":
+			cliEmitMap = true
+		case "--in-tree":
+			cliInTree = true
 		case "--color":
 			colorOutput = true
 		case "-i", "--in-place":
@@ -127,8 +136,9 @@ func main() {
 	}
 
 	if len(filtered) < 2 && (len(filtered) == 0 || filtered[0] != "test") && filtered[0] != "lsp" && filtered[0] != "fmt" {
-		fmt.Fprintf(os.Stderr, "Usage: goop [--no-source-map] [--color] [-i] <command> <file.goop>\n")
+		fmt.Fprintf(os.Stderr, "Usage: goop [--in-tree] [--emit-map] [--no-source-map] [--color] [-i] <command> <file.goop>\n")
 		fmt.Fprintf(os.Stderr, "Commands: lex, parse, check, compile, build, test, get, resolve, lsp, fmt (format)\n")
+		fmt.Fprintf(os.Stderr, "  compile/build write to $GOOP_HOME/build by default; --in-tree writes beside source\n")
 		os.Exit(1)
 	}
 
@@ -232,154 +242,16 @@ func main() {
 		fmt.Printf("OK: %s parsed and type-checked successfully\n", file)
 
 	case "compile":
-		mod, err := parseAndDesugar()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "parse error: %v\n", err)
+		if err := runCompile(file, src, cfg, parseAndDesugar); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
-		}
-
-		// Type-check (for validation and to get inferred types for codegen)
-		tm, vtm, typeErrs := typecheckModule(mod, file, cfg)
-		if len(typeErrs) > 0 {
-			fmt.Println("FAIL: type errors:")
-			for _, e := range typeErrs {
-				fmt.Print(report.Render(e, src))
-			}
-			os.Exit(1)
-		}
-
-		// Safety checks (linear, nilchan, refine, exhaust)
-		proven, funcProven, warns, fatal := runSafetyChecks(mod, tm, src, cfg)
-		if fatal {
-			os.Exit(1)
-		}
-		for _, w := range warns {
-			fmt.Fprintf(os.Stderr, "WARNING: %v\n", w)
-		}
-
-		// Generate Go code
-		mod = effects.TransformCPS(mod)
-		gen := codegen.NewGenerator(file, cfg)
-		gen.SetTypeMap(tm, vtm)
-		gen.SetProvenSites(proven)
-		gen.SetRefinementMeta(funcProven)
-		goSrc, err := gen.Generate(mod)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "codegen error: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Determine output file name
-		outFile := gen.GoFileName()
-		dir := filepath.Dir(file)
-		outPath := filepath.Join(dir, outFile)
-
-		if err := os.WriteFile(outPath, []byte(goSrc), 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "write error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("wrote %s\n", outPath)
-
-		// Write source map (unless --no-source-map flag is present)
-		if globalWriteMap {
-			sm := gen.SourceMap()
-			if sm != nil {
-				mapPath := outPath + ".map.json"
-				f, err := os.Create(mapPath)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "source map create error: %v\n", err)
-				} else {
-					if err := sm.Write(f); err != nil {
-						fmt.Fprintf(os.Stderr, "source map write error: %v\n", err)
-					}
-					f.Close()
-					fmt.Printf("wrote %s\n", mapPath)
-				}
-			}
 		}
 
 	case "build":
-		mod, err := parseAndDesugar()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "parse error: %v\n", err)
+		if err := runBuild(file, src, cfg, parseAndDesugar); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
 		}
-
-		// Type-check
-		tm, vtm, typeErrs := typecheckModule(mod, file, cfg)
-		if len(typeErrs) > 0 {
-			fmt.Println("FAIL: type errors:")
-			for _, e := range typeErrs {
-				fmt.Print(report.Render(e, src))
-			}
-			os.Exit(1)
-		}
-
-		// Safety checks (linear, nilchan, refine, exhaust)
-		proven, funcProven, warns, fatal := runSafetyChecks(mod, tm, src, cfg)
-		if fatal {
-			os.Exit(1)
-		}
-		for _, w := range warns {
-			fmt.Fprintf(os.Stderr, "WARNING: %v\n", w)
-		}
-
-		// Generate Go code
-		mod = effects.TransformCPS(mod)
-		gen := codegen.NewGenerator(file, cfg)
-		gen.SetTypeMap(tm, vtm)
-		gen.SetProvenSites(proven)
-		gen.SetRefinementMeta(funcProven)
-		goSrc, err := gen.Generate(mod)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "codegen error: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Determine build directory and package name
-		srcDir := filepath.Dir(file)
-		goModPath := filepath.Join(srcDir, "go.mod")
-		hasGoMod := false
-		if _, err := os.Stat(goModPath); err == nil {
-			hasGoMod = true
-		}
-
-		// Collect any existing .go files (excluding generated one)
-		goFiles, _ := filepath.Glob(filepath.Join(srcDir, "*.go"))
-		genFile := gen.GoFileName()
-		isMixed := len(goFiles) > 0
-
-		// Write generated file next to sources
-		outPath := filepath.Join(srcDir, genFile)
-		if err := os.WriteFile(outPath, []byte(goSrc), 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "write error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("wrote %s\n", outPath)
-
-		// Build in source directory
-		buildDir := srcDir
-		if !hasGoMod {
-			// Create minimal go.mod for mixed build
-			modContent := "module goopbuild\n\ngo 1.22\n"
-			os.WriteFile(goModPath, []byte(modContent), 0644)
-			fmt.Printf("created %s (temporary)\n", goModPath)
-		}
-
-		var cmd *exec.Cmd
-		if isMixed || hasGoMod {
-			// Build the whole package (includes hand-written .go files)
-			cmd = exec.Command("go", "build", ".")
-		} else {
-			cmd = exec.Command("go", "build", "-o", "goop-out", genFile)
-		}
-		cmd.Dir = buildDir
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "go build failed:\n%s\n", output)
-			os.Exit(1)
-		}
-		fmt.Printf("build succeeded in %s\n", buildDir)
 
 	case "resolve":
 		mod, err := parseAndDesugar()
@@ -1107,14 +979,189 @@ func uriToPath(uri string) string {
 }
 
 // ---------------------------------------------------------------------------
-// Project configuration
+// Compile / build
 // ---------------------------------------------------------------------------
+
+func generateGo(file string, src []byte, cfg *config.Config, parseAndDesugar func() (*ast.Module, error)) (goSrc string, gen *codegen.Generator, mod *ast.Module, err error) {
+	mod, err = parseAndDesugar()
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("parse error: %w", err)
+	}
+	tm, vtm, typeErrs := typecheckModule(mod, file, cfg)
+	if len(typeErrs) > 0 {
+		fmt.Println("FAIL: type errors:")
+		for _, e := range typeErrs {
+			fmt.Print(report.Render(e, src))
+		}
+		return "", nil, nil, fmt.Errorf("type errors")
+	}
+	proven, funcProven, warns, fatal := runSafetyChecks(mod, tm, src, cfg)
+	if fatal {
+		return "", nil, nil, fmt.Errorf("safety errors")
+	}
+	for _, w := range warns {
+		fmt.Fprintf(os.Stderr, "WARNING: %v\n", w)
+	}
+	mod = effects.TransformCPS(mod)
+	gen = codegen.NewGenerator(file, cfg)
+	gen.SetTypeMap(tm, vtm)
+	gen.SetProvenSites(proven)
+	gen.SetRefinementMeta(funcProven)
+	goSrc, err = gen.Generate(mod)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("codegen error: %w", err)
+	}
+	return goSrc, gen, mod, nil
+}
+
+func runCompile(file string, src []byte, cfg *config.Config, parseAndDesugar func() (*ast.Module, error)) error {
+	goSrc, gen, _, err := generateGo(file, src, cfg, parseAndDesugar)
+	if err != nil {
+		return err
+	}
+	outFile := gen.GoFileName()
+	var outDir string
+	if cliInTree {
+		outDir = filepath.Dir(file)
+	} else {
+		outDir, err = newBuildDir("compile-*")
+		if err != nil {
+			return fmt.Errorf("cache dir: %w", err)
+		}
+	}
+	outPath := filepath.Join(outDir, outFile)
+	if err := os.WriteFile(outPath, []byte(goSrc), 0644); err != nil {
+		return fmt.Errorf("write error: %w", err)
+	}
+	fmt.Printf("wrote %s\n", outPath)
+	if cliEmitMap {
+		if err := writeSourceMapFile(outPath, gen.SourceMap()); err != nil {
+			fmt.Fprintf(os.Stderr, "source map write error: %v\n", err)
+		}
+	}
+	return nil
+}
+
+func runBuild(file string, src []byte, cfg *config.Config, parseAndDesugar func() (*ast.Module, error)) error {
+	goSrc, gen, mod, err := generateGo(file, src, cfg, parseAndDesugar)
+	if err != nil {
+		return err
+	}
+	genFile := gen.GoFileName()
+
+	if cliInTree {
+		return runBuildInTree(file, goSrc, genFile, gen)
+	}
+	return runBuildCache(file, goSrc, genFile, mod, cfg, gen)
+}
+
+func runBuildInTree(file, goSrc, genFile string, gen *codegen.Generator) error {
+	srcDir := filepath.Dir(file)
+	goModPath := filepath.Join(srcDir, "go.mod")
+	hasGoMod := false
+	if _, err := os.Stat(goModPath); err == nil {
+		hasGoMod = true
+	}
+	goFiles, _ := filepath.Glob(filepath.Join(srcDir, "*.go"))
+	isMixed := len(goFiles) > 0
+
+	outPath := filepath.Join(srcDir, genFile)
+	if err := os.WriteFile(outPath, []byte(goSrc), 0644); err != nil {
+		return fmt.Errorf("write error: %w", err)
+	}
+	fmt.Printf("wrote %s\n", outPath)
+	if cliEmitMap {
+		if err := writeSourceMapFile(outPath, gen.SourceMap()); err != nil {
+			fmt.Fprintf(os.Stderr, "source map write error: %v\n", err)
+		}
+	}
+
+	createdGoMod := false
+	if !hasGoMod {
+		modContent := "module goopbuild\n\ngo 1.22\n"
+		if err := os.WriteFile(goModPath, []byte(modContent), 0644); err != nil {
+			return fmt.Errorf("write go.mod: %w", err)
+		}
+		createdGoMod = true
+		fmt.Printf("created %s (temporary)\n", goModPath)
+	}
+
+	var cmd *exec.Cmd
+	cwd, _ := os.Getwd()
+	binOut := filepath.Join(cwd, "goop-out")
+	if isMixed || hasGoMod {
+		if hasMainFunc(goSrc) {
+			cmd = exec.Command("go", "build", "-o", binOut, ".")
+		} else {
+			cmd = exec.Command("go", "build", ".")
+		}
+	} else {
+		if hasMainFunc(goSrc) {
+			cmd = exec.Command("go", "build", "-o", binOut, genFile)
+		} else {
+			cmd = exec.Command("go", "build", genFile)
+		}
+	}
+	cmd.Dir = srcDir
+	output, err := cmd.CombinedOutput()
+	if createdGoMod {
+		_ = os.Remove(goModPath)
+	}
+	if err != nil {
+		return fmt.Errorf("go build failed:\n%s", output)
+	}
+	fmt.Printf("build succeeded in %s\n", srcDir)
+	return nil
+}
+
+func runBuildCache(file, goSrc, genFile string, mod *ast.Module, cfg *config.Config, gen *codegen.Generator) error {
+	buildDir, err := newBuildDir("build-*")
+	if err != nil {
+		return fmt.Errorf("cache dir: %w", err)
+	}
+
+	projectRoot := findProjectRoot(filepath.Dir(file))
+	if projectRoot == "" {
+		projectRoot = findProjectRoot(".")
+	}
+	goMod, err := writeImportDependencies(mod, cfg, projectRoot, buildDir, "goopbuild")
+	if err != nil {
+		return fmt.Errorf("deps: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(buildDir, "go.mod"), []byte(goMod), 0644); err != nil {
+		return fmt.Errorf("write go.mod: %w", err)
+	}
+	outPath := filepath.Join(buildDir, genFile)
+	if err := os.WriteFile(outPath, []byte(goSrc), 0644); err != nil {
+		return fmt.Errorf("write error: %w", err)
+	}
+	fmt.Printf("wrote %s\n", outPath)
+	if cliEmitMap {
+		if err := writeSourceMapFile(outPath, gen.SourceMap()); err != nil {
+			fmt.Fprintf(os.Stderr, "source map write error: %v\n", err)
+		}
+	}
+
+	cwd, _ := os.Getwd()
+	var cmd *exec.Cmd
+	if hasMainFunc(goSrc) {
+		binOut := filepath.Join(cwd, "goop-out")
+		cmd = exec.Command("go", "build", "-o", binOut, genFile)
+	} else {
+		cmd = exec.Command("go", "build", genFile)
+	}
+	cmd.Dir = buildDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("go build failed:\n%s", output)
+	}
+	fmt.Printf("build succeeded in %s\n", buildDir)
+	return nil
+}
 
 // ---------------------------------------------------------------------------
 // Test runner
 // ---------------------------------------------------------------------------
-
-const goopProjectImportPrefix = "github.com/Macho0x/Goop/"
 
 func findProjectRoot(start string) string {
 	dir, err := filepath.Abs(start)
@@ -1134,110 +1181,6 @@ func findProjectRoot(start string) string {
 		}
 		dir = parent
 	}
-}
-
-func compileGoopModuleToGo(goopPath string, cfg *config.Config) (string, string, error) {
-	src, err := os.ReadFile(goopPath)
-	if err != nil {
-		return "", "", err
-	}
-	mod, err := parser.Parse(goopPath, src)
-	if err != nil {
-		return "", "", err
-	}
-	mod = desugar.DesugarModule(mod)
-	tm, vtm, typeErrs := typecheckModule(mod, goopPath, cfg)
-	if len(typeErrs) > 0 {
-		return "", "", fmt.Errorf("type errors in %s: %v", goopPath, typeErrs[0])
-	}
-	mod = effects.TransformCPS(mod)
-	gen := codegen.NewGenerator(goopPath, cfg)
-	gen.SetTypeMap(tm, vtm)
-	goSrc, err := gen.Generate(mod)
-	if err != nil {
-		return "", "", err
-	}
-	return goSrc, gen.GoFileName(), nil
-}
-
-func writeImportDependencies(mod *ast.Module, cfg *config.Config, projectRoot, tmpDir, entryFile string) (string, error) {
-	if projectRoot == "" {
-		return "module test\n\ngo 1.22\n", nil
-	}
-	lock, _ := config.LoadLockfile(filepath.Join(projectRoot, "goop.lock"))
-	r := modresolve.New(cfg, lock, projectRoot)
-	sources := make(map[string]string)
-
-	var collect func(*ast.Module) error
-	collect = func(m *ast.Module) error {
-		for _, spec := range m.Imports {
-			if spec.Kind != ast.ImportGoop {
-				continue
-			}
-			resolved, err := r.ResolveGoopPath(spec.Path)
-			if err != nil {
-				return err
-			}
-			if resolved.SourceFile == "" {
-				return fmt.Errorf("module %q not found", spec.Path)
-			}
-			if _, ok := sources[resolved.SourceFile]; ok {
-				continue
-			}
-			sources[resolved.SourceFile] = resolved.GoImportPath
-			src, err := os.ReadFile(resolved.SourceFile)
-			if err != nil {
-				return err
-			}
-			depMod, err := parser.Parse(resolved.SourceFile, src)
-			if err != nil {
-				return err
-			}
-			depMod = desugar.DesugarModule(depMod)
-			if err := collect(depMod); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if err := collect(mod); err != nil {
-		return "", err
-	}
-	if len(sources) == 0 {
-		return "module test\n\ngo 1.22\n", nil
-	}
-
-	var replaces []string
-	var requires []string
-	for goopPath, goPath := range sources {
-		goSrc, goFile, err := compileGoopModuleToGo(goopPath, cfg)
-		if err != nil {
-			return "", err
-		}
-		rel := strings.TrimPrefix(goPath, goopProjectImportPrefix)
-		depDir := filepath.Join(tmpDir, "deps", filepath.FromSlash(rel))
-		if err := os.MkdirAll(depDir, 0755); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(filepath.Join(depDir, goFile), []byte(goSrc), 0644); err != nil {
-			return "", err
-		}
-		depModContent := fmt.Sprintf("module %s\n\ngo 1.22\n", goPath)
-		if err := os.WriteFile(filepath.Join(depDir, "go.mod"), []byte(depModContent), 0644); err != nil {
-			return "", err
-		}
-		replaces = append(replaces, fmt.Sprintf("replace %s => ./deps/%s", goPath, filepath.ToSlash(rel)))
-		requires = append(requires, fmt.Sprintf("require %s v0.0.0", goPath))
-	}
-	_ = entryFile
-	goMod := "module test\n\ngo 1.22\n"
-	if len(requires) > 0 {
-		goMod += "\n" + strings.Join(requires, "\n") + "\n"
-	}
-	if len(replaces) > 0 {
-		goMod += "\n" + strings.Join(replaces, "\n") + "\n"
-	}
-	return goMod, nil
 }
 
 func runTests(dir string) int {
@@ -1306,25 +1249,16 @@ func runTests(dir string) int {
 			continue
 		}
 
-		// Build and run in a temp directory.
-		// Use a cache dir to avoid /tmp (may be noexec) and the project dir (has go.mod).
-		cacheDir, _ := os.UserCacheDir()
-		if cacheDir == "" {
-			cacheDir = os.TempDir()
-		}
-		tmpDir, err := os.MkdirTemp(cacheDir, "goop-test-*")
+		tmpDir, err := newBuildDir("test-*")
 		if err != nil {
-			tmpDir, err = os.MkdirTemp("", "goop-test-*")
-			if err != nil {
-				fmt.Printf("--- FAIL: %s (temp dir: %v)\n", name, err)
-				failed++
-				continue
-			}
+			fmt.Printf("--- FAIL: %s (temp dir: %v)\n", name, err)
+			failed++
+			continue
 		}
 		defer os.RemoveAll(tmpDir)
 
 		projectRoot := findProjectRoot(dir)
-		goMod, err := writeImportDependencies(mod, cfg, projectRoot, tmpDir, file)
+		goMod, err := writeImportDependencies(mod, cfg, projectRoot, tmpDir, "test")
 		if err != nil {
 			fmt.Printf("--- FAIL: %s (deps: %v)\n", name, err)
 			failed++

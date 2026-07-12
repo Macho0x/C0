@@ -34,12 +34,7 @@ func runGet(args []string) int {
 	}
 	cfg.Dependencies[modPath] = version
 
-	cacheHome := os.Getenv("GOOP_HOME")
-	if cacheHome == "" {
-		home, _ := os.UserHomeDir()
-		cacheHome = filepath.Join(home, ".cache", "goop")
-	}
-	dest := filepath.Join(cacheHome, "pkg", "mod", filepath.FromSlash(modPath))
+	dest := filepath.Join(goopHome(), "pkg", "mod", filepath.FromSlash(modPath))
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "cache mkdir: %v\n", err)
 		return 1

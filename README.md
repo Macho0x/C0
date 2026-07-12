@@ -49,8 +49,13 @@ let handleAck (ack: OrderAck) : string =
 
 ```bash
 cd src && go build -o ../goop ./cmd/goop
-../goop check hello.goop
+../goop check docs/examples/hello.goop
+../goop build docs/examples/hello.goop   # writes to $GOOP_HOME/build; binary → ./goop-out
+./goop-out
 ```
+
+Generated `.go` stays in the build cache by default — your project tree stays `.goop`-only.
+Use `--in-tree` only when inspecting emitted Go or mixing handwritten `.go` files.
 
 Full walkthrough: [Language tutorial](docs/tutorial/README.md)
 

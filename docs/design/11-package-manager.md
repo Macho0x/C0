@@ -17,6 +17,15 @@ This:
 2. Appends an entry to `goop.lock`.
 3. Adds `[dependencies]` in `goop.toml`.
 
+## `$GOOP_HOME` layout
+
+| Path | Purpose |
+|------|---------|
+| `$GOOP_HOME/pkg/mod` | Source cache for `goop get` |
+| `$GOOP_HOME/build` | Compile/build/test sandboxes ([20-cli-artifacts.md](20-cli-artifacts.md)) |
+
+Override with the `GOOP_HOME` environment variable.
+
 ## `goop.lock`
 
 Pinned modules at the project root:

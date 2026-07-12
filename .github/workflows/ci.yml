@@ -39,3 +39,23 @@ jobs:
           for f in ../docs/examples/*.goop; do
             /tmp/goop check "$f"
           done
+
+      - name: Cache-only build smoke
+        run: |
+          export GOOP_HOME="${RUNNER_TEMP}/goop-home"
+          mkdir -p "$GOOP_HOME"
+          /tmp/goop build ../docs/examples/hello.goop
+          test -x ./goop-out
+          ./goop-out | grep -q Hello
+          rm -f ./goop-out
+          # Default build must not leave generated Go beside examples
+          if ls ../docs/examples/*.go >/dev/null 2>&1; then
+            echo "unexpected .go files left in docs/examples:"
+            ls ../docs/examples/*.go
+            exit 1
+          fi
+          if ls ../docs/examples/*.map.json >/dev/null 2>&1; then
+            echo "unexpected map files left in docs/examples:"
+            ls ../docs/examples/*.map.json
+            exit 1
+          fi

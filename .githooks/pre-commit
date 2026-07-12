@@ -1,7 +1,7 @@
 #!/bin/sh
-# Auto-increment VERSION file on every commit.
+# Auto-increment VERSION file on every commit when it ends with -dev.
 # Format: MAJOR.MINOR.PATCH-dev (e.g. 0.1.0-dev)
-# Patch number is incremented each commit.
+# Release versions (no -dev suffix) are left unchanged.
 
 VERSION_FILE="VERSION"
 
@@ -11,7 +11,15 @@ if [ ! -f "$VERSION_FILE" ]; then
     exit 0
 fi
 
-version=$(cat "$VERSION_FILE" | sed 's/-dev//')
+raw=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+
+# Do not bump tagged release versions (e.g. 1.8.0).
+case "$raw" in
+    *-dev) ;;
+    *) exit 0 ;;
+esac
+
+version=$(echo "$raw" | sed 's/-dev//')
 
 major=$(echo "$version" | cut -d. -f1)
 minor=$(echo "$version" | cut -d. -f2)
