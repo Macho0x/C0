@@ -50,18 +50,29 @@ let handleAck (ack: OrderAck) : string =
 ```bash
 cd src && go build -o ../goop ./cmd/goop
 ../goop check docs/examples/hello.goop
-../goop build docs/examples/hello.goop   # writes to $GOOP_HOME/build; binary → ./goop-out
+../goop build docs/examples/hello.goop   # cache-only; binary → ./goop-out
 ./goop-out
+../goop test tests/
 ```
 
-Generated `.go` stays in the build cache by default — your project tree stays `.goop`-only.
-Use `--in-tree` only when inspecting emitted Go or mixing handwritten `.go` files.
+**Goop 1.8+** keeps generated `.go` under `$GOOP_HOME/build` (default
+`~/.cache/goop/build`). Your project tree stays `.goop`-only. Use `--in-tree`
+only when inspecting emitted Go or mixing handwritten `.go` files; `--emit-map`
+writes optional source maps.
 
-Full walkthrough: [Language tutorial](docs/tutorial/README.md)
+| Command | Role |
+|---------|------|
+| `goop check` | Type-check + safety (no artifacts) |
+| `goop build` | Full Goop build (deps + `go build` in cache) |
+| `goop test` | Run `*_test.goop` in ephemeral cache sandboxes |
+| `goop compile` | Emit Go to cache only |
+
+Details: [CLI artifacts](docs/design/20-cli-artifacts.md) · [Tutorial](docs/tutorial/README.md)
 
 <p align="center">
   <a href="docs/tutorial/README.md">Tutorial</a> ·
   <a href="docs/design/STYLE.md">STYLE</a> ·
+  <a href="docs/design/20-cli-artifacts.md">CLI artifacts</a> ·
   <a href="docs/examples/">Examples</a> ·
   <a href="https://github.com/Macho0x/Goop/releases">Releases</a>
 </p>
